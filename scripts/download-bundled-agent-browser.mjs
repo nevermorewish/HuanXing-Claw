@@ -37,10 +37,12 @@ const TARGETS = {
   },
 };
 
-// Platform groups for building multi-arch packages
+// Platform groups for building multi-arch packages.
+// electron-builder only targets win x64, so the win group skips arm64
+// (arm64 reused the same x64 asset anyway). Use --all for the full set.
 const PLATFORM_GROUPS = {
   mac: ['darwin-x64', 'darwin-arm64'],
-  win: ['win32-x64', 'win32-arm64'],
+  win: ['win32-x64'],
   linux: ['linux-x64', 'linux-arm64'],
 };
 
