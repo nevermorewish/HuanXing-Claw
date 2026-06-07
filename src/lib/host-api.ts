@@ -333,6 +333,13 @@ export const hostApi = {
       invokeHost('usage', 'recentTokenHistory', { limit })
     ),
   },
+  huanxing: {
+    login: (input: { baseUrl: string; username: string; password: string }) => (
+      invokeHost('huanxing', 'login', input)
+    ),
+    fetchSetup: () => invokeHost('huanxing', 'fetchSetup'),
+    logout: () => invokeHost('huanxing', 'logout'),
+  },
 };
 
 export type HostApi = typeof hostApi;

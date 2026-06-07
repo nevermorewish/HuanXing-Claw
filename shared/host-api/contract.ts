@@ -667,6 +667,27 @@ export type DeliveryChannelGroup = {
 };
 export type DeliveryTargetsResult = HostSuccess & { targets: DeliveryChannelGroup[] };
 
+export type HuanxingUser = {
+  id: number;
+  username: string;
+  displayName: string;
+  role: number;
+  status: number;
+  group: string;
+};
+export type HuanxingLoginPayload = {
+  baseUrl: string;
+  username: string;
+  password: string;
+};
+export type HuanxingLoginResult = HostSuccess & { user?: HuanxingUser };
+export type HuanxingSetupResult = HostSuccess & {
+  user?: HuanxingUser;
+  baseUrl?: string;
+  models?: string[];
+  apiKey?: string;
+};
+
 export type HostApiContract = {
   app: {
     openClawDoctor: (payload: OpenClawDoctorPayload) => Omit<OpenClawDoctorResult, 'mode'>;
@@ -843,6 +864,11 @@ export type HostApiContract = {
   };
   usage: {
     recentTokenHistory: (payload?: UsageHistoryPayload) => UsageHistoryEntry[];
+  };
+  huanxing: {
+    login: (payload: HuanxingLoginPayload) => HuanxingLoginResult;
+    fetchSetup: () => HuanxingSetupResult;
+    logout: () => HostSuccess;
   };
 };
 

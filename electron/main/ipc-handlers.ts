@@ -64,6 +64,7 @@ import { createProvidersApi } from '../services/providers-api';
 import { createSessionsApi } from '../services/sessions-api';
 import { createSkillsApi } from '../services/skills-api';
 import { createUsageApi } from '../services/usage-api';
+import { createHuanXingApi } from '../services/huanxing-api';
 import {
   isLaunchAtStartupKey,
   isProxyKey,
@@ -154,6 +155,7 @@ function registerTypedHostHandlers(
     cron: createCronApi({ gatewayManager }),
     skills: createSkillsApi({ clawHubService, gatewayManager }),
     usage: createUsageApi(),
+    huanxing: createHuanXingApi(),
   });
   registerHostInvokeHandler(hostApiRegistry);
 }
