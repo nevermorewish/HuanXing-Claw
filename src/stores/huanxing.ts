@@ -11,9 +11,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ProviderAccount } from '@/lib/providers';
 import { hostApi } from '@/lib/host-api';
-import { useProviderStore } from '@/stores/providers';
 
 export const DEFAULT_HUANXING_URL = 'http://localhost:3000';
 
@@ -26,6 +24,26 @@ export interface HuanxingUser {
   group: string;
 }
 
+export interface HuanxingModelEntry {
+  id: string;
+  name: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+}
+
+export interface HuanxingModelConfig {
+  baseUrl: string;
+  models: HuanxingModelEntry[];
+  primary: string | null;
+}
+
+export interface HuanxingTestResult {
+  ok: boolean;
+  latencyMs?: number;
+  reply?: string;
+  error?: string;
+}
+
 interface HuanxingState {
   serverUrl: string;
   lastUsername: string;
@@ -35,6 +53,8 @@ interface HuanxingState {
   models: string[];
   /** The sk- key obtained for the account. Held only in memory. */
   apiKey: string | null;
+  /** The huanxing provider config read from openclaw.json. Not persisted. */
+  modelConfig: HuanxingModelConfig | null;
   loading: boolean;
   error: string | null;
 
@@ -42,19 +62,15 @@ interface HuanxingState {
   savedCredentials: () => Promise<{ baseUrl: string; username: string; password: string } | null>;
   /** Log in and fetch models + key. Returns the model list on success. */
   login: (username: string, password: string) => Promise<string[]>;
-  /** Create one custom provider account per selected model. Returns count. */
-  createAccounts: (selectedModels: string[]) => Promise<number>;
+  /** Write the selected models as the single huanxing provider. Returns count. */
+  saveModels: (models: HuanxingModelEntry[], primaryModelId?: string | null) => Promise<number>;
+  /** Read the huanxing provider config from openclaw.json. */
+  loadModelConfig: () => Promise<HuanxingModelConfig | null>;
+  setPrimaryModel: (modelId: string) => Promise<void>;
+  deleteModel: (modelId: string) => Promise<void>;
+  testModel: (modelId: string) => Promise<HuanxingTestResult>;
   logout: () => Promise<void>;
   clearError: () => void;
-}
-
-/** Make a model id safe for use inside an account id. */
-function slugifyModel(model: string): string {
-  return model
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
 }
 
 export const useHuanxingStore = create<HuanxingState>()(
@@ -66,6 +82,7 @@ export const useHuanxingStore = create<HuanxingState>()(
       user: null,
       models: [],
       apiKey: null,
+      modelConfig: null,
       loading: false,
       error: null,
 
@@ -121,53 +138,60 @@ export const useHuanxingStore = create<HuanxingState>()(
         }
       },
 
-      createAccounts: async (selectedModels) => {
-        const { apiKey, serverUrl } = get();
-        if (!apiKey) {
-          throw new Error('缺少 API 密钥，请重新登录');
-        }
-        const models = selectedModels.filter((m) => m.trim());
-        if (models.length === 0) {
+      saveModels: async (models, primaryModelId) => {
+        const clean = models.filter((m) => m.id.trim());
+        if (clean.length === 0) {
           return 0;
         }
+        const result = await hostApi.huanxing.saveModelConfig({
+          models: clean,
+          primaryModelId: primaryModelId ?? null,
+        });
+        if (!result.success) {
+          throw new Error(result.error || '保存模型配置失败');
+        }
+        set({ modelConfig: result.config ?? null });
+        return clean.length;
+      },
 
-        const createAccount = useProviderStore.getState().createAccount;
-        const now = new Date().toISOString();
-        let created = 0;
-
-        for (const model of models) {
-          // One custom account per model so each shows up as a selectable
-          // model in chat (an account exposes exactly one `model`).
-          const account: ProviderAccount = {
-            id: `custom-huanxing-${slugifyModel(model)}`,
-            vendorId: 'custom',
-            label: `Huanxing/${model}`,
-            authMode: 'api_key',
-            baseUrl: serverUrl,
-            apiProtocol: 'openai-completions',
-            model,
-            enabled: true,
-            isDefault: false,
-            metadata: { resourceUrl: serverUrl },
-            createdAt: now,
-            updatedAt: now,
-          };
-          try {
-            await createAccount(account, apiKey);
-            created += 1;
-          } catch (error) {
-            console.error(`Failed to create Huanxing account for ${model}`, error);
+      loadModelConfig: async () => {
+        try {
+          const result = await hostApi.huanxing.getModelConfig();
+          if (!result.success) {
+            throw new Error(result.error || '读取模型配置失败');
           }
+          const config = result.config ?? null;
+          set({ modelConfig: config });
+          return config;
+        } catch (error) {
+          // Don't surface a hard error for a missing config — just leave it empty.
+          console.error('Failed to load Huanxing model config', error);
+          return null;
         }
+      },
 
-        // Promote the first new model to default when none is set yet.
-        const providerState = useProviderStore.getState();
-        if (created > 0 && !providerState.defaultAccountId) {
-          const firstId = `custom-huanxing-${slugifyModel(models[0])}`;
-          await providerState.setDefaultAccount(firstId).catch(() => {});
+      setPrimaryModel: async (modelId) => {
+        const result = await hostApi.huanxing.setPrimaryModel({ modelId });
+        if (!result.success) {
+          throw new Error(result.error || '设置主模型失败');
         }
+        set({ modelConfig: result.config ?? null });
+      },
 
-        return created;
+      deleteModel: async (modelId) => {
+        const result = await hostApi.huanxing.deleteModel({ modelId });
+        if (!result.success) {
+          throw new Error(result.error || '删除模型失败');
+        }
+        set({ modelConfig: result.config ?? null });
+      },
+
+      testModel: async (modelId) => {
+        const result = await hostApi.huanxing.testModel({ modelId });
+        if (!result.success) {
+          return { ok: false, error: result.error || '测试失败' };
+        }
+        return { ok: true, latencyMs: result.latencyMs, reply: result.reply };
       },
 
       logout: async () => {

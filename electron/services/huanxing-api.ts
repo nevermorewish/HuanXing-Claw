@@ -6,10 +6,18 @@
  * key the renderer can turn into provider accounts.
  */
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
-import type { HuanxingUser } from '@shared/host-api/contract';
+import type { HuanxingModelConfig, HuanxingModelEntry, HuanxingUser } from '@shared/host-api/contract';
 import { safeStorage } from 'electron';
+import type { GatewayManager } from '../gateway/manager';
 import { getClawXProviderStore } from './providers/store-instance';
 import { huanxingSession } from '../utils/huanxing-session';
+import {
+  deleteHuanxingProvider,
+  getHuanxingApiKey,
+  readHuanxingModelConfig,
+  writeHuanxingModelConfig,
+} from '../utils/openclaw-auth';
+import { testProviderModel } from './providers/provider-validation';
 import { logger } from '../utils/logger';
 
 type SavedHuanxingCredentials = {
@@ -85,7 +93,29 @@ async function saveCredentials(credentials: SavedHuanxingCredentials): Promise<v
   } satisfies StoredHuanxingCredentials);
 }
 
-export function createHuanXingApi(): CompleteHostServiceRegistry['huanxing'] {
+/** Build the renderer-facing config shape from the stored openclaw.json entry. */
+function toContractModelConfig(data: {
+  baseUrl: string;
+  models: HuanxingModelEntry[];
+  primary: string | null;
+}): HuanxingModelConfig {
+  return { baseUrl: data.baseUrl, models: data.models, primary: data.primary };
+}
+
+/**
+ * Resolve the base URL for the huanxing provider entry. Prefer the live session
+ * (just-logged-in), then any previously-stored entry. The huanxing relay is
+ * OpenAI-compatible, so the entry's baseUrl needs a `/v1` suffix.
+ */
+function resolveHuanxingBaseUrl(sessionBaseUrl: string | null, storedBaseUrl: string): string {
+  const raw = (sessionBaseUrl || storedBaseUrl || '').trim().replace(/\/+$/, '');
+  if (!raw) return '';
+  return /\/v\d+$/.test(raw) ? raw : `${raw}/v1`;
+}
+
+export function createHuanXingApi(
+  { gatewayManager }: { gatewayManager: GatewayManager },
+): CompleteHostServiceRegistry['huanxing'] {
   return {
     login: async (payload) => {
       try {
@@ -140,6 +170,116 @@ export function createHuanXingApi(): CompleteHostServiceRegistry['huanxing'] {
     logout: async () => {
       huanxingSession.logout();
       return { success: true };
+    },
+
+    getModelConfig: async () => {
+      try {
+        const config = await readHuanxingModelConfig();
+        return { success: true, config: toContractModelConfig(config) };
+      } catch (error) {
+        logger.error('huanxing.getModelConfig failed', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+
+    saveModelConfig: async (payload) => {
+      try {
+        // baseUrl + key come from the live session right after login; on a later
+        // edit (no live session) we keep whatever the stored entry already holds.
+        const stored = await readHuanxingModelConfig();
+        const baseUrl = resolveHuanxingBaseUrl(huanxingSession.getBaseUrl(), stored.baseUrl);
+        if (!baseUrl) {
+          return { success: false, error: '缺少服务地址，请重新登录 Huanxing' };
+        }
+        let apiKey: string | undefined;
+        if (huanxingSession.isLoggedIn()) {
+          apiKey = await huanxingSession.ensureApiKey();
+        }
+        await writeHuanxingModelConfig({
+          baseUrl,
+          apiKey,
+          models: payload.models,
+          primaryModelId: payload.primaryModelId ?? null,
+        });
+        gatewayManager.debouncedReload();
+        const config = await readHuanxingModelConfig();
+        return { success: true, config: toContractModelConfig(config) };
+      } catch (error) {
+        logger.error('huanxing.saveModelConfig failed', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+
+    setPrimaryModel: async (payload) => {
+      try {
+        const stored = await readHuanxingModelConfig();
+        if (!stored.models.some((m) => m.id === payload.modelId)) {
+          return { success: false, error: `模型不存在：${payload.modelId}` };
+        }
+        await writeHuanxingModelConfig({
+          baseUrl: stored.baseUrl,
+          models: stored.models,
+          primaryModelId: payload.modelId,
+        });
+        gatewayManager.debouncedReload();
+        const config = await readHuanxingModelConfig();
+        return { success: true, config: toContractModelConfig(config) };
+      } catch (error) {
+        logger.error('huanxing.setPrimaryModel failed', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+
+    deleteModel: async (payload) => {
+      try {
+        const stored = await readHuanxingModelConfig();
+        const remaining = stored.models.filter((m) => m.id !== payload.modelId);
+        if (remaining.length === 0) {
+          // Last model removed → drop the whole provider entry.
+          await deleteHuanxingProvider();
+          gatewayManager.debouncedRestart();
+          return { success: true, config: { baseUrl: '', models: [], primary: null } };
+        }
+        await writeHuanxingModelConfig({
+          baseUrl: stored.baseUrl,
+          models: remaining,
+          // Keep the existing primary unless it was the deleted model.
+          primaryModelId: stored.primary === `huanxing/${payload.modelId}`
+            ? remaining[0].id
+            : undefined,
+        });
+        gatewayManager.debouncedReload();
+        const config = await readHuanxingModelConfig();
+        return { success: true, config: toContractModelConfig(config) };
+      } catch (error) {
+        logger.error('huanxing.deleteModel failed', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+
+    testModel: async (payload) => {
+      try {
+        const stored = await readHuanxingModelConfig();
+        const baseUrl = resolveHuanxingBaseUrl(huanxingSession.getBaseUrl(), stored.baseUrl);
+        if (!baseUrl) {
+          return { success: false, error: '缺少服务地址，请重新登录 Huanxing' };
+        }
+        // Prefer the live session key; fall back to the inline key on the entry.
+        const apiKey = huanxingSession.isLoggedIn()
+          ? await huanxingSession.ensureApiKey()
+          : (await getHuanxingApiKey()) ?? '';
+        if (!apiKey) {
+          return { success: false, error: '缺少 API 密钥，请重新登录 Huanxing' };
+        }
+        const result = await testProviderModel(baseUrl, apiKey, payload.modelId, 'openai-completions');
+        if (!result.ok) {
+          return { success: false, error: result.error || '测试失败' };
+        }
+        return { success: true, latencyMs: result.latencyMs, reply: result.reply };
+      } catch (error) {
+        logger.error('huanxing.testModel failed', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
     },
   };
 }

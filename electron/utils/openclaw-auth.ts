@@ -1068,6 +1068,263 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
   }
 }
 
+// ── Huanxing single-provider model config ────────────────────────
+//
+// Huanxing registers as ONE openclaw.json provider (`models.providers.huanxing`)
+// holding many nested models, mirroring the `qtcool` template the user runs:
+//   { api: 'openai-completions', apiKey: '<sk-…>', baseUrl, models: [{id,name,…}] }
+// plus `agents.defaults.model.primary = 'huanxing/<id>'`, the rest rotated into
+// `fallbacks`, and one `agents.defaults.models['huanxing/<id>'] = {}` per model.
+//
+// The API key is stored INLINE on the entry (not auth-profiles / apiKeyEnv) —
+// `huanxing` is not a registry provider, and inline keys are the proven path for
+// such entries (see the user's working `qtcool` config).
+
+export const HUANXING_PROVIDER_KEY = 'huanxing';
+
+export interface HuanxingModelEntry {
+  id: string;
+  name: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+}
+
+export interface HuanxingModelConfigData {
+  baseUrl: string;
+  models: HuanxingModelEntry[];
+  primary: string | null;
+}
+
+/** Normalize a raw model entry from config into our shape. */
+function normalizeHuanxingModelEntry(value: unknown): HuanxingModelEntry | null {
+  if (typeof value === 'string') {
+    return value.trim() ? { id: value, name: value } : null;
+  }
+  if (!isPlainRecord(value)) return null;
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === 'string' ? record.id.trim() : '';
+  if (!id) return null;
+  const entry: HuanxingModelEntry = {
+    id,
+    name: typeof record.name === 'string' && record.name.trim() ? record.name : id,
+  };
+  if (typeof record.contextWindow === 'number') entry.contextWindow = record.contextWindow;
+  if (typeof record.reasoning === 'boolean') entry.reasoning = record.reasoning;
+  return entry;
+}
+
+/** Read the huanxing provider entry + default model from openclaw.json. */
+export async function readHuanxingModelConfig(): Promise<HuanxingModelConfigData> {
+  const config = await readOpenClawJson();
+  const models = config.models as Record<string, unknown> | undefined;
+  const providers = (models?.providers ?? {}) as Record<string, unknown>;
+  const entry = isPlainRecord(providers[HUANXING_PROVIDER_KEY])
+    ? (providers[HUANXING_PROVIDER_KEY] as Record<string, unknown>)
+    : null;
+
+  const baseUrl = entry && typeof entry.baseUrl === 'string' ? entry.baseUrl : '';
+  const rawModels = entry && Array.isArray(entry.models) ? entry.models : [];
+  const modelList = rawModels
+    .map(normalizeHuanxingModelEntry)
+    .filter((m): m is HuanxingModelEntry => m != null);
+
+  const agents = config.agents as Record<string, unknown> | undefined;
+  const defaults = agents?.defaults && typeof agents.defaults === 'object'
+    ? (agents.defaults as Record<string, unknown>)
+    : undefined;
+  const modelCfg = defaults?.model && typeof defaults.model === 'object'
+    ? (defaults.model as Record<string, unknown>)
+    : undefined;
+  const primary = typeof modelCfg?.primary === 'string'
+    && modelCfg.primary.startsWith(`${HUANXING_PROVIDER_KEY}/`)
+    ? modelCfg.primary
+    : null;
+
+  return { baseUrl, models: modelList, primary };
+}
+
+/**
+ * Write the single huanxing provider (inline key) + default model into
+ * openclaw.json. Bypasses {@link upsertOpenClawProviderEntry} because that helper
+ * writes `apiKey` as an env-var NAME; we need the literal `sk-` key inline.
+ *
+ * When `apiKey` is omitted the existing entry's key is preserved (so editing the
+ * model list never drops credentials). `primaryModelId` selects the default
+ * model; remaining models rotate into `fallbacks`. When omitted, an existing
+ * valid primary is kept, otherwise the first model is promoted.
+ */
+export async function writeHuanxingModelConfig(input: {
+  baseUrl: string;
+  apiKey?: string;
+  models: HuanxingModelEntry[];
+  primaryModelId?: string | null;
+}): Promise<void> {
+  assertValidApiProtocol('openai-completions', HUANXING_PROVIDER_KEY);
+  await withConfigLock(async () => {
+    const config = await readOpenClawJson();
+
+    const models = (config.models || {}) as Record<string, unknown>;
+    const providers = (models.providers || {}) as Record<string, unknown>;
+    const existing = isPlainRecord(providers[HUANXING_PROVIDER_KEY])
+      ? (providers[HUANXING_PROVIDER_KEY] as Record<string, unknown>)
+      : {};
+
+    const cleanModels = input.models
+      .map(normalizeHuanxingModelEntry)
+      .filter((m): m is HuanxingModelEntry => m != null);
+
+    // Preserve an existing inline key when the caller doesn't supply one.
+    const apiKey = input.apiKey?.trim()
+      || (typeof existing.apiKey === 'string' ? existing.apiKey : '');
+
+    const nextProvider: Record<string, unknown> = {
+      ...existing,
+      api: 'openai-completions',
+      baseUrl: input.baseUrl,
+      models: cleanModels.map((m) => {
+        const entry: Record<string, unknown> = { id: m.id, name: m.name };
+        if (m.contextWindow != null) entry.contextWindow = m.contextWindow;
+        if (m.reasoning != null) entry.reasoning = m.reasoning;
+        return entry;
+      }),
+    };
+    if (apiKey) nextProvider.apiKey = apiKey;
+    providers[HUANXING_PROVIDER_KEY] = nextProvider;
+    models.providers = providers;
+    config.models = models;
+
+    // Resolve primary: explicit choice → existing valid primary → first model.
+    const validRefs = new Set(cleanModels.map((m) => `${HUANXING_PROVIDER_KEY}/${m.id}`));
+    const agents = (config.agents || {}) as Record<string, unknown>;
+    const defaults = (agents.defaults || {}) as Record<string, unknown>;
+    const modelCfg = (defaults.model && typeof defaults.model === 'object'
+      ? defaults.model
+      : {}) as Record<string, unknown>;
+    const currentPrimary = typeof modelCfg.primary === 'string' ? modelCfg.primary : '';
+
+    let primary: string | null = null;
+    if (input.primaryModelId) {
+      const ref = `${HUANXING_PROVIDER_KEY}/${input.primaryModelId}`;
+      if (validRefs.has(ref)) primary = ref;
+    }
+    if (!primary && currentPrimary && validRefs.has(currentPrimary)) {
+      primary = currentPrimary;
+    }
+    if (!primary && cleanModels.length > 0) {
+      primary = `${HUANXING_PROVIDER_KEY}/${cleanModels[0].id}`;
+    }
+
+    if (primary) {
+      modelCfg.primary = primary;
+      // Rotate the remaining huanxing models into fallbacks, preserving any
+      // existing non-huanxing fallbacks (clawpanel rotateFallbackChain style).
+      const prevFallbacks = Array.isArray(modelCfg.fallbacks)
+        ? (modelCfg.fallbacks as unknown[]).filter((f): f is string => typeof f === 'string')
+        : [];
+      const seen = new Set<string>([primary]);
+      const nextFallbacks: string[] = [];
+      const pushUnique = (ref: string) => {
+        if (!seen.has(ref)) {
+          seen.add(ref);
+          nextFallbacks.push(ref);
+        }
+      };
+      // Keep prior fallbacks that are still valid (huanxing or otherwise).
+      for (const fb of prevFallbacks) {
+        if (fb.startsWith(`${HUANXING_PROVIDER_KEY}/`)) {
+          if (validRefs.has(fb)) pushUnique(fb);
+        } else {
+          pushUnique(fb);
+        }
+      }
+      // Ensure every other huanxing model is represented.
+      for (const ref of validRefs) pushUnique(ref);
+      modelCfg.fallbacks = nextFallbacks;
+    } else {
+      // No models → clear huanxing references from primary/fallbacks.
+      if (typeof modelCfg.primary === 'string' && modelCfg.primary.startsWith(`${HUANXING_PROVIDER_KEY}/`)) {
+        delete modelCfg.primary;
+      }
+      if (Array.isArray(modelCfg.fallbacks)) {
+        modelCfg.fallbacks = (modelCfg.fallbacks as unknown[])
+          .filter((f): f is string => typeof f === 'string' && !f.startsWith(`${HUANXING_PROVIDER_KEY}/`));
+      }
+    }
+    defaults.model = modelCfg;
+
+    // Register each model under agents.defaults.models (mirrors qtcool template):
+    // keep non-huanxing entries, replace the huanxing set with current models.
+    const modelsMap = (defaults.models && typeof defaults.models === 'object' && !Array.isArray(defaults.models)
+      ? defaults.models
+      : {}) as Record<string, unknown>;
+    for (const key of Object.keys(modelsMap)) {
+      if (key.startsWith(`${HUANXING_PROVIDER_KEY}/`)) delete modelsMap[key];
+    }
+    for (const ref of validRefs) {
+      if (!modelsMap[ref]) modelsMap[ref] = {};
+    }
+    defaults.models = modelsMap;
+    agents.defaults = defaults;
+    config.agents = agents;
+
+    await writeOpenClawJson(config);
+  });
+}
+
+/** Read the inline `sk-` API key stored on the huanxing provider entry. */
+export async function getHuanxingApiKey(): Promise<string | null> {
+  const config = await readOpenClawJson();
+  const models = config.models as Record<string, unknown> | undefined;
+  const providers = (models?.providers ?? {}) as Record<string, unknown>;
+  const entry = isPlainRecord(providers[HUANXING_PROVIDER_KEY])
+    ? (providers[HUANXING_PROVIDER_KEY] as Record<string, unknown>)
+    : null;
+  return entry && typeof entry.apiKey === 'string' && entry.apiKey ? entry.apiKey : null;
+}
+
+/** Remove the huanxing provider entry and all `huanxing/*` model references. */
+export async function deleteHuanxingProvider(): Promise<void> {
+  await withConfigLock(async () => {
+    const config = await readOpenClawJson();
+    const prefix = `${HUANXING_PROVIDER_KEY}/`;
+
+    const models = config.models as Record<string, unknown> | undefined;
+    const providers = (models?.providers ?? {}) as Record<string, unknown>;
+    if (providers[HUANXING_PROVIDER_KEY]) {
+      delete providers[HUANXING_PROVIDER_KEY];
+    }
+
+    const agents = config.agents as Record<string, unknown> | undefined;
+    const defaults = agents?.defaults && typeof agents.defaults === 'object'
+      ? (agents.defaults as Record<string, unknown>)
+      : undefined;
+    if (defaults) {
+      const modelCfg = defaults.model && typeof defaults.model === 'object'
+        ? (defaults.model as Record<string, unknown>)
+        : undefined;
+      if (modelCfg) {
+        if (typeof modelCfg.primary === 'string' && modelCfg.primary.startsWith(prefix)) {
+          delete modelCfg.primary;
+        }
+        if (Array.isArray(modelCfg.fallbacks)) {
+          modelCfg.fallbacks = (modelCfg.fallbacks as unknown[])
+            .filter((f): f is string => typeof f === 'string' && !f.startsWith(prefix));
+        }
+      }
+      const modelsMap = defaults.models && typeof defaults.models === 'object' && !Array.isArray(defaults.models)
+        ? (defaults.models as Record<string, unknown>)
+        : undefined;
+      if (modelsMap) {
+        for (const key of Object.keys(modelsMap)) {
+          if (key.startsWith(prefix)) delete modelsMap[key];
+        }
+      }
+    }
+
+    await writeOpenClawJson(config);
+  });
+}
+
 /**
  * Self-heal helper: walk `models.providers.*` in openclaw.json and remove
  * any entry whose `api` field is not in the OpenClaw allow-list.

@@ -1979,3 +1979,125 @@ describe('batchSyncConfigFields', () => {
     expect(ssrfPolicy.allowIpv6UniqueLocalRange).toBe(false);
   });
 });
+
+describe('huanxing single-provider model config', () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('writes a single huanxing provider with inline apiKey + nested models', async () => {
+    const { writeHuanxingModelConfig } = await import('@electron/utils/openclaw-auth');
+    await writeHuanxingModelConfig({
+      baseUrl: 'https://relay.example.com/v1',
+      apiKey: 'sk-test-123',
+      models: [
+        { id: 'model-a', name: 'Model A', contextWindow: 128000 },
+        { id: 'model-b', name: 'Model B', reasoning: true },
+      ],
+      primaryModelId: 'model-b',
+    });
+
+    const config = await readOpenClawJson();
+    const providers = ((config.models as Record<string, unknown>).providers) as Record<string, unknown>;
+    const entry = providers.huanxing as Record<string, unknown>;
+    expect(entry.api).toBe('openai-completions');
+    expect(entry.apiKey).toBe('sk-test-123');
+    expect(entry.baseUrl).toBe('https://relay.example.com/v1');
+    expect(entry.models).toEqual([
+      { id: 'model-a', name: 'Model A', contextWindow: 128000 },
+      { id: 'model-b', name: 'Model B', reasoning: true },
+    ]);
+
+    const defaults = ((config.agents as Record<string, unknown>).defaults) as Record<string, unknown>;
+    const modelCfg = defaults.model as Record<string, unknown>;
+    expect(modelCfg.primary).toBe('huanxing/model-b');
+    // The non-primary model rotates into fallbacks.
+    expect(modelCfg.fallbacks).toEqual(['huanxing/model-a']);
+    // Each model is registered under agents.defaults.models.
+    expect(defaults.models).toEqual({ 'huanxing/model-b': {}, 'huanxing/model-a': {} });
+  });
+
+  it('preserves the existing inline key when saving without one', async () => {
+    const { writeHuanxingModelConfig } = await import('@electron/utils/openclaw-auth');
+    await writeHuanxingModelConfig({
+      baseUrl: 'https://relay.example.com/v1',
+      apiKey: 'sk-keep-me',
+      models: [{ id: 'model-a', name: 'Model A' }],
+      primaryModelId: 'model-a',
+    });
+    // Edit the model list without re-supplying the key.
+    await writeHuanxingModelConfig({
+      baseUrl: 'https://relay.example.com/v1',
+      models: [
+        { id: 'model-a', name: 'Renamed A' },
+        { id: 'model-c', name: 'Model C' },
+      ],
+    });
+
+    const config = await readOpenClawJson();
+    const providers = ((config.models as Record<string, unknown>).providers) as Record<string, unknown>;
+    const entry = providers.huanxing as Record<string, unknown>;
+    expect(entry.apiKey).toBe('sk-keep-me');
+    // Existing valid primary is kept when not overridden.
+    const modelCfg = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>).model as Record<string, unknown>;
+    expect(modelCfg.primary).toBe('huanxing/model-a');
+  });
+
+  it('reads back the config it wrote', async () => {
+    const { writeHuanxingModelConfig, readHuanxingModelConfig } = await import('@electron/utils/openclaw-auth');
+    await writeHuanxingModelConfig({
+      baseUrl: 'https://relay.example.com/v1',
+      apiKey: 'sk-test-123',
+      models: [{ id: 'model-a', name: 'Model A', contextWindow: 64000 }],
+      primaryModelId: 'model-a',
+    });
+
+    const result = await readHuanxingModelConfig();
+    expect(result.baseUrl).toBe('https://relay.example.com/v1');
+    expect(result.models).toEqual([{ id: 'model-a', name: 'Model A', contextWindow: 64000 }]);
+    expect(result.primary).toBe('huanxing/model-a');
+  });
+
+  it('exposes the inline key via getHuanxingApiKey but not in readHuanxingModelConfig', async () => {
+    const { writeHuanxingModelConfig, getHuanxingApiKey } = await import('@electron/utils/openclaw-auth');
+    await writeHuanxingModelConfig({
+      baseUrl: 'https://relay.example.com/v1',
+      apiKey: 'sk-secret-xyz',
+      models: [{ id: 'model-a', name: 'Model A' }],
+      primaryModelId: 'model-a',
+    });
+    expect(await getHuanxingApiKey()).toBe('sk-secret-xyz');
+  });
+
+  it('deletes the provider and strips all huanxing model references', async () => {
+    const { writeHuanxingModelConfig, deleteHuanxingProvider, readHuanxingModelConfig } = await import('@electron/utils/openclaw-auth');
+    // Seed a non-huanxing fallback to verify it survives deletion.
+    await writeOpenClawJson({
+      agents: { defaults: { model: { primary: 'other/x', fallbacks: ['other/x'] }, models: { 'other/x': {} } } },
+    });
+    await writeHuanxingModelConfig({
+      baseUrl: 'https://relay.example.com/v1',
+      apiKey: 'sk-test-123',
+      models: [{ id: 'model-a', name: 'Model A' }],
+      primaryModelId: 'model-a',
+    });
+    await deleteHuanxingProvider();
+
+    const config = await readOpenClawJson();
+    const providers = ((config.models as Record<string, unknown>).providers) as Record<string, unknown>;
+    expect(providers.huanxing).toBeUndefined();
+
+    const result = await readHuanxingModelConfig();
+    expect(result.models).toEqual([]);
+    expect(result.primary).toBeNull();
+
+    // Non-huanxing references are untouched.
+    const defaults = ((config.agents as Record<string, unknown>).defaults) as Record<string, unknown>;
+    const modelCfg = defaults.model as Record<string, unknown>;
+    expect(modelCfg.fallbacks).toEqual(['other/x']);
+    expect(defaults.models).toEqual({ 'other/x': {} });
+  });
+});

@@ -695,6 +695,24 @@ export type HuanxingSetupResult = HostSuccess & {
   models?: string[];
   apiKey?: string;
 };
+export type HuanxingModelEntry = {
+  id: string;
+  name: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+};
+export type HuanxingModelConfig = {
+  baseUrl: string;
+  models: HuanxingModelEntry[];
+  primary: string | null;
+};
+export type HuanxingModelConfigResult = HostSuccess & { config?: HuanxingModelConfig };
+export type HuanxingSaveModelConfigPayload = {
+  models: HuanxingModelEntry[];
+  primaryModelId?: string | null;
+};
+export type HuanxingModelIdPayload = { modelId: string };
+export type HuanxingTestModelResult = HostSuccess & { latencyMs?: number; reply?: string };
 
 export type HostApiContract = {
   app: {
@@ -878,6 +896,11 @@ export type HostApiContract = {
     fetchSetup: () => HuanxingSetupResult;
     savedCredentials: () => HuanxingCredentialsResult;
     logout: () => HostSuccess;
+    getModelConfig: () => HuanxingModelConfigResult;
+    saveModelConfig: (payload: HuanxingSaveModelConfigPayload) => HuanxingModelConfigResult;
+    setPrimaryModel: (payload: HuanxingModelIdPayload) => HuanxingModelConfigResult;
+    deleteModel: (payload: HuanxingModelIdPayload) => HuanxingModelConfigResult;
+    testModel: (payload: HuanxingModelIdPayload) => HuanxingTestModelResult;
   };
 };
 

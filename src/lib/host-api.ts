@@ -340,6 +340,14 @@ export const hostApi = {
     fetchSetup: () => invokeHost('huanxing', 'fetchSetup'),
     savedCredentials: () => invokeHost('huanxing', 'savedCredentials'),
     logout: () => invokeHost('huanxing', 'logout'),
+    getModelConfig: () => invokeHost('huanxing', 'getModelConfig'),
+    saveModelConfig: (input: {
+      models: Array<{ id: string; name: string; contextWindow?: number; reasoning?: boolean }>;
+      primaryModelId?: string | null;
+    }) => invokeHost('huanxing', 'saveModelConfig', input),
+    setPrimaryModel: (input: { modelId: string }) => invokeHost('huanxing', 'setPrimaryModel', input),
+    deleteModel: (input: { modelId: string }) => invokeHost('huanxing', 'deleteModel', input),
+    testModel: (input: { modelId: string }) => invokeHost('huanxing', 'testModel', input),
   },
 };
 

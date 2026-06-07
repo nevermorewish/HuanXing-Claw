@@ -11,6 +11,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { hostApi } from '@/lib/host-api';
 import { trackUiEvent } from '@/lib/telemetry';
 import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
+import { HuanxingModelsSection } from '@/components/huanxing/HuanxingModelsSection';
 import { FeedbackState } from '@/components/common/FeedbackState';
 import {
   filterUsageHistoryByWindow,
@@ -292,6 +293,9 @@ export function Models() {
           
           {/* AI Providers Section */}
           <ProvidersSettings />
+
+          {/* Huanxing Models Section */}
+          <HuanxingModelsSection />
 
           {/* Token Usage History Section */}
           <div>

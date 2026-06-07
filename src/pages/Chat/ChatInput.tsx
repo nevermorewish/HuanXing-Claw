@@ -19,7 +19,8 @@ import { useChatStore } from '@/stores/chat';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import { useProviderStore } from '@/stores/providers';
-import { buildConfiguredModelOptions, formatModelRefLabel } from '@/lib/model-options';
+import { useHuanxingStore } from '@/stores/huanxing';
+import { buildConfiguredModelOptions, formatModelRefLabel, type ConfiguredModelOption } from '@/lib/model-options';
 import type { AgentSummary } from '@/types/agent';
 import type { QuickAccessSkill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
@@ -219,6 +220,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const providerStatuses = useProviderStore((s) => s.statuses);
   const providerDefaultAccountId = useProviderStore((s) => s.defaultAccountId);
   const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
+  const huanxingModelConfig = useHuanxingStore((s) => s.modelConfig);
+  const loadHuanxingModelConfig = useHuanxingStore((s) => s.loadModelConfig);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
@@ -228,10 +231,34 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     () => currentAgent?.name ?? currentAgentId,
     [currentAgent, currentAgentId],
   );
-  const modelOptions = useMemo(
-    () => buildConfiguredModelOptions(providerAccounts, providerStatuses, providerDefaultAccountId),
-    [providerAccounts, providerDefaultAccountId, providerStatuses],
-  );
+  const modelOptions = useMemo(() => {
+    const accountOptions = buildConfiguredModelOptions(
+      providerAccounts,
+      providerStatuses,
+      providerDefaultAccountId,
+    );
+    // Merge the single huanxing provider's nested models. They live in
+    // openclaw.json (not the account store), so buildConfiguredModelOptions —
+    // which is account-driven — can't surface them. Map each to a
+    // "huanxing/<id>" modelRef and de-dupe against the account options.
+    const huanxingOptions: ConfiguredModelOption[] = (huanxingModelConfig?.models ?? []).map(
+      (model) => ({
+        modelRef: `huanxing/${model.id}`,
+        label: model.id,
+        runtimeProviderKey: 'huanxing',
+        accountId: 'huanxing',
+      }),
+    );
+    const seen = new Set(accountOptions.map((o) => o.modelRef));
+    const merged = [...accountOptions];
+    for (const option of huanxingOptions) {
+      if (!seen.has(option.modelRef)) {
+        seen.add(option.modelRef);
+        merged.push(option);
+      }
+    }
+    return merged;
+  }, [providerAccounts, providerDefaultAccountId, providerStatuses, huanxingModelConfig]);
   const effectiveModelRef = optimisticModelRef || currentAgent?.modelRef || defaultModelRef || modelOptions[0]?.modelRef || null;
   const currentModelLabel = formatModelRefLabel(effectiveModelRef);
   const mentionableAgents = useMemo(
@@ -264,6 +291,10 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   }, [refreshProviderSnapshot]);
 
   useEffect(() => {
+    void loadHuanxingModelConfig();
+  }, [loadHuanxingModelConfig]);
+
+  useEffect(() => {
     if (gatewayStatus.state === 'running') return;
     let cancelled = false;
     hostApi.gateway.status()
@@ -271,13 +302,14 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
         if (cancelled) return;
         if (status.state === 'running') {
           void refreshProviderSnapshot();
+          void loadHuanxingModelConfig();
         }
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [gatewayStatus.state, refreshProviderSnapshot]);
+  }, [gatewayStatus.state, refreshProviderSnapshot, loadHuanxingModelConfig]);
 
   useEffect(() => {
     setOptimisticModelRef(null);

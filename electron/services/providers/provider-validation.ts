@@ -309,6 +309,94 @@ async function validateGoogleQueryKey(
   return await performProviderValidationRequest(providerType, url, {});
 }
 
+export type ModelTestResult = {
+  ok: boolean;
+  latencyMs?: number;
+  reply?: string;
+  error?: string;
+};
+
+/**
+ * Send a real chat completion against a specific model and measure latency.
+ *
+ * Unlike {@link validateApiKeyWithProvider} (which probes a hardcoded
+ * `validation-probe` model just to check the key), this exercises the EXACT
+ * model id the user configured, mirroring clawpanel's `api.testModel`. A 429
+ * (rate limited) is treated as a reachable success — the model exists and the
+ * key works, the account is merely throttled.
+ */
+export async function testProviderModel(
+  baseUrl: string,
+  apiKey: string,
+  modelId: string,
+  api: string = 'openai-completions',
+): Promise<ModelTestResult> {
+  const trimmedBaseUrl = baseUrl.trim();
+  if (!trimmedBaseUrl) {
+    return { ok: false, error: 'Base URL is required to test a model' };
+  }
+  if (!modelId.trim()) {
+    return { ok: false, error: 'Model id is required' };
+  }
+
+  const isAnthropic = api === 'anthropic-messages';
+  const url = isAnthropic
+    ? `${normalizeBaseUrl(trimmedBaseUrl)}/messages`
+    : `${normalizeBaseUrl(trimmedBaseUrl)}/chat/completions`;
+  const headers: Record<string, string> = isAnthropic
+    ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }
+    : { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+  const body = JSON.stringify({
+    model: modelId,
+    messages: [{ role: 'user', content: 'Hi' }],
+    max_tokens: 16,
+  });
+
+  const start = Date.now();
+  try {
+    logValidationRequest(`testModel:${modelId}`, 'POST', url, headers);
+    const response = await proxyAwareFetch(url, { method: 'POST', headers, body });
+    const latencyMs = Date.now() - start;
+    logValidationStatus(`testModel:${modelId}`, response.status);
+    const data = await response.json().catch(() => ({}));
+
+    if (response.status === 429) {
+      return { ok: true, latencyMs, reply: '⚠ 429 限流（模型可达，账号被限流）' };
+    }
+    if (response.status >= 200 && response.status < 300) {
+      const reply = extractModelReply(data, isAnthropic);
+      return { ok: true, latencyMs, reply };
+    }
+
+    const obj = data as { error?: { message?: string }; message?: string } | null;
+    const msg = obj?.error?.message || obj?.message || `HTTP ${response.status}`;
+    return { ok: false, latencyMs, error: msg };
+  } catch (error) {
+    return {
+      ok: false,
+      error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/** Pull a short text reply out of an OpenAI- or Anthropic-shaped response. */
+function extractModelReply(data: unknown, isAnthropic: boolean): string {
+  const obj = data as Record<string, unknown> | null;
+  if (!obj) return '';
+  try {
+    if (isAnthropic) {
+      const content = obj.content as Array<{ text?: string }> | undefined;
+      const text = content?.map((c) => c?.text ?? '').join('').trim();
+      return (text ?? '').slice(0, 120);
+    }
+    const choices = obj.choices as Array<{ message?: { content?: string } }> | undefined;
+    const text = choices?.[0]?.message?.content ?? '';
+    return String(text).trim().slice(0, 120);
+  } catch {
+    return '';
+  }
+}
+
 async function validateAnthropicHeaderKey(
   providerType: string,
   apiKey: string,

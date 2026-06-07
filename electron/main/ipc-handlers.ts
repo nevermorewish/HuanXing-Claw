@@ -155,7 +155,7 @@ function registerTypedHostHandlers(
     cron: createCronApi({ gatewayManager }),
     skills: createSkillsApi({ clawHubService, gatewayManager }),
     usage: createUsageApi(),
-    huanxing: createHuanXingApi(),
+    huanxing: createHuanXingApi({ gatewayManager }),
   });
   registerHostInvokeHandler(hostApiRegistry);
 }

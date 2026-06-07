@@ -32,7 +32,7 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
   const setServerUrl = useHuanxingStore((s) => s.setServerUrl);
   const savedCredentials = useHuanxingStore((s) => s.savedCredentials);
   const login = useHuanxingStore((s) => s.login);
-  const createAccounts = useHuanxingStore((s) => s.createAccounts);
+  const saveModels = useHuanxingStore((s) => s.saveModels);
 
   const [step, setStep] = useState<Step>('credentials');
   const [url, setUrl] = useState(serverUrl || DEFAULT_HUANXING_URL);
@@ -131,7 +131,7 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
     setSubmitting(true);
     setError(null);
     try {
-      const count = await createAccounts(Array.from(selected));
+      const count = await saveModels(Array.from(selected).map((id) => ({ id, name: id })));
       toast.success(`已添加 ${count} 个 Huanxing 模型，可在「模型」页查看`);
       onOpenChange(false);
     } catch (err) {
