@@ -3,7 +3,7 @@
  *
  * Reads every provider from openclaw.json (via the modelProviders store) and
  * renders one ProviderCard each, plus an "添加 AI 提供商" button. This replaces
- * the old account-based ProvidersSettings + single HuanxingModelsSection.
+ * the old account-based ProvidersSettings + single AccountModelsSection.
  */
 import { useEffect, useState } from 'react';
 import { Plus, Loader2 } from 'lucide-react';

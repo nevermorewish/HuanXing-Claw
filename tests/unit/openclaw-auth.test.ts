@@ -5,8 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { testHome, testUserData, getSettingMock } = vi.hoisted(() => {
   const suffix = Math.random().toString(36).slice(2);
   return {
-    testHome: `/tmp/clawx-openclaw-auth-${suffix}`,
-    testUserData: `/tmp/clawx-openclaw-auth-user-data-${suffix}`,
+    testHome: `/tmp/deepclaw-openclaw-auth-${suffix}`,
+    testUserData: `/tmp/deepclaw-openclaw-auth-user-data-${suffix}`,
     getSettingMock: vi.fn(),
   };
 });
@@ -1698,7 +1698,7 @@ describe('syncOpenAiCompatibleImageRelay', () => {
     await rm(testUserData, { recursive: true, force: true });
   });
 
-  it('writes a ClawX-owned provider with a custom image base URL without changing OpenAI chat config', async () => {
+  it('writes a DeepClaw-owned provider with a custom image base URL without changing OpenAI chat config', async () => {
     await writeOpenClawJson({
       models: {
         providers: {
@@ -1718,7 +1718,7 @@ describe('syncOpenAiCompatibleImageRelay', () => {
     const result = await readOpenClawJson();
     const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
     const openai = providers.openai as Record<string, unknown>;
-    const imageRelay = providers['clawx-openai-image'] as Record<string, unknown>;
+    const imageRelay = providers['deepclaw-openai-image'] as Record<string, unknown>;
     expect(openai.baseUrl).toBe('https://api.openai.com/v1');
     expect(openai.api).toBe('openai-responses');
     expect(imageRelay.baseUrl).toBe('https://relay.example.com/v1');
@@ -1728,28 +1728,28 @@ describe('syncOpenAiCompatibleImageRelay', () => {
 
     const plugins = result.plugins as Record<string, unknown>;
     const entries = plugins.entries as Record<string, unknown>;
-    expect((entries['clawx-openai-image'] as Record<string, unknown>).enabled).toBe(true);
+    expect((entries['deepclaw-openai-image'] as Record<string, unknown>).enabled).toBe(true);
 
     const auth = await readAuthProfiles('main');
-    expect((auth.profiles['clawx-openai-image:default'] as Record<string, unknown>).key).toBe('sk-relay-test');
+    expect((auth.profiles['deepclaw-openai-image:default'] as Record<string, unknown>).key).toBe('sk-relay-test');
   });
 
-  it('removes only the ClawX image provider when relay is disabled', async () => {
+  it('removes only the DeepClaw image provider when relay is disabled', async () => {
     await writeOpenClawJson({
       models: {
         providers: {
           openai: { baseUrl: 'https://api.openai.com/v1', api: 'openai-responses', models: [] },
-          'clawx-openai-image': { baseUrl: 'https://relay.example.com/v1', api: 'openai-completions', models: [] },
+          'deepclaw-openai-image': { baseUrl: 'https://relay.example.com/v1', api: 'openai-completions', models: [] },
         },
       },
       agents: {
         defaults: {
-          imageGenerationModel: { primary: 'clawx-openai-image/gpt-image-2', timeoutMs: 180000 },
+          imageGenerationModel: { primary: 'deepclaw-openai-image/gpt-image-2', timeoutMs: 180000 },
         },
       },
       plugins: {
-        allow: ['clawx-openai-image'],
-        entries: { 'clawx-openai-image': { enabled: true } },
+        allow: ['deepclaw-openai-image'],
+        entries: { 'deepclaw-openai-image': { enabled: true } },
       },
     });
 
@@ -1759,7 +1759,7 @@ describe('syncOpenAiCompatibleImageRelay', () => {
     const result = await readOpenClawJson();
     const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
     expect(providers.openai).toEqual({ baseUrl: 'https://api.openai.com/v1', api: 'openai-responses', models: [] });
-    expect(providers['clawx-openai-image']).toBeUndefined();
+    expect(providers['deepclaw-openai-image']).toBeUndefined();
     const defaults = (result.agents as Record<string, unknown>).defaults as Record<string, unknown>;
     expect(defaults.imageGenerationModel).toBeUndefined();
     expect(result.plugins).toBeUndefined();
@@ -1980,7 +1980,7 @@ describe('batchSyncConfigFields', () => {
   });
 });
 
-describe('huanxing single-provider model config', () => {
+describe('deepclaw single-provider model config', () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.restoreAllMocks();
@@ -1988,9 +1988,9 @@ describe('huanxing single-provider model config', () => {
     await rm(testUserData, { recursive: true, force: true });
   });
 
-  it('writes a single huanxing provider with inline apiKey + nested models', async () => {
-    const { writeHuanxingModelConfig } = await import('@electron/utils/openclaw-auth');
-    await writeHuanxingModelConfig({
+  it('writes a single deepclaw provider with inline apiKey + nested models', async () => {
+    const { writeAccountModelConfig } = await import('@electron/utils/openclaw-auth');
+    await writeAccountModelConfig({
       baseUrl: 'https://relay.example.com/v1',
       apiKey: 'sk-test-123',
       models: [
@@ -2002,7 +2002,7 @@ describe('huanxing single-provider model config', () => {
 
     const config = await readOpenClawJson();
     const providers = ((config.models as Record<string, unknown>).providers) as Record<string, unknown>;
-    const entry = providers.huanxing as Record<string, unknown>;
+    const entry = providers.deepclaw as Record<string, unknown>;
     expect(entry.api).toBe('openai-completions');
     expect(entry.apiKey).toBe('sk-test-123');
     expect(entry.baseUrl).toBe('https://relay.example.com/v1');
@@ -2013,23 +2013,23 @@ describe('huanxing single-provider model config', () => {
 
     const defaults = ((config.agents as Record<string, unknown>).defaults) as Record<string, unknown>;
     const modelCfg = defaults.model as Record<string, unknown>;
-    expect(modelCfg.primary).toBe('huanxing/model-b');
+    expect(modelCfg.primary).toBe('deepclaw/model-b');
     // The non-primary model rotates into fallbacks.
-    expect(modelCfg.fallbacks).toEqual(['huanxing/model-a']);
+    expect(modelCfg.fallbacks).toEqual(['deepclaw/model-a']);
     // Each model is registered under agents.defaults.models.
-    expect(defaults.models).toEqual({ 'huanxing/model-b': {}, 'huanxing/model-a': {} });
+    expect(defaults.models).toEqual({ 'deepclaw/model-b': {}, 'deepclaw/model-a': {} });
   });
 
   it('preserves the existing inline key when saving without one', async () => {
-    const { writeHuanxingModelConfig } = await import('@electron/utils/openclaw-auth');
-    await writeHuanxingModelConfig({
+    const { writeAccountModelConfig } = await import('@electron/utils/openclaw-auth');
+    await writeAccountModelConfig({
       baseUrl: 'https://relay.example.com/v1',
       apiKey: 'sk-keep-me',
       models: [{ id: 'model-a', name: 'Model A' }],
       primaryModelId: 'model-a',
     });
     // Edit the model list without re-supplying the key.
-    await writeHuanxingModelConfig({
+    await writeAccountModelConfig({
       baseUrl: 'https://relay.example.com/v1',
       models: [
         { id: 'model-a', name: 'Renamed A' },
@@ -2039,62 +2039,62 @@ describe('huanxing single-provider model config', () => {
 
     const config = await readOpenClawJson();
     const providers = ((config.models as Record<string, unknown>).providers) as Record<string, unknown>;
-    const entry = providers.huanxing as Record<string, unknown>;
+    const entry = providers.deepclaw as Record<string, unknown>;
     expect(entry.apiKey).toBe('sk-keep-me');
     // Existing valid primary is kept when not overridden.
     const modelCfg = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>).model as Record<string, unknown>;
-    expect(modelCfg.primary).toBe('huanxing/model-a');
+    expect(modelCfg.primary).toBe('deepclaw/model-a');
   });
 
   it('reads back the config it wrote', async () => {
-    const { writeHuanxingModelConfig, readHuanxingModelConfig } = await import('@electron/utils/openclaw-auth');
-    await writeHuanxingModelConfig({
+    const { writeAccountModelConfig, readAccountModelConfig } = await import('@electron/utils/openclaw-auth');
+    await writeAccountModelConfig({
       baseUrl: 'https://relay.example.com/v1',
       apiKey: 'sk-test-123',
       models: [{ id: 'model-a', name: 'Model A', contextWindow: 64000 }],
       primaryModelId: 'model-a',
     });
 
-    const result = await readHuanxingModelConfig();
+    const result = await readAccountModelConfig();
     expect(result.baseUrl).toBe('https://relay.example.com/v1');
     expect(result.models).toEqual([{ id: 'model-a', name: 'Model A', contextWindow: 64000 }]);
-    expect(result.primary).toBe('huanxing/model-a');
+    expect(result.primary).toBe('deepclaw/model-a');
   });
 
-  it('exposes the inline key via getHuanxingApiKey but not in readHuanxingModelConfig', async () => {
-    const { writeHuanxingModelConfig, getHuanxingApiKey } = await import('@electron/utils/openclaw-auth');
-    await writeHuanxingModelConfig({
+  it('exposes the inline key via getAccountApiKey but not in readAccountModelConfig', async () => {
+    const { writeAccountModelConfig, getAccountApiKey } = await import('@electron/utils/openclaw-auth');
+    await writeAccountModelConfig({
       baseUrl: 'https://relay.example.com/v1',
       apiKey: 'sk-secret-xyz',
       models: [{ id: 'model-a', name: 'Model A' }],
       primaryModelId: 'model-a',
     });
-    expect(await getHuanxingApiKey()).toBe('sk-secret-xyz');
+    expect(await getAccountApiKey()).toBe('sk-secret-xyz');
   });
 
-  it('deletes the provider and strips all huanxing model references', async () => {
-    const { writeHuanxingModelConfig, deleteHuanxingProvider, readHuanxingModelConfig } = await import('@electron/utils/openclaw-auth');
-    // Seed a non-huanxing fallback to verify it survives deletion.
+  it('deletes the provider and strips all deepclaw model references', async () => {
+    const { writeAccountModelConfig, deleteAccountProvider, readAccountModelConfig } = await import('@electron/utils/openclaw-auth');
+    // Seed a non-deepclaw fallback to verify it survives deletion.
     await writeOpenClawJson({
       agents: { defaults: { model: { primary: 'other/x', fallbacks: ['other/x'] }, models: { 'other/x': {} } } },
     });
-    await writeHuanxingModelConfig({
+    await writeAccountModelConfig({
       baseUrl: 'https://relay.example.com/v1',
       apiKey: 'sk-test-123',
       models: [{ id: 'model-a', name: 'Model A' }],
       primaryModelId: 'model-a',
     });
-    await deleteHuanxingProvider();
+    await deleteAccountProvider();
 
     const config = await readOpenClawJson();
     const providers = ((config.models as Record<string, unknown>).providers) as Record<string, unknown>;
-    expect(providers.huanxing).toBeUndefined();
+    expect(providers.deepclaw).toBeUndefined();
 
-    const result = await readHuanxingModelConfig();
+    const result = await readAccountModelConfig();
     expect(result.models).toEqual([]);
     expect(result.primary).toBeNull();
 
-    // Non-huanxing references are untouched.
+    // Non-deepclaw references are untouched.
     const defaults = ((config.agents as Record<string, unknown>).defaults) as Record<string, unknown>;
     const modelCfg = defaults.model as Record<string, unknown>;
     expect(modelCfg.fallbacks).toEqual(['other/x']);

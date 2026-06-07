@@ -1,0 +1,21 @@
+{
+  "id": "frogclaw",
+  "appName": "FrogClaw",
+  "productName": "FrogClaw",
+  "executableName": "frogclaw",
+  "appId": "app.frogclaw.desktop",
+  "dataDirName": ".frogclaw",
+  "instanceLockName": "frogclaw",
+  "providerKey": "frogclaw",
+  "copyright": "Copyright © 2026 FrogClaw",
+  "vendor": "FrogClaw",
+  "maintainer": "FrogClaw Team <support@frogclaw.ai>",
+  "linuxWMClass": "frogclaw",
+  "tagline": "AI Assistant",
+  "urls": {
+    "github": "https://github.com/frogclaw/FrogClaw",
+    "issues": "https://github.com/frogclaw/FrogClaw/issues",
+    "updateFeed": "https://oss.intelli-spectrum.com/latest"
+  },
+  "assetsDir": "resources/brands/frogclaw"
+}

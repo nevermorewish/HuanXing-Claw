@@ -1,7 +1,7 @@
 import { definePluginEntry } from 'openclaw/plugin-sdk/core';
 import { createOpenAiCompatibleImageGenerationProvider, toImageDataUrl } from 'openclaw/plugin-sdk/image-generation';
 
-const PROVIDER_ID = 'clawx-openai-image';
+const PROVIDER_ID = 'deepclaw-openai-image';
 const DEFAULT_MODEL = 'gpt-image-2';
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_SIZE = '1024x1024';
@@ -33,7 +33,7 @@ function imageToDataUrl(image) {
 function buildProvider() {
   return createOpenAiCompatibleImageGenerationProvider({
     id: PROVIDER_ID,
-    label: 'ClawX OpenAI Images',
+    label: 'DeepClaw OpenAI Images',
     defaultModel: DEFAULT_MODEL,
     models: [DEFAULT_MODEL],
     defaultBaseUrl: DEFAULT_BASE_URL,
@@ -95,21 +95,21 @@ function buildProvider() {
     }),
     response: {
       defaultMimeType: 'image/png',
-      fileNamePrefix: 'clawx-image',
+      fileNamePrefix: 'deepclaw-image',
       sniffMimeType: true,
     },
-    missingApiKeyError: 'ClawX OpenAI image API key missing',
+    missingApiKeyError: 'DeepClaw OpenAI image API key missing',
     failureLabels: {
-      generate: 'ClawX OpenAI image generation failed',
-      edit: 'ClawX OpenAI image edit failed',
+      generate: 'DeepClaw OpenAI image generation failed',
+      edit: 'DeepClaw OpenAI image edit failed',
     },
   });
 }
 
 export const pluginEntry = definePluginEntry({
   id: PROVIDER_ID,
-  name: 'ClawX OpenAI Image',
-  description: 'Independent OpenAI-compatible image generation provider managed by ClawX.',
+  name: 'DeepClaw OpenAI Image',
+  description: 'Independent OpenAI-compatible image generation provider managed by DeepClaw.',
   register(api) {
     api.registerImageGenerationProvider(buildProvider());
   },

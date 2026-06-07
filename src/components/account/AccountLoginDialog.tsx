@@ -1,7 +1,7 @@
 /**
- * Huanxing Login Dialog
+ * Account Login Dialog
  *
- * Collects server URL + credentials, logs in via the main-process Huanxing
+ * Collects server URL + credentials, logs in via the main-process Account
  * session, then lets the user pick which fetched models to register as custom
  * provider accounts.
  */
@@ -17,27 +17,27 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useHuanxingStore, DEFAULT_HUANXING_URL } from '@/stores/huanxing';
-import { HUANXING_BRAND } from '@/lib/huanxing-brand';
+import { useAccountStore, DEFAULT_ACCOUNT_URL } from '@/stores/account';
+import { ACCOUNT_BRAND } from '@/lib/account-brand';
 
-interface HuanxingLoginDialogProps {
+interface AccountLoginDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
 type Step = 'credentials' | 'selectModels';
 
-export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogProps) {
-  const serverUrl = useHuanxingStore((s) => s.serverUrl);
-  const lastUsername = useHuanxingStore((s) => s.lastUsername);
-  const setServerUrl = useHuanxingStore((s) => s.setServerUrl);
-  const savedCredentials = useHuanxingStore((s) => s.savedCredentials);
-  const login = useHuanxingStore((s) => s.login);
-  const saveModels = useHuanxingStore((s) => s.saveModels);
-  const loadModelConfig = useHuanxingStore((s) => s.loadModelConfig);
+export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogProps) {
+  const serverUrl = useAccountStore((s) => s.serverUrl);
+  const lastUsername = useAccountStore((s) => s.lastUsername);
+  const setServerUrl = useAccountStore((s) => s.setServerUrl);
+  const savedCredentials = useAccountStore((s) => s.savedCredentials);
+  const login = useAccountStore((s) => s.login);
+  const saveModels = useAccountStore((s) => s.saveModels);
+  const loadModelConfig = useAccountStore((s) => s.loadModelConfig);
 
   const [step, setStep] = useState<Step>('credentials');
-  const [url, setUrl] = useState(serverUrl || DEFAULT_HUANXING_URL);
+  const [url, setUrl] = useState(serverUrl || DEFAULT_ACCOUNT_URL);
   const [username, setUsername] = useState(lastUsername);
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -62,7 +62,7 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
     if (initialisedRef.current) return;
     initialisedRef.current = true;
     setStep('credentials');
-    setUrl(serverUrl || DEFAULT_HUANXING_URL);
+    setUrl(serverUrl || DEFAULT_ACCOUNT_URL);
     setUsername(lastUsername);
     setPassword('');
     setError(null);
@@ -81,7 +81,7 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
         if (cancelled || !credentials) {
           return;
         }
-        setUrl((current) => current || credentials.baseUrl || DEFAULT_HUANXING_URL);
+        setUrl((current) => current || credentials.baseUrl || DEFAULT_ACCOUNT_URL);
         setUsername((current) => current || credentials.username);
         setPassword((current) => current || credentials.password);
       })
@@ -102,7 +102,7 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
     setSubmitting(true);
     setError(null);
     try {
-      setServerUrl(url.trim() || DEFAULT_HUANXING_URL);
+      setServerUrl(url.trim() || DEFAULT_ACCOUNT_URL);
       const fetched = await login(username.trim(), password);
       // Pre-select models that are already configured so re-login doesn't drop
       // them, plus every newly-fetched model.
@@ -149,7 +149,7 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
     setError(null);
     try {
       const count = await saveModels(Array.from(selected).map((id) => ({ id, name: id })));
-      toast.success(`已添加 ${count} 个 ${HUANXING_BRAND} 模型，可在「模型」页查看`);
+      toast.success(`已添加 ${count} 个 ${ACCOUNT_BRAND} 模型，可在「模型」页查看`);
       onOpenChange(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -166,10 +166,10 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
         {step === 'credentials' ? (
           <>
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
-              <LogIn size={18} /> 连接 {HUANXING_BRAND}
+              <LogIn size={18} /> 连接 {ACCOUNT_BRAND}
             </DialogTitle>
             <DialogDescription className="mt-1 text-sm text-muted-foreground">
-              登录到 {HUANXING_BRAND} API 服务，拉取可用模型并添加为可用的 Provider。
+              登录到 {ACCOUNT_BRAND} API 服务，拉取可用模型并添加为可用的 Provider。
             </DialogDescription>
 
             <div className="mt-4 space-y-3">
@@ -179,7 +179,7 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
                   id="hx-url"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  placeholder={DEFAULT_HUANXING_URL}
+                  placeholder={DEFAULT_ACCOUNT_URL}
                   disabled={submitting}
                 />
               </div>

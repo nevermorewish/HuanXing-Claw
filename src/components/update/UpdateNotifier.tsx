@@ -4,15 +4,15 @@ import { useTranslation } from 'react-i18next';
 import { useUpdateStore } from '@/stores/update';
 import { UpdateToast } from './UpdateToast';
 
-const AVAILABLE_TOAST_ID = 'clawx-update-available';
-const DOWNLOADED_TOAST_ID = 'clawx-update-downloaded';
+const AVAILABLE_TOAST_ID = 'deepclaw-update-available';
+const DOWNLOADED_TOAST_ID = 'deepclaw-update-downloaded';
 
 /**
  * Shows global update prompts outside the Settings page.
  *
  * The update store owns IPC communication; this component only reacts to
  * store state changes and presents user-facing actions via a custom
- * Sonner toast (`UpdateToast`) that follows the active ClawX theme.
+ * Sonner toast (`UpdateToast`) that follows the active DeepClaw theme.
  */
 export function UpdateNotifier() {
   const { t } = useTranslation('settings');

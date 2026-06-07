@@ -115,7 +115,7 @@ async function closeElectronApp(app: ElectronApplication, timeoutMs = 5_000): Pr
 }
 
 async function removeTempDir(path: string): Promise<void> {
-  if (process.platform === 'win32' && path.includes('clawx-e2e-home-')) {
+  if (process.platform === 'win32' && path.includes('deepclaw-e2e-home-')) {
     console.warn(`[e2e] Leaving temporary home directory on Windows to avoid locked external app files: ${path}`);
     return;
   }
@@ -139,7 +139,7 @@ async function seedE2eSettings(userDataDir: string): Promise<void> {
   await writeFile(settingsPath, JSON.stringify({ language: 'en' }, null, 2), 'utf-8');
 }
 
-async function launchClawXElectron(
+async function launchDeepClawElectron(
   homeDir: string,
   userDataDir: string,
   options: LaunchElectronOptions = {},
@@ -166,10 +166,10 @@ async function launchClawXElectron(
       LANG: 'en_US.UTF-8',
       LC_ALL: 'en_US.UTF-8',
       LANGUAGE: 'en',
-      CLAWX_E2E: '1',
-      CLAWX_USER_DATA_DIR: userDataDir,
-      ...(options.skipSetup ? { CLAWX_E2E_SKIP_SETUP: '1' } : {}),
-      CLAWX_PORT_CLAWX_HOST_API: String(hostApiPort),
+      DEEPCLAW_E2E: '1',
+      DEEPCLAW_USER_DATA_DIR: userDataDir,
+      ...(options.skipSetup ? { DEEPCLAW_E2E_SKIP_SETUP: '1' } : {}),
+      DEEPCLAW_PORT_APP_HOST_API: String(hostApiPort),
     },
     timeout: 90_000,
   });
@@ -177,7 +177,7 @@ async function launchClawXElectron(
 
 export const test = base.extend<ElectronFixtures>({
   homeDir: async ({ browserName: _browserName }, provideHomeDir) => {
-    const homeDir = await mkdtemp(join(tmpdir(), 'clawx-e2e-home-'));
+    const homeDir = await mkdtemp(join(tmpdir(), 'deepclaw-e2e-home-'));
     await mkdir(join(homeDir, '.config'), { recursive: true });
     await mkdir(join(homeDir, 'AppData', 'Local'), { recursive: true });
     await mkdir(join(homeDir, 'AppData', 'Roaming'), { recursive: true });
@@ -189,7 +189,7 @@ export const test = base.extend<ElectronFixtures>({
   },
 
   userDataDir: async ({ browserName: _browserName }, provideUserDataDir) => {
-    const userDataDir = await mkdtemp(join(tmpdir(), 'clawx-e2e-user-data-'));
+    const userDataDir = await mkdtemp(join(tmpdir(), 'deepclaw-e2e-user-data-'));
     try {
       await provideUserDataDir(userDataDir);
     } finally {
@@ -198,7 +198,7 @@ export const test = base.extend<ElectronFixtures>({
   },
 
   launchElectronApp: async ({ homeDir, userDataDir }, provideLauncher) => {
-    await provideLauncher(async (options?: LaunchElectronOptions) => await launchClawXElectron(homeDir, userDataDir, options));
+    await provideLauncher(async (options?: LaunchElectronOptions) => await launchDeepClawElectron(homeDir, userDataDir, options));
   },
 
   electronApp: async ({ launchElectronApp }, provideElectronApp) => {

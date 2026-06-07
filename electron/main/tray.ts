@@ -4,6 +4,7 @@
  */
 import { Tray, Menu, BrowserWindow, app, nativeImage } from 'electron';
 import { join } from 'path';
+import { BRAND } from '@shared/brand';
 
 let tray: Tray | null = null;
 
@@ -57,7 +58,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
   tray = new Tray(icon);
   
   // Set tooltip
-  tray.setToolTip('ClawX - AI Assistant');
+  tray.setToolTip(`${BRAND.appName} - ${BRAND.tagline}`);
   
   const showWindow = () => {
     if (mainWindow.isDestroyed()) return;
@@ -68,7 +69,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
   // Create context menu
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Show ClawX',
+      label: `Show ${BRAND.appName}`,
       click: showWindow,
     },
     {
@@ -122,7 +123,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
       type: 'separator',
     },
     {
-      label: 'Quit ClawX',
+      label: `Quit ${BRAND.appName}`,
       click: () => {
         app.quit();
       },
@@ -157,7 +158,7 @@ export function createTray(mainWindow: BrowserWindow): Tray {
  */
 export function updateTrayStatus(status: string): void {
   if (tray) {
-    tray.setToolTip(`ClawX - ${status}`);
+    tray.setToolTip(`${BRAND.appName} - ${status}`);
   }
 }
 

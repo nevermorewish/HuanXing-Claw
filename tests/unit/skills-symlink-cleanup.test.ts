@@ -52,7 +52,7 @@ describe('cleanupAgentsSymlinkedSkills', () => {
   let workspaceAgentsSkillsDir: string;
 
   beforeEach(() => {
-    root = mkdtempSync(path.join(tmpdir(), 'clawx-skills-cleanup-'));
+    root = mkdtempSync(path.join(tmpdir(), 'deepclaw-skills-cleanup-'));
     skillsDir = path.join(root, 'openclaw', 'skills');
     agentsRootDir = path.join(root, 'agents');
     agentsSkillsDir = path.join(agentsRootDir, 'skills');
@@ -339,7 +339,7 @@ describe('cleanupStalePluginRuntimeDeps', () => {
   let oldOpenClawDir: string;
 
   beforeEach(() => {
-    root = mkdtempSync(path.join(tmpdir(), 'clawx-runtime-deps-cleanup-'));
+    root = mkdtempSync(path.join(tmpdir(), 'deepclaw-runtime-deps-cleanup-'));
     runtimeDepsDir = path.join(root, 'openclaw', 'plugin-runtime-deps');
     currentOpenClawDir = path.join(root, 'current-worktree', 'node_modules', 'openclaw');
     oldOpenClawDir = path.join(root, 'old-worktree', 'node_modules', 'openclaw');

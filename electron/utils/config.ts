@@ -2,20 +2,21 @@
  * Application Configuration
  * Centralized configuration constants and helpers
  */
+import { BRAND } from '@shared/brand';
 
 /**
  * Port configuration
  */
 export const PORTS = {
-  /** ClawX GUI development server port */
-  CLAWX_DEV: 5173,
-  
-  /** ClawX GUI production port (for reference) */
-  CLAWX_GUI: 23333,
+  /** App GUI development server port */
+  APP_DEV: 5173,
+
+  /** App GUI production port (for reference) */
+  APP_GUI: 23333,
 
   /** Local host API server port */
-  CLAWX_HOST_API: 13210,
-  
+  APP_HOST_API: 13210,
+
   /** OpenClaw Gateway port */
   OPENCLAW_GATEWAY: 18789,
 } as const;
@@ -24,7 +25,7 @@ export const PORTS = {
  * Get port from environment or default
  */
 export function getPort(key: keyof typeof PORTS): number {
-  const envKey = `CLAWX_PORT_${key}`;
+  const envKey = `DEEPCLAW_PORT_${key}`;
   const envValue = process.env[envKey];
   return envValue ? parseInt(envValue, 10) : PORTS[key];
 }
@@ -35,12 +36,12 @@ export function getPort(key: keyof typeof PORTS): number {
 export const APP_PATHS = {
   /** OpenClaw configuration directory */
   OPENCLAW_CONFIG: '~/.openclaw',
-  
-  /** ClawX configuration directory */
-  CLAWX_CONFIG: '~/.clawx',
-  
+
+  /** Brand configuration directory */
+  BRAND_CONFIG: `~/${BRAND.dataDirName}`,
+
   /** Log files directory */
-  LOGS: '~/.clawx/logs',
+  LOGS: `~/${BRAND.dataDirName}/logs`,
 } as const;
 
 /**

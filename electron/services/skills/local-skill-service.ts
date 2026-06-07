@@ -225,7 +225,7 @@ async function readManifestMeta(skillDir: string): Promise<ManifestMeta | null> 
 }
 
 async function readPreinstalledMeta(skillDir: string): Promise<PreinstalledMeta | null> {
-  const parsed = await safeReadJson<Record<string, unknown>>(join(skillDir, '.clawx-preinstalled.json'));
+  const parsed = await safeReadJson<Record<string, unknown>>(join(skillDir, '.deepclaw-preinstalled.json'));
   if (!parsed) return null;
   return {
     slug: toStringValue(parsed.slug),

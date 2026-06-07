@@ -2,7 +2,7 @@
  * Self-hosted Monaco Editor loader.
  *
  * `@monaco-editor/react` defaults to fetching Monaco from a CDN, which
- * is unusable in clawx's offline Electron environment.  We instead bundle
+ * is unusable in deepclaw's offline Electron environment.  We instead bundle
  * the editor + its language workers locally via Vite's `?worker` import
  * so each preview overlay can spin up Monaco without any network.
  *

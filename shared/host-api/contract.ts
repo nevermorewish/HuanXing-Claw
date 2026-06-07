@@ -695,7 +695,7 @@ export type DeliveryChannelGroup = {
 };
 export type DeliveryTargetsResult = HostSuccess & { targets: DeliveryChannelGroup[] };
 
-export type HuanxingUser = {
+export type AccountUser = {
   id: number;
   username: string;
   displayName: string;
@@ -703,20 +703,20 @@ export type HuanxingUser = {
   status: number;
   group: string;
 };
-export type HuanxingLoginPayload = {
+export type AccountLoginPayload = {
   baseUrl: string;
   username: string;
   password: string;
 };
-export type HuanxingCredentials = {
+export type AccountCredentials = {
   baseUrl: string;
   username: string;
   password: string;
 };
-export type HuanxingCredentialsResult = HostSuccess & {
-  credentials?: HuanxingCredentials | null;
+export type AccountCredentialsResult = HostSuccess & {
+  credentials?: AccountCredentials | null;
 };
-export type HuanxingBalance = {
+export type AccountBalance = {
   /** Raw New-API quota units. */
   quota: number;
   /** Quota already consumed, in the same units. */
@@ -728,32 +728,32 @@ export type HuanxingBalance = {
   /** Resolved absolute URL of the server's top-up / recharge page. */
   topUpUrl: string;
 };
-export type HuanxingBalanceResult = HostSuccess & { balance?: HuanxingBalance };
-export type HuanxingLoginResult = HostSuccess & { user?: HuanxingUser };
-export type HuanxingSetupResult = HostSuccess & {
-  user?: HuanxingUser;
+export type AccountBalanceResult = HostSuccess & { balance?: AccountBalance };
+export type AccountLoginResult = HostSuccess & { user?: AccountUser };
+export type AccountSetupResult = HostSuccess & {
+  user?: AccountUser;
   baseUrl?: string;
   models?: string[];
   apiKey?: string;
 };
-export type HuanxingModelEntry = {
+export type AccountModelEntry = {
   id: string;
   name: string;
   contextWindow?: number;
   reasoning?: boolean;
 };
-export type HuanxingModelConfig = {
+export type AccountModelConfig = {
   baseUrl: string;
-  models: HuanxingModelEntry[];
+  models: AccountModelEntry[];
   primary: string | null;
 };
-export type HuanxingModelConfigResult = HostSuccess & { config?: HuanxingModelConfig };
-export type HuanxingSaveModelConfigPayload = {
-  models: HuanxingModelEntry[];
+export type AccountModelConfigResult = HostSuccess & { config?: AccountModelConfig };
+export type AccountSaveModelConfigPayload = {
+  models: AccountModelEntry[];
   primaryModelId?: string | null;
 };
-export type HuanxingModelIdPayload = { modelId: string };
-export type HuanxingTestModelResult = HostSuccess & { latencyMs?: number; reply?: string };
+export type AccountModelIdPayload = { modelId: string };
+export type AccountTestModelResult = HostSuccess & { latencyMs?: number; reply?: string };
 
 // ── Generic model-provider config (clawpanel-style, all providers) ──
 export type ModelProviderEntry = {
@@ -986,17 +986,17 @@ export type HostApiContract = {
   usage: {
     recentTokenHistory: (payload?: UsageHistoryPayload) => UsageHistoryEntry[];
   };
-  huanxing: {
-    login: (payload: HuanxingLoginPayload) => HuanxingLoginResult;
-    fetchSetup: () => HuanxingSetupResult;
-    savedCredentials: () => HuanxingCredentialsResult;
-    getBalance: () => HuanxingBalanceResult;
+  account: {
+    login: (payload: AccountLoginPayload) => AccountLoginResult;
+    fetchSetup: () => AccountSetupResult;
+    savedCredentials: () => AccountCredentialsResult;
+    getBalance: () => AccountBalanceResult;
     logout: () => HostSuccess;
-    getModelConfig: () => HuanxingModelConfigResult;
-    saveModelConfig: (payload: HuanxingSaveModelConfigPayload) => HuanxingModelConfigResult;
-    setPrimaryModel: (payload: HuanxingModelIdPayload) => HuanxingModelConfigResult;
-    deleteModel: (payload: HuanxingModelIdPayload) => HuanxingModelConfigResult;
-    testModel: (payload: HuanxingModelIdPayload) => HuanxingTestModelResult;
+    getModelConfig: () => AccountModelConfigResult;
+    saveModelConfig: (payload: AccountSaveModelConfigPayload) => AccountModelConfigResult;
+    setPrimaryModel: (payload: AccountModelIdPayload) => AccountModelConfigResult;
+    deleteModel: (payload: AccountModelIdPayload) => AccountModelConfigResult;
+    testModel: (payload: AccountModelIdPayload) => AccountTestModelResult;
   };
   modelProviders: {
     list: () => ListModelProvidersResult;
@@ -1006,7 +1006,7 @@ export type HostApiContract = {
     addModels: (payload: ModelProviderModelsPayload) => ListModelProvidersResult;
     deleteModel: (payload: ModelProviderModelPayload) => ListModelProvidersResult;
     editModel: (payload: ModelProviderEditModelPayload) => ListModelProvidersResult;
-    testModel: (payload: ModelProviderModelPayload) => HuanxingTestModelResult;
+    testModel: (payload: ModelProviderModelPayload) => AccountTestModelResult;
     fetchRemoteModels: (payload: ModelProviderKeyPayload) => FetchRemoteModelsResult;
   };
 };

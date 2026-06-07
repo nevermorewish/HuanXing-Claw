@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 let tempHome: string;
 
 beforeEach(() => {
-  tempHome = mkdtempSync(path.join(tmpdir(), 'clawx-uv-env-'));
+  tempHome = mkdtempSync(path.join(tmpdir(), 'deepclaw-uv-env-'));
   vi.resetModules();
 
   vi.doMock('os', async () => {
@@ -21,7 +21,7 @@ beforeEach(() => {
   vi.doMock('electron', () => ({
     app: {
       getLocale: vi.fn().mockReturnValue('en-US'),
-      getPath: vi.fn().mockReturnValue(path.join(tempHome, '.clawx')),
+      getPath: vi.fn().mockReturnValue(path.join(tempHome, '.deepclaw')),
       getAppPath: vi.fn().mockReturnValue(process.cwd()),
       getVersion: vi.fn().mockReturnValue('0.0.0-test'),
       isPackaged: false,
@@ -44,12 +44,12 @@ afterEach(() => {
 });
 
 describe('uv mirror environment', () => {
-  it('writes a ClawX-managed uv.toml under ~/.openclaw and exposes it via UV_CONFIG_FILE', async () => {
+  it('writes a DeepClaw-managed uv.toml under ~/.openclaw and exposes it via UV_CONFIG_FILE', async () => {
     const { getUvMirrorEnv } = await import('@electron/utils/uv-env');
 
     const env = await getUvMirrorEnv();
 
-    const expectedPath = path.join(tempHome, '.openclaw', 'clawx', 'uv.toml');
+    const expectedPath = path.join(tempHome, '.openclaw', 'deepclaw', 'uv.toml');
     expect(env.UV_INDEX_URL).toBe('https://pypi.tuna.tsinghua.edu.cn/simple/');
     expect(env.UV_PYTHON_INSTALL_MIRROR).toBe('https://registry.npmmirror.com/-/binary/python-build-standalone/');
     expect(env.UV_CONFIG_FILE).toBe(expectedPath);

@@ -1,7 +1,7 @@
 /**
  * Config Management API
  *
- * Ports clawpanel's "service management" config features to HuanXing-Claw:
+ * Ports clawpanel's "service management" config features to DeepClaw:
  *   - read / write the OpenClaw config file (openclaw.json)
  *   - validate the config (JSON + UI-field diagnostics)
  *   - calibrate the config (inherit / reset modes)
@@ -179,7 +179,7 @@ function stripUiFields(value: JsonValue): JsonValue {
 // ── Calibration helpers (ported from config.rs) ───────────────────
 
 function calibrationRequiredOrigins(): string[] {
-  // HuanXing-Claw / ClawX control-UI origins (replaces clawpanel's tauri:// origins).
+  // DeepClaw control-UI origins (replaces clawpanel's tauri:// origins).
   return [
     'http://localhost',
     'http://localhost:1420',

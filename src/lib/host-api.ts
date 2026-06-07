@@ -345,22 +345,22 @@ export const hostApi = {
       invokeHost('usage', 'recentTokenHistory', { limit })
     ),
   },
-  huanxing: {
+  account: {
     login: (input: { baseUrl: string; username: string; password: string }) => (
-      invokeHost('huanxing', 'login', input)
+      invokeHost('account', 'login', input)
     ),
-    fetchSetup: () => invokeHost('huanxing', 'fetchSetup'),
-    savedCredentials: () => invokeHost('huanxing', 'savedCredentials'),
-    getBalance: () => invokeHost('huanxing', 'getBalance'),
-    logout: () => invokeHost('huanxing', 'logout'),
-    getModelConfig: () => invokeHost('huanxing', 'getModelConfig'),
+    fetchSetup: () => invokeHost('account', 'fetchSetup'),
+    savedCredentials: () => invokeHost('account', 'savedCredentials'),
+    getBalance: () => invokeHost('account', 'getBalance'),
+    logout: () => invokeHost('account', 'logout'),
+    getModelConfig: () => invokeHost('account', 'getModelConfig'),
     saveModelConfig: (input: {
       models: Array<{ id: string; name: string; contextWindow?: number; reasoning?: boolean }>;
       primaryModelId?: string | null;
-    }) => invokeHost('huanxing', 'saveModelConfig', input),
-    setPrimaryModel: (input: { modelId: string }) => invokeHost('huanxing', 'setPrimaryModel', input),
-    deleteModel: (input: { modelId: string }) => invokeHost('huanxing', 'deleteModel', input),
-    testModel: (input: { modelId: string }) => invokeHost('huanxing', 'testModel', input),
+    }) => invokeHost('account', 'saveModelConfig', input),
+    setPrimaryModel: (input: { modelId: string }) => invokeHost('account', 'setPrimaryModel', input),
+    deleteModel: (input: { modelId: string }) => invokeHost('account', 'deleteModel', input),
+    testModel: (input: { modelId: string }) => invokeHost('account', 'testModel', input),
   },
   modelProviders: {
     list: () => invokeHost('modelProviders', 'list'),

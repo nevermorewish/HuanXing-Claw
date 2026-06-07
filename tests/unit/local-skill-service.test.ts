@@ -37,7 +37,7 @@ describe('local skill service', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    const homeDir = mkdtempSync(join(tmpdir(), 'clawx-local-skills-home-'));
+    const homeDir = mkdtempSync(join(tmpdir(), 'deepclaw-local-skills-home-'));
     homedirMock.mockReturnValue(homeDir);
     vi.stubEnv('HOME', homeDir);
     vi.stubEnv('USERPROFILE', homeDir);
@@ -48,7 +48,7 @@ describe('local skill service', () => {
   });
 
   it('includes bundled skill-creator but filters out other bundled openclaw skills', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'clawx-local-skills-'));
+    const root = mkdtempSync(join(tmpdir(), 'deepclaw-local-skills-'));
     const managedRoot = join(root, 'managed');
     const bundledRoot = join(root, 'openclaw');
 
@@ -79,7 +79,7 @@ describe('local skill service', () => {
   });
 
   it('does not invent a default version when local metadata has no version', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'clawx-local-skills-versionless-'));
+    const root = mkdtempSync(join(tmpdir(), 'deepclaw-local-skills-versionless-'));
     const managedRoot = join(root, 'managed');
 
     mkdirSync(join(managedRoot, 'self-improvement'), { recursive: true });
@@ -98,7 +98,7 @@ describe('local skill service', () => {
   });
 
   it('shows manifest versions and ignores preinstalled hash-only versions', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'clawx-local-skills-placeholder-version-'));
+    const root = mkdtempSync(join(tmpdir(), 'deepclaw-local-skills-placeholder-version-'));
     const managedRoot = join(root, 'managed');
 
     mkdirSync(join(managedRoot, 'pdf'), { recursive: true });
@@ -107,7 +107,7 @@ describe('local skill service', () => {
 
     mkdirSync(join(managedRoot, 'docx'), { recursive: true });
     writeFileSync(join(managedRoot, 'docx', 'SKILL.md'), '---\nname: docx\ndescription: preinstalled hash version skill\n---\n');
-    writeFileSync(join(managedRoot, 'docx', '.clawx-preinstalled.json'), JSON.stringify({ slug: 'docx', version: 'da20c92503b2e8ff1cf28ca81a0df4673debdbf7' }));
+    writeFileSync(join(managedRoot, 'docx', '.deepclaw-preinstalled.json'), JSON.stringify({ slug: 'docx', version: 'da20c92503b2e8ff1cf28ca81a0df4673debdbf7' }));
 
     mkdirSync(join(managedRoot, 'custom-skill'), { recursive: true });
     writeFileSync(join(managedRoot, 'custom-skill', 'SKILL.md'), '---\nname: custom-skill\ndescription: custom version skill\n---\n');

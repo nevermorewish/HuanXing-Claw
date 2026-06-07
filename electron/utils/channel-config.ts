@@ -30,12 +30,12 @@ const DEFAULT_ACCOUNT_ID = 'default';
 // Channels whose top-level schema (additionalProperties:false) does NOT
 // include `defaultAccount`.  We still use the multi-account `accounts`
 // map, but strip `defaultAccount` before persisting to avoid plugin
-// schema validation errors.  ClawX falls back to DEFAULT_ACCOUNT_ID
+// schema validation errors.  DeepClaw falls back to DEFAULT_ACCOUNT_ID
 // when `defaultAccount` is absent.
 const CHANNELS_OMIT_DEFAULT_ACCOUNT_KEY = new Set(['dingtalk']);
 
 // Channels whose schema accepts a top-level default account and account map,
-// but whose account payload contains nested strict-schema objects that ClawX
+// but whose account payload contains nested strict-schema objects that DeepClaw
 // can accidentally make invalid by adding UI convenience fields.  Keep this
 // sanitization narrowly scoped to known nested maps so local config remains
 // OpenClaw-compatible after a save.
@@ -108,7 +108,7 @@ function sanitizeDiscordGuildChannelConfig(channelConfig: unknown): void {
 
     const record = channelConfig as Record<string, unknown>;
 
-    // Backward compatibility for the older ClawX-generated shape:
+    // Backward compatibility for the older DeepClaw-generated shape:
     //   channels: { "123": { allow: true, requireMention: true } }
     // OpenClaw's current DiscordGuildChannelConfig does not include `allow`;
     // represent deny/allow using `enabled` instead.
@@ -845,7 +845,7 @@ export async function saveChannelConfig(
         syncBuiltinChannelsWithPluginAllowlist(currentConfig, [resolvedChannelType]);
 
         // Plugin-based channels are mirrored into plugins.entries.<id> below,
-        // but ClawX still keeps channels.<id> as the local account-list source.
+        // but DeepClaw still keeps channels.<id> as the local account-list source.
 
         if (!currentConfig.channels) {
             currentConfig.channels = {};
@@ -894,7 +894,7 @@ export async function saveChannelConfig(
 
         // Plugin-backed channel packages read their activation/config from
         // plugins.entries.<id>. Mirror the enabled flag and account map there
-        // while preserving channels.<id> for ClawX's account list UI.
+        // while preserving channels.<id> for DeepClaw's account list UI.
         if (PLUGIN_CHANNELS.includes(resolvedChannelType)) {
             ensurePluginRegistration(currentConfig, resolvedChannelType);
             const pluginEntry = currentConfig.plugins!.entries![resolvedChannelType];

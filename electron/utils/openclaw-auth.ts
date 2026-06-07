@@ -14,6 +14,7 @@ import { dirname, join } from 'path';
 import { homedir } from 'os';
 import { listConfiguredAgentIds } from './agent-config';
 import { getOpenClawResolvedDir } from './paths';
+import { BRAND } from '@shared/brand';
 import {
   getProviderEnvVar,
   getProviderDefaultModel,
@@ -36,8 +37,8 @@ import {
   type OpenClawApiProtocol,
 } from '../shared/providers/types';
 import {
-  CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
-  CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
+  DEEPCLAW_OPENAI_IMAGE_DEFAULT_MODEL,
+  DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY,
 } from './openclaw-image-relay-constants';
 
 const AUTH_STORE_VERSION = 1;
@@ -459,7 +460,7 @@ function getApiKeyFromAuthProfilesStore(
 /**
  * Read the API key OpenClaw will use for a runtime provider key.
  *
- * This intentionally reads auth-profiles.json rather than ClawX's provider
+ * This intentionally reads auth-profiles.json rather than DeepClaw's provider
  * cache, so UI status can reflect providers imported or preserved by the
  * OpenClaw runtime across overwrite installs.
  */
@@ -1069,21 +1070,21 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
   }
 }
 
-// ── Huanxing single-provider model config ────────────────────────
+// ── Account single-provider model config ────────────────────────
 //
-// Huanxing registers as ONE openclaw.json provider (`models.providers.huanxing`)
+// Account registers as ONE openclaw.json provider (`models.providers.account`)
 // holding many nested models, mirroring the `qtcool` template the user runs:
 //   { api: 'openai-completions', apiKey: '<sk-…>', baseUrl, models: [{id,name,…}] }
-// plus `agents.defaults.model.primary = 'huanxing/<id>'`, the rest rotated into
-// `fallbacks`, and one `agents.defaults.models['huanxing/<id>'] = {}` per model.
+// plus `agents.defaults.model.primary = 'account/<id>'`, the rest rotated into
+// `fallbacks`, and one `agents.defaults.models['account/<id>'] = {}` per model.
 //
 // The API key is stored INLINE on the entry (not auth-profiles / apiKeyEnv) —
-// `huanxing` is not a registry provider, and inline keys are the proven path for
+// `account` is not a registry provider, and inline keys are the proven path for
 // such entries (see the user's working `qtcool` config).
 
-export const HUANXING_PROVIDER_KEY = 'huanxing';
+export const ACCOUNT_PROVIDER_KEY = BRAND.providerKey;
 
-export interface HuanxingModelEntry {
+export interface AccountModelEntry {
   id: string;
   name: string;
   contextWindow?: number;
@@ -1091,11 +1092,11 @@ export interface HuanxingModelEntry {
 }
 
 /** A model entry on a provider — same shape regardless of provider. */
-export type ProviderModelEntry = HuanxingModelEntry;
+export type ProviderModelEntry = AccountModelEntry;
 
-export interface HuanxingModelConfigData {
+export interface AccountModelConfigData {
   baseUrl: string;
-  models: HuanxingModelEntry[];
+  models: AccountModelEntry[];
   primary: string | null;
 }
 
@@ -1118,7 +1119,7 @@ function maskProviderApiKey(value: unknown): string | null {
 }
 
 /** Normalize a raw model entry from config into our shape. */
-function normalizeHuanxingModelEntry(value: unknown): HuanxingModelEntry | null {
+function normalizeAccountModelEntry(value: unknown): AccountModelEntry | null {
   if (typeof value === 'string') {
     return value.trim() ? { id: value, name: value } : null;
   }
@@ -1126,7 +1127,7 @@ function normalizeHuanxingModelEntry(value: unknown): HuanxingModelEntry | null 
   const record = value as Record<string, unknown>;
   const id = typeof record.id === 'string' ? record.id.trim() : '';
   if (!id) return null;
-  const entry: HuanxingModelEntry = {
+  const entry: AccountModelEntry = {
     id,
     name: typeof record.name === 'string' && record.name.trim() ? record.name : id,
   };
@@ -1154,7 +1155,7 @@ export async function readProviderModelConfig(key: string): Promise<ProviderMode
     : 'openai-completions') as OpenClawApiProtocol;
   const rawModels = entry && Array.isArray(entry.models) ? entry.models : [];
   const modelList = rawModels
-    .map(normalizeHuanxingModelEntry)
+    .map(normalizeAccountModelEntry)
     .filter((m): m is ProviderModelEntry => m != null);
   const rawKey = entry && typeof entry.apiKey === 'string' ? entry.apiKey : '';
 
@@ -1214,7 +1215,7 @@ export async function writeProviderModelConfig(
       : {};
 
     const cleanModels = input.models
-      .map(normalizeHuanxingModelEntry)
+      .map(normalizeAccountModelEntry)
       .filter((m): m is ProviderModelEntry => m != null);
 
     // Preserve an existing inline key when the caller doesn't supply one.
@@ -1356,7 +1357,7 @@ export async function listAllProvidersConfig(): Promise<{
     const entry = raw as Record<string, unknown>;
     const rawModels = Array.isArray(entry.models) ? entry.models : [];
     const modelList = rawModels
-      .map(normalizeHuanxingModelEntry)
+      .map(normalizeAccountModelEntry)
       .filter((m): m is ProviderModelEntry => m != null);
     const rawKey = typeof entry.apiKey === 'string' ? entry.apiKey : '';
     result.push({
@@ -1396,7 +1397,7 @@ export async function setPrimaryModelRef(modelRef: string): Promise<void> {
       : null;
     const entryModels = entry && Array.isArray(entry.models) ? entry.models : [];
     const exists = entryModels
-      .map(normalizeHuanxingModelEntry)
+      .map(normalizeAccountModelEntry)
       .some((m) => m?.id === modelId);
     if (!exists) {
       throw new Error(`模型不存在: ${modelRef}`);
@@ -1455,26 +1456,26 @@ export async function getProviderApiKey(key: string): Promise<string | null> {
   return entry && typeof entry.apiKey === 'string' && entry.apiKey ? entry.apiKey : null;
 }
 
-export interface HuanxingModelConfigData {
+export interface AccountModelConfigData {
   baseUrl: string;
-  models: HuanxingModelEntry[];
+  models: AccountModelEntry[];
   primary: string | null;
 }
 
-/** Read the huanxing provider entry + default model. Delegates to the generic reader. */
-export async function readHuanxingModelConfig(): Promise<HuanxingModelConfigData> {
-  const config = await readProviderModelConfig(HUANXING_PROVIDER_KEY);
+/** Read the account provider entry + default model. Delegates to the generic reader. */
+export async function readAccountModelConfig(): Promise<AccountModelConfigData> {
+  const config = await readProviderModelConfig(ACCOUNT_PROVIDER_KEY);
   return { baseUrl: config.baseUrl, models: config.models, primary: config.primary };
 }
 
-/** Write the huanxing provider (always openai-completions). Delegates to the generic writer. */
-export async function writeHuanxingModelConfig(input: {
+/** Write the account provider (always openai-completions). Delegates to the generic writer. */
+export async function writeAccountModelConfig(input: {
   baseUrl: string;
   apiKey?: string;
-  models: HuanxingModelEntry[];
+  models: AccountModelEntry[];
   primaryModelId?: string | null;
 }): Promise<void> {
-  await writeProviderModelConfig(HUANXING_PROVIDER_KEY, {
+  await writeProviderModelConfig(ACCOUNT_PROVIDER_KEY, {
     baseUrl: input.baseUrl,
     api: 'openai-completions',
     apiKey: input.apiKey,
@@ -1483,21 +1484,21 @@ export async function writeHuanxingModelConfig(input: {
   });
 }
 
-/** Read the inline `sk-` API key stored on the huanxing provider entry. */
-export async function getHuanxingApiKey(): Promise<string | null> {
-  return getProviderApiKey(HUANXING_PROVIDER_KEY);
+/** Read the inline `sk-` API key stored on the account provider entry. */
+export async function getAccountApiKey(): Promise<string | null> {
+  return getProviderApiKey(ACCOUNT_PROVIDER_KEY);
 }
 
-/** Remove the huanxing provider entry and all `huanxing/*` model references. */
-export async function deleteHuanxingProvider(): Promise<void> {
+/** Remove the account provider entry and all `account/*` model references. */
+export async function deleteAccountProvider(): Promise<void> {
   await withConfigLock(async () => {
     const config = await readOpenClawJson();
-    const prefix = `${HUANXING_PROVIDER_KEY}/`;
+    const prefix = `${ACCOUNT_PROVIDER_KEY}/`;
 
     const models = config.models as Record<string, unknown> | undefined;
     const providers = (models?.providers ?? {}) as Record<string, unknown>;
-    if (providers[HUANXING_PROVIDER_KEY]) {
-      delete providers[HUANXING_PROVIDER_KEY];
+    if (providers[ACCOUNT_PROVIDER_KEY]) {
+      delete providers[ACCOUNT_PROVIDER_KEY];
     }
 
     const agents = config.agents as Record<string, unknown> | undefined;
@@ -1723,7 +1724,7 @@ function mergeProviderModels(
 /**
  * OpenClaw 2026.5+ requires a positive `maxTokens` on each model (and can
  * fall back to provider-level `maxTokens`) when `api` is `anthropic-messages`.
- * ClawX-written entries historically only included `{ id, name }`.
+ * DeepClaw-written entries historically only included `{ id, name }`.
  *
  * Generic Anthropic-compatible providers should not be capped at 8k by
  * default: OpenClaw's native Anthropic transport caps default requests at 32k
@@ -1904,7 +1905,7 @@ export async function ensureAnthropicMessagesModelMaxTokens(): Promise<string[]>
  *
  * OpenClaw 2026.5+ auto-routes OpenAI providers (`openai`, `openai-codex`) to the
  * external `codex` agent harness, which expects a separate codex plugin install.
- * The bundled OpenClaw distribution ClawX ships does not register that harness,
+ * The bundled OpenClaw distribution DeepClaw ships does not register that harness,
  * so without pinning both keys chat fails with
  * `Requested agent harness "codex" is not registered.`
  */
@@ -2032,9 +2033,9 @@ function upsertOpenClawProviderEntry(
  *
  * Mirrors {@link pruneInvalidApiProviderEntries} — invoked opportunistically
  * before a default-provider switch so that pre-existing on-disk entries
- * (written by earlier ClawX builds that did not pin the runtime) get
+ * (written by earlier DeepClaw builds that did not pin the runtime) get
  * repaired before the next Gateway reload picks them up. Without this, users
- * who upgrade ClawX while still pointing at an OpenAI provider would keep
+ * who upgrade DeepClaw while still pointing at an OpenAI provider would keep
  * hitting `Requested agent harness "codex" is not registered.` until they
  * re-saved the provider manually.
  *
@@ -2216,7 +2217,7 @@ function ensurePluginRegistrationEnabled(config: Record<string, unknown>, plugin
 }
 
 /**
- * Configure a ClawX-owned OpenAI-compatible image provider.
+ * Configure a DeepClaw-owned OpenAI-compatible image provider.
  * This intentionally uses a separate provider key from `openai` so chat model
  * routing and OpenAI API/OAuth credentials remain untouched.
  */
@@ -2232,8 +2233,8 @@ export async function syncOpenAiCompatibleImageRelay(params: {
     if (!params.enabled) {
       const models = (config.models || {}) as Record<string, unknown>;
       const providers = (models.providers || {}) as Record<string, unknown>;
-      if (providers[CLAWX_OPENAI_IMAGE_PROVIDER_KEY]) {
-        delete providers[CLAWX_OPENAI_IMAGE_PROVIDER_KEY];
+      if (providers[DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY]) {
+        delete providers[DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY];
         models.providers = providers;
         config.models = models;
       }
@@ -2245,14 +2246,14 @@ export async function syncOpenAiCompatibleImageRelay(params: {
       const primary = typeof imageGenerationModel?.primary === 'string'
         ? imageGenerationModel.primary.trim().toLowerCase()
         : '';
-      if (defaults && primary.startsWith(`${CLAWX_OPENAI_IMAGE_PROVIDER_KEY}/`)) {
+      if (defaults && primary.startsWith(`${DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY}/`)) {
         delete defaults.imageGenerationModel;
       }
-      removePluginRegistrations(config, [CLAWX_OPENAI_IMAGE_PROVIDER_KEY]);
+      removePluginRegistrations(config, [DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY]);
       await writeOpenClawJson(config);
-      await removeProviderKeyFromOpenClaw(CLAWX_OPENAI_IMAGE_PROVIDER_KEY);
+      await removeProviderKeyFromOpenClaw(DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY);
       if (params.apiKey?.trim()) {
-        await saveProviderKeyToOpenClaw(CLAWX_OPENAI_IMAGE_PROVIDER_KEY, params.apiKey.trim());
+        await saveProviderKeyToOpenClaw(DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY, params.apiKey.trim());
       }
       return;
     }
@@ -2262,20 +2263,20 @@ export async function syncOpenAiCompatibleImageRelay(params: {
       .map((id) => id.trim())
       .filter(Boolean))];
     if (modelIds.length === 0) {
-      modelIds.push(CLAWX_OPENAI_IMAGE_DEFAULT_MODEL);
+      modelIds.push(DEEPCLAW_OPENAI_IMAGE_DEFAULT_MODEL);
     }
-    upsertOpenClawProviderEntry(config, CLAWX_OPENAI_IMAGE_PROVIDER_KEY, {
+    upsertOpenClawProviderEntry(config, DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY, {
       baseUrl,
       api: 'openai-completions',
       modelIds,
       mergeExistingModels: false,
       request: { allowPrivateNetwork: true },
     });
-    ensurePluginRegistrationEnabled(config, CLAWX_OPENAI_IMAGE_PROVIDER_KEY);
+    ensurePluginRegistrationEnabled(config, DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY);
     await writeOpenClawJson(config);
 
     if (params.apiKey?.trim()) {
-      await saveProviderKeyToOpenClaw(CLAWX_OPENAI_IMAGE_PROVIDER_KEY, params.apiKey.trim());
+      await saveProviderKeyToOpenClaw(DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY, params.apiKey.trim());
     }
   });
 }
@@ -2283,14 +2284,14 @@ export async function syncOpenAiCompatibleImageRelay(params: {
 export function readOpenAiCompatibleImageRelayState(
   config: Record<string, unknown>,
 ): { enabled: boolean; baseUrl: string; providerKey?: string } {
-  const clawxRelay = readModelsProvider(config, CLAWX_OPENAI_IMAGE_PROVIDER_KEY);
-  const relayBaseUrl = typeof clawxRelay?.baseUrl === 'string' ? clawxRelay.baseUrl.trim() : '';
+  const deepclawRelay = readModelsProvider(config, DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY);
+  const relayBaseUrl = typeof deepclawRelay?.baseUrl === 'string' ? deepclawRelay.baseUrl.trim() : '';
   if (relayBaseUrl) {
-    return { enabled: true, baseUrl: relayBaseUrl, providerKey: CLAWX_OPENAI_IMAGE_PROVIDER_KEY };
+    return { enabled: true, baseUrl: relayBaseUrl, providerKey: DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY };
   }
 
-  // Backward compatibility for ClawX builds that used models.providers.openai
-  // for image relay. New saves move to the ClawX-owned provider above.
+  // Backward compatibility for DeepClaw builds that used models.providers.openai
+  // for image relay. New saves move to the DeepClaw-owned provider above.
   const openai = readModelsProvidersOpenAi(config);
   const baseUrl = typeof openai?.baseUrl === 'string' ? openai.baseUrl.trim() : '';
   if (!baseUrl || baseUrl === OFFICIAL_OPENAI_API_BASE_URL) {
@@ -2425,7 +2426,7 @@ export async function getActiveOpenClawProviders(): Promise<Set<string>> {
 
 /**
  * Read models.providers entries and agents.defaults.model from openclaw.json.
- * Used by ClawX to seed the provider store when it's empty but providers are
+ * Used by DeepClaw to seed the provider store when it's empty but providers are
  * configured externally (e.g. via CLI or by editing openclaw.json directly).
  */
 export async function getOpenClawProvidersConfig(): Promise<{
@@ -2486,7 +2487,7 @@ function applyControlUiAllowedOrigins(controlUi: Record<string, unknown>, port: 
 }
 
 /**
- * Write the ClawX gateway token into ~/.openclaw/openclaw.json.
+ * Write the DeepClaw gateway token into ~/.openclaw/openclaw.json.
  */
 export async function syncGatewayTokenToConfig(token: string): Promise<void> {
   return withConfigLock(async () => {
@@ -2623,7 +2624,7 @@ export async function syncBrowserConfigToOpenClaw(): Promise<void> {
  * Ensure session idle-reset is configured in ~/.openclaw/openclaw.json.
  *
  * By default OpenClaw resets the "main" session daily at 04:00 local time,
- * which means conversations disappear after roughly one day.  ClawX sets
+ * which means conversations disappear after roughly one day.  DeepClaw sets
  * `session.idleMinutes` to 10 080 (7 days) so that conversations are
  * preserved for a week unless the user has explicitly configured their own
  * value.  When `idleMinutes` is set without `session.reset` /
@@ -2860,7 +2861,7 @@ export async function updateSingleAgentModelProvider(
  * Removes known-invalid keys that cause OpenClaw's strict Zod validation
  * to reject the entire config on startup.  Uses a conservative **blocklist**
  * approach: only strips keys that are KNOWN to be misplaced by older
- * OpenClaw/ClawX versions or external tools.
+ * OpenClaw/DeepClaw versions or external tools.
  *
  * Why blocklist instead of allowlist?
  *   • Allowlist (e.g. `VALID_SKILLS_KEYS`) would strip any NEW valid keys
@@ -3039,7 +3040,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
     // ── tools.profile & sessions.visibility ───────────────────────
     // OpenClaw 3.8+ requires tools.profile = 'full' and tools.sessions.visibility = 'all'
-    // for ClawX to properly integrate with its updated tool system.
+    // for DeepClaw to properly integrate with its updated tool system.
     const toolsConfig = (config.tools as Record<string, unknown> | undefined) || {};
     let toolsModified = false;
 
@@ -3056,7 +3057,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     // ── tools.exec approvals (OpenClaw 3.28+) ──────────────────────
-    // ClawX is a local desktop app where the user is the trusted operator.
+    // DeepClaw is a local desktop app where the user is the trusted operator.
     // Exec approval prompts add unnecessary friction in this context, so we
     // set security="full" (allow all commands) and ask="off" (never prompt).
     // If a user has manually configured a stricter ~/.openclaw/exec-approvals.json,
@@ -3067,7 +3068,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       execConfig.ask = 'off';
       toolsConfig.exec = execConfig;
       toolsModified = true;
-      console.log('[sanitize] Set tools.exec.security="full" and tools.exec.ask="off" to disable exec approvals for ClawX desktop');
+      console.log('[sanitize] Set tools.exec.security="full" and tools.exec.ask="off" to disable exec approvals for DeepClaw desktop');
     }
 
     if (toolsModified) {
@@ -3311,7 +3312,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
 
       // ── Remove legacy built-in 'feishu' registration ───────────────
-      // ClawX bundles Feishu via the official @larksuite/openclaw-lark
+      // DeepClaw bundles Feishu via the official @larksuite/openclaw-lark
       // plugin and removes the old built-in dist/extensions/feishu tree.
       // Keeping plugins.entries.feishu={enabled:false} looks harmless, but
       // OpenClaw's channel startup planner treats it as an explicit blocker
@@ -3358,7 +3359,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
       // Discover all bundled extension IDs so we can clean stale bundled
       // allowlist entries from older OpenClaw versions. Re-add only the
-      // ClawX-critical bundled plugins, active provider plugins, and explicitly
+      // DeepClaw-critical bundled plugins, active provider plugins, and explicitly
       // enabled bundled plugins — not every enabledByDefault provider plugin.
       const bundled = discoverBundledPlugins();
       const installedExtensionIds = await discoverInstalledExtensionPluginIds();

@@ -3,8 +3,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import {
-  CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
-  CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
+  DEEPCLAW_OPENAI_IMAGE_DEFAULT_MODEL,
+  DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY,
 } from '../utils/openclaw-image-relay-constants';
 import {
   applyOpenAiImageRelaySettings,
@@ -177,14 +177,14 @@ export function createMediaApi(): CompleteHostServiceRegistry['media'] {
       const normalizeRelayModel = (value: unknown): string => {
         const raw = typeof value === 'string' && value.trim()
           ? value.trim()
-          : (current.openAiRelay.model || CLAWX_OPENAI_IMAGE_DEFAULT_MODEL);
+          : (current.openAiRelay.model || DEEPCLAW_OPENAI_IMAGE_DEFAULT_MODEL);
         const slash = raw.indexOf('/');
-        return (slash > 0 ? raw.slice(slash + 1) : raw).trim() || CLAWX_OPENAI_IMAGE_DEFAULT_MODEL;
+        return (slash > 0 ? raw.slice(slash + 1) : raw).trim() || DEEPCLAW_OPENAI_IMAGE_DEFAULT_MODEL;
       };
       const relayModel = normalizeRelayModel(body.openAiRelayModel);
       let nextPrimary = current.config.primary;
       if (body.openAiRelayEnabled === true) {
-        nextPrimary = `${CLAWX_OPENAI_IMAGE_PROVIDER_KEY}/${relayModel}`;
+        nextPrimary = `${DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY}/${relayModel}`;
       } else if (body.openAiRelayEnabled === false) {
         nextPrimary = null;
       }

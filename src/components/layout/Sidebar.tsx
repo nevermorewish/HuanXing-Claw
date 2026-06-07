@@ -42,10 +42,11 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { hostApi } from '@/lib/host-api';
-import { HuanxingLoginButton } from '@/components/huanxing/HuanxingLoginButton';
+import { AccountLoginButton } from '@/components/account/AccountLoginButton';
 import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '@shared/sidebar-layout';
+import { BRAND } from '@shared/brand';
 import { useTranslation } from 'react-i18next';
-import logoSvg from '@/assets/logo.svg';
+import logoSvg from '@/assets/brand-logo.generated.svg';
 import { useNewChatAction } from './use-new-chat-action';
 
 interface NavItemProps {
@@ -372,9 +373,9 @@ export function Sidebar() {
       >
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2 px-2 overflow-hidden">
-            <img src={logoSvg} alt="ClawX" className="h-5 w-auto shrink-0" />
+            <img src={logoSvg} alt={BRAND.appName} className="h-5 w-auto shrink-0" />
             <span className="text-sm font-semibold truncate whitespace-nowrap text-foreground/90">
-              ClawX
+              {BRAND.appName}
             </span>
           </div>
         )}
@@ -600,7 +601,7 @@ export function Sidebar() {
           </>
         </NavLink>
 
-        <HuanxingLoginButton collapsed={sidebarCollapsed} />
+        <AccountLoginButton collapsed={sidebarCollapsed} />
 
         {devModeUnlocked && (
           <Button

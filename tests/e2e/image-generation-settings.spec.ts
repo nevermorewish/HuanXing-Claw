@@ -65,7 +65,7 @@ test.describe('Image generation settings page', () => {
             json: {
               success: true,
               config: {
-                primary: 'clawx-openai-image/gpt-image-2',
+                primary: 'deepclaw-openai-image/gpt-image-2',
                 fallbacks: [],
                 timeoutMs: 180000,
               },
@@ -76,7 +76,7 @@ test.describe('Image generation settings page', () => {
                   id: 'default',
                   name: 'Default',
                   isDefault: true,
-                  provider: 'clawx-openai-image',
+                  provider: 'deepclaw-openai-image',
                   configured: true,
                 },
               ],
@@ -84,7 +84,7 @@ test.describe('Image generation settings page', () => {
                 enabled: true,
                 baseUrl: 'https://api.example.com/v1',
                 model: 'gpt-image-2',
-                providerKey: 'clawx-openai-image',
+                providerKey: 'deepclaw-openai-image',
                 apiKeyConfigured: true,
               },
             },
@@ -109,7 +109,7 @@ test.describe('Image generation settings page', () => {
     const configuredResponse = {
       success: true,
       config: {
-        primary: 'clawx-openai-image/gpt-image-2',
+        primary: 'deepclaw-openai-image/gpt-image-2',
         fallbacks: [],
         timeoutMs: 180000,
       },
@@ -128,7 +128,7 @@ test.describe('Image generation settings page', () => {
         enabled: true,
         baseUrl: 'https://api.example.com/v1',
         model: 'gpt-image-2',
-        providerKey: 'clawx-openai-image',
+        providerKey: 'deepclaw-openai-image',
         apiKeyConfigured: true,
       },
     };

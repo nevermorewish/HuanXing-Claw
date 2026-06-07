@@ -1,6 +1,7 @@
 {
   "extensions": {
     "main": [
+      "builtin/skillhub-marketplace",
       "builtin/diagnostics"
     ],
     "renderer": []

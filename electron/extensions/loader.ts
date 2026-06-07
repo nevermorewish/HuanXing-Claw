@@ -19,9 +19,9 @@ export function registerBuiltinExtension(id: string, factory: () => Extension): 
 
 function resolveManifestPath(): string {
   if (app.isPackaged) {
-    return join(process.resourcesPath, 'clawx-extensions.json');
+    return join(process.resourcesPath, 'deepclaw-extensions.json');
   }
-  return join(app.getAppPath(), 'clawx-extensions.json');
+  return join(app.getAppPath(), 'deepclaw-extensions.json');
 }
 
 export async function loadExtensionsFromManifest(): Promise<void> {
@@ -36,7 +36,7 @@ export async function loadExtensionsFromManifest(): Promise<void> {
       logger.warn(`[extensions] Failed to parse ${manifestPath}, using defaults:`, err);
     }
   } else {
-    logger.debug('[extensions] No clawx-extensions.json found, loading all builtin extensions');
+    logger.debug('[extensions] No deepclaw-extensions.json found, loading all builtin extensions');
   }
 
   const mainExtensions = manifest.extensions?.main;

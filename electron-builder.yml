@@ -1,6 +1,6 @@
-appId: app.clawx.desktop
-productName: ClawX
-copyright: Copyright © 2026 ClawX
+appId: app.deepclaw.desktop
+productName: DeepClaw
+copyright: Copyright © 2026 DeepClaw
 compression: maximum
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 
@@ -59,14 +59,14 @@ publish:
     useMultipleRangeRequest: false
   - provider: github
     owner: ValueCell-ai
-    repo: ClawX
+    repo: DeepClaw
 
 # macOS Configuration
 mac:
   extraResources:
     - from: resources/bin/darwin-${arch}
       to: bin
-    - from: resources/cli/posix/
+    - from: build/cli/posix/
       to: cli/
   category: public.app-category.productivity
   icon: resources/icons/icon.icns
@@ -86,8 +86,8 @@ mac:
   entitlementsInherit: entitlements.mac.plist
   notarize: true
   extendInfo:
-    NSMicrophoneUsageDescription: ClawX requires microphone access for voice features
-    NSCameraUsageDescription: ClawX requires camera access for video features
+    NSMicrophoneUsageDescription: DeepClaw requires microphone access for voice features
+    NSCameraUsageDescription: DeepClaw requires camera access for video features
 
 dmg:
   # Explicit volume size prevents dmg-builder@1.2.0 auto-calculation from
@@ -117,7 +117,7 @@ win:
   extraResources:
     - from: resources/bin/win32-${arch}
       to: bin
-    - from: resources/cli/win32/
+    - from: build/cli/win32/
       to: cli/
   icon: resources/icons/icon.ico
   target:
@@ -133,8 +133,8 @@ nsis:
   differentialPackage: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: ClawX
-  uninstallDisplayName: ClawX
+  shortcutName: DeepClaw
+  uninstallDisplayName: DeepClaw
   license: LICENSE
   include: scripts/installer.nsh
   installerIcon: resources/icons/icon.ico
@@ -145,7 +145,7 @@ linux:
   extraResources:
     - from: resources/bin/linux-${arch}
       to: bin
-    - from: resources/cli/posix/
+    - from: build/cli/posix/
       to: cli/
   icon: resources/icons
   target:
@@ -161,17 +161,17 @@ linux:
       arch:
         - x64
   category: Utility
-  maintainer: ClawX Team <public@valuecell.ai>
-  vendor: ClawX
+  maintainer: DeepClaw Team <public@valuecell.ai>
+  vendor: DeepClaw
   synopsis: AI Assistant powered by OpenClaw
-  description: ClawX is a graphical AI assistant application that integrates with OpenClaw Gateway to provide intelligent automation and assistance across multiple messaging platforms.
+  description: DeepClaw is a graphical AI assistant application that integrates with OpenClaw Gateway to provide intelligent automation and assistance across multiple messaging platforms.
   desktop:
     entry:
-      Name: ClawX
+      Name: DeepClaw
       Comment: AI Assistant powered by OpenClaw
       Categories: Utility;Network;
       Keywords: ai;assistant;automation;chat;
-      StartupWMClass: clawx
+      StartupWMClass: deepclaw
 
 appImage:
   license: LICENSE

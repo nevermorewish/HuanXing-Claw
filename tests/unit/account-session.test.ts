@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { HuanxingSession } from '@electron/utils/huanxing-session';
+import { AccountSession } from '@electron/utils/account-session';
 
 const servers: http.Server[] = [];
 
@@ -29,7 +29,7 @@ function writeJson(
   res.end(JSON.stringify(body));
 }
 
-describe('HuanxingSession', () => {
+describe('AccountSession', () => {
   afterEach(async () => {
     await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => {
       server.close(() => resolve());
@@ -71,7 +71,7 @@ describe('HuanxingSession', () => {
     });
     const baseUrl = await listen(server);
 
-    const session = new HuanxingSession();
+    const session = new AccountSession();
     await session.login(baseUrl, 'demo', 'password');
 
     await expect(session.ensureApiKey()).resolves.toBe('sk-test-token');

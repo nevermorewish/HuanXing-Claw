@@ -4,6 +4,7 @@ import type {
   ProviderType,
   ProviderTypeInfo,
 } from './types';
+import { BRAND } from '@shared/brand';
 
 export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
   {
@@ -82,7 +83,7 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
       apiKeyEnv: 'OPENROUTER_API_KEY',
       headers: {
         'HTTP-Referer': 'https://claw-x.com',
-        'X-OpenRouter-Title': 'ClawX',
+        'X-OpenRouter-Title': BRAND.appName,
       },
     },
   },

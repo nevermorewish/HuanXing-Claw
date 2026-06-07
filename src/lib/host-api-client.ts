@@ -18,7 +18,7 @@ export async function invokeHost<
   action: A,
   ...payloadArgs: HostApiPayloadArgs<M, A>
 ): Promise<HostApiResult<M, A>> {
-  const bridge = window.clawx?.hostInvoke;
+  const bridge = window.deepclaw?.hostInvoke;
   if (!bridge) {
     throw new Error('Host invoke bridge is unavailable');
   }

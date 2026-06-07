@@ -534,11 +534,11 @@ export function ensureWhatsAppPluginInstalled(): { installed: boolean; warning?:
   return ensurePluginInstalled('whatsapp', buildCandidateSources('whatsapp'), 'WhatsApp');
 }
 
-export function ensureClawXOpenAiImagePluginInstalled(): { installed: boolean; warning?: string } {
+export function ensureDeepClawOpenAiImagePluginInstalled(): { installed: boolean; warning?: string } {
   return ensurePluginInstalled(
-    'clawx-openai-image',
-    buildCandidateSources('clawx-openai-image'),
-    'ClawX OpenAI Image',
+    'deepclaw-openai-image',
+    buildCandidateSources('deepclaw-openai-image'),
+    'DeepClaw OpenAI Image',
   );
 }
 
@@ -556,7 +556,7 @@ const ALL_BUNDLED_PLUGINS = [
   { fn: ensureDiscordPluginInstalled, label: 'Discord' },
   { fn: ensureQQBotPluginInstalled, label: 'QQBot' },
   { fn: ensureWhatsAppPluginInstalled, label: 'WhatsApp' },
-  { fn: ensureClawXOpenAiImagePluginInstalled, label: 'ClawX OpenAI Image' },
+  { fn: ensureDeepClawOpenAiImagePluginInstalled, label: 'DeepClaw OpenAI Image' },
 ] as const;
 
 /**

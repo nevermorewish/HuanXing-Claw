@@ -1,14 +1,14 @@
 /**
- * Huanxing API session.
+ * Account API session.
  *
- * Runs the HTTP login + model/token fetch against a Huanxing-api server
+ * Runs the HTTP login + model/token fetch against a Account-api server
  * (Go/Gin, default http://localhost:3000) inside the Electron main process.
  *
  * The server authenticates browsers with an HttpOnly `session` cookie which a
  * renderer cross-origin fetch cannot hold, so we keep the cookie (and the
  * logged-in user id) in main-process memory here. Protected endpoints also
  * require a `New-Api-User: <id>` header that must match the session user id,
- * even when the cookie is present (see Huanxing-api middleware/auth.go).
+ * even when the cookie is present (see Account-api middleware/auth.go).
  *
  * Transport note: we use Node's built-in `node:http`/`node:https` rather than
  * Electron's `net.fetch`. `net.fetch` runs through Chromium's network stack,
@@ -19,8 +19,9 @@
  */
 import http from 'node:http';
 import https from 'node:https';
+import { BRAND } from '@shared/brand';
 
-export interface HuanxingUser {
+export interface AccountUser {
   id: number;
   username: string;
   displayName: string;
@@ -35,7 +36,7 @@ interface ApiEnvelope<T> {
   data?: T;
 }
 
-/** A model entry from GET /api/pricing (new Huanxing-api). */
+/** A model entry from GET /api/pricing (new Account-api). */
 interface PricingModel {
   model_name: string;
   enable_groups?: string[];
@@ -124,16 +125,16 @@ function rawRequest(
   });
 }
 
-export class HuanxingSession {
+export class AccountSession {
   private baseUrl: string | null = null;
   private sessionCookie: string | null = null;
-  private user: HuanxingUser | null = null;
+  private user: AccountUser | null = null;
 
   isLoggedIn(): boolean {
     return Boolean(this.baseUrl && this.sessionCookie && this.user);
   }
 
-  getUser(): HuanxingUser | null {
+  getUser(): AccountUser | null {
     return this.user;
   }
 
@@ -150,7 +151,7 @@ export class HuanxingSession {
   /** Authenticated headers for protected endpoints (session cookie + user id). */
   private authHeaders(extra?: Record<string, string>): Record<string, string> {
     if (!this.sessionCookie || !this.user) {
-      throw new Error('尚未登录 Huanxing');
+      throw new Error('尚未登录 Account');
     }
     return {
       Cookie: this.sessionCookie,
@@ -161,7 +162,7 @@ export class HuanxingSession {
 
   private url(path: string): string {
     if (!this.baseUrl) {
-      throw new Error('Huanxing 服务地址未设置');
+      throw new Error('Account 服务地址未设置');
     }
     return `${this.baseUrl}${path}`;
   }
@@ -191,7 +192,7 @@ export class HuanxingSession {
   }
 
   /** POST /api/user/login — stores the session cookie + user on success. */
-  async login(baseUrl: string, username: string, password: string): Promise<HuanxingUser> {
+  async login(baseUrl: string, username: string, password: string): Promise<AccountUser> {
     const normalized = normalizeBaseUrl(baseUrl);
     if (!normalized) {
       throw new Error('服务地址不能为空');
@@ -240,7 +241,7 @@ export class HuanxingSession {
   /**
    * GET /api/pricing — the model names usable by this account.
    *
-   * The newer Huanxing-api dropped /api/user/self/models (it 404s via the
+   * The newer Account-api dropped /api/user/self/models (it 404s via the
    * OpenAI relay's catch-all). Models now live in the pricing list, mirroring
    * frogclaw's flow. Each entry carries `enable_groups`; we keep models enabled
    * for one of the account's usable groups, falling back to all entries when
@@ -358,7 +359,7 @@ export class HuanxingSession {
       method: 'POST',
       headers: this.authHeaders({ 'content-type': 'application/json' }),
       body: JSON.stringify({
-        name: 'HuanXing-Claw',
+        name: BRAND.appName,
         unlimited_quota: true,
         expired_time: -1,
         remain_quota: 0,
@@ -383,4 +384,4 @@ export class HuanxingSession {
 }
 
 /** Single shared session for the app lifetime. */
-export const huanxingSession = new HuanxingSession();
+export const accountSession = new AccountSession();

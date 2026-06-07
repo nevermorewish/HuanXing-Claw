@@ -65,7 +65,7 @@ import { createProvidersApi } from '../services/providers-api';
 import { createSessionsApi } from '../services/sessions-api';
 import { createSkillsApi } from '../services/skills-api';
 import { createUsageApi } from '../services/usage-api';
-import { createHuanXingApi } from '../services/huanxing-api';
+import { createAccountApi } from '../services/account-api';
 import { createModelProvidersApi } from '../services/model-providers-api';
 import {
   isLaunchAtStartupKey,
@@ -158,7 +158,7 @@ function registerTypedHostHandlers(
     cron: createCronApi({ gatewayManager }),
     skills: createSkillsApi({ clawHubService, gatewayManager }),
     usage: createUsageApi(),
-    huanxing: createHuanXingApi({ gatewayManager }),
+    account: createAccountApi({ gatewayManager }),
     modelProviders: createModelProvidersApi({ gatewayManager }),
   });
   registerHostInvokeHandler(hostApiRegistry);
@@ -1048,7 +1048,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         const resolvedBaseUrl = options?.baseUrl || provider?.baseUrl || registryBaseUrl;
         const resolvedProtocol = options?.apiProtocol || provider?.apiProtocol;
 
-        console.log(`[clawx-validate] validating provider type: ${providerType}`);
+        console.log(`[deepclaw-validate] validating provider type: ${providerType}`);
         return await validateApiKeyWithProvider(providerType, apiKey, {
           baseUrl: resolvedBaseUrl,
           apiProtocol: resolvedProtocol,

@@ -1,7 +1,7 @@
 /**
  * Config Management Page
  *
- * Ports clawpanel's "service management" config features to HuanXing-Claw:
+ * Ports clawpanel's "service management" config features to DeepClaw:
  *   - Service status (start/stop/restart the gateway = the OpenClaw service)
  *   - OpenClaw config directory override (custom path)
  *   - Config file editor (openclaw.json) with live JSON validation

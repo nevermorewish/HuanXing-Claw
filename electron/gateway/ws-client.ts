@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 import type { DeviceIdentity } from '../utils/device-identity';
 import type { PendingGatewayRequest } from './request-store';
+import { BRAND } from '@shared/brand';
 import {
   buildDeviceAuthPayload,
   publicKeyRawBase64UrlFromPem,
@@ -156,7 +157,7 @@ export function buildGatewayConnectFrame(options: {
         maxProtocol: GATEWAY_PROTOCOL_VERSION,
         client: {
           id: clientId,
-          displayName: 'ClawX',
+          displayName: BRAND.appName,
           version: '0.1.0',
           platform: options.platform,
           mode: clientMode,

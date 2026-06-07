@@ -12,7 +12,7 @@ import {
   updateAgentName,
 } from '../utils/agent-config';
 import { deleteChannelAccountConfig } from '../utils/channel-config';
-import { ensureClawXContext } from '../utils/openclaw-workspace';
+import { ensureDeepClawContext } from '../utils/openclaw-workspace';
 import { isRecord } from './payload-utils';
 import { syncAgentModelOverrideToRuntime, syncAllProviderAuthToRuntime } from './providers/provider-runtime-sync';
 
@@ -55,8 +55,8 @@ export function createAgentsApi(ctx: AgentsApiContext): CompleteHostServiceRegis
         console.warn('[agents] Failed to sync provider auth after agent creation:', err);
       });
       scheduleGatewayReload(ctx, 'create-agent');
-      void ensureClawXContext({ waitForAllConfiguredWorkspaces: true }).catch((err) => {
-        console.warn('[agents] Failed to ensure ClawX context after agent creation:', err);
+      void ensureDeepClawContext({ waitForAllConfiguredWorkspaces: true }).catch((err) => {
+        console.warn('[agents] Failed to ensure DeepClaw context after agent creation:', err);
       });
       return { success: true, ...snapshot };
     },

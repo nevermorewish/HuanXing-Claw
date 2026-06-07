@@ -1,6 +1,6 @@
 #!/bin/sh
-# OpenClaw CLI — managed by ClawX
-# Do not edit manually. Regenerated on ClawX updates.
+# OpenClaw CLI — managed by __BRAND_NAME__
+# Do not edit manually. Regenerated on __BRAND_NAME__ updates.
 
 # Resolve the real path of this script (follow symlinks)
 SCRIPT="$0"
@@ -15,34 +15,34 @@ if [ "$(uname)" = "Darwin" ]; then
   # macOS: <App>.app/Contents/Resources/cli/openclaw
   # SCRIPT_DIR = .../Contents/Resources/cli
   CONTENTS_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-  ELECTRON="$CONTENTS_DIR/MacOS/ClawX"
+  ELECTRON="$CONTENTS_DIR/MacOS/__BRAND_PRODUCT__"
   CLI="$CONTENTS_DIR/Resources/openclaw/openclaw.mjs"
 else
-  # Linux: /opt/ClawX/resources/cli/openclaw
+  # Linux: /opt/__BRAND_PRODUCT__/resources/cli/openclaw
   # SCRIPT_DIR = .../resources/cli
   INSTALL_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-  ELECTRON="$INSTALL_DIR/clawx"
+  ELECTRON="$INSTALL_DIR/__BRAND_EXE__"
   CLI="$INSTALL_DIR/resources/openclaw/openclaw.mjs"
 fi
 
 if [ ! -f "$ELECTRON" ]; then
-  echo "Error: ClawX executable not found at $ELECTRON" >&2
-  echo "Please reinstall ClawX or remove this script: $0" >&2
+  echo "Error: __BRAND_NAME__ executable not found at $ELECTRON" >&2
+  echo "Please reinstall __BRAND_NAME__ or remove this script: $0" >&2
   exit 1
 fi
 
 case "$1" in
   update)
-    echo "openclaw is managed by ClawX (bundled version)."
+    echo "openclaw is managed by __BRAND_NAME__ (bundled version)."
     echo ""
-    echo "To update openclaw, update ClawX:"
-    echo "  Open ClawX > Settings > Check for Updates"
-    echo "  Or download the latest version from https://claw-x.com"
+    echo "To update openclaw, update __BRAND_NAME__:"
+    echo "  Open __BRAND_NAME__ > Settings > Check for Updates"
+    echo "  Or download the latest version from __BRAND_GITHUB__"
     echo ""
     ELECTRON_RUN_AS_NODE=1 "$ELECTRON" "$CLI" --version 2>/dev/null || true
     exit 0
     ;;
 esac
 
-export OPENCLAW_EMBEDDED_IN="ClawX"
+export OPENCLAW_EMBEDDED_IN="__BRAND_NAME__"
 ELECTRON_RUN_AS_NODE=1 exec "$ELECTRON" "$CLI" "$@"

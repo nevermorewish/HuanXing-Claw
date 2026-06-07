@@ -6,6 +6,7 @@ import { Menu, app, shell, BrowserWindow } from 'electron';
 import { MENU_LABELS } from '@shared/i18n/resources';
 import { resolveSupportedLanguage, type LanguageCode } from '@shared/language';
 import { getSetting } from '../utils/store';
+import { BRAND } from '@shared/brand';
 
 function applyAppName(label: string): string {
   return label.replaceAll('{{appName}}', app.name);
@@ -201,13 +202,13 @@ export async function createMenu(language?: string): Promise<void> {
         {
           label: labels.help.documentation,
           click: async () => {
-            await shell.openExternal('https://claw-x.com');
+            await shell.openExternal(BRAND.urls.github);
           },
         },
         {
           label: labels.help.reportIssue,
           click: async () => {
-            await shell.openExternal('https://github.com/ValueCell-ai/ClawX/issues');
+            await shell.openExternal(BRAND.urls.issues);
           },
         },
         { type: 'separator' },

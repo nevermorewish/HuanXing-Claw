@@ -2,6 +2,7 @@
  * OpenClaw CLI utilities — cross-platform auto-install
  */
 import { app } from 'electron';
+import { BRAND } from '@shared/brand';
 import {
   appendFileSync,
   chmodSync,
@@ -272,8 +273,8 @@ function ensureLocalBinInPath(): void {
     if (content.includes(marker)) return;
 
     const line = shell.includes('fish')
-      ? '\n# Added by ClawX\nfish_add_path "$HOME/.local/bin"\n'
-      : '\n# Added by ClawX\nexport PATH="$HOME/.local/bin:$PATH"\n';
+      ? '\n# Added by DeepClaw\nfish_add_path "$HOME/.local/bin"\n'
+      : '\n# Added by DeepClaw\nexport PATH="$HOME/.local/bin:$PATH"\n';
 
     appendFileSync(profileFile, line);
     logger.info(`Added ~/.local/bin to PATH in ${profileFile}`);
@@ -356,7 +357,7 @@ export function generateCompletionCache(): void {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
       OPENCLAW_NO_RESPAWN: '1',
-      OPENCLAW_EMBEDDED_IN: 'ClawX',
+      OPENCLAW_EMBEDDED_IN: BRAND.appName,
     },
     stdio: 'ignore',
     detached: false,
@@ -393,7 +394,7 @@ export function installCompletionToProfile(): void {
         ...process.env,
         ELECTRON_RUN_AS_NODE: '1',
         OPENCLAW_NO_RESPAWN: '1',
-        OPENCLAW_EMBEDDED_IN: 'ClawX',
+        OPENCLAW_EMBEDDED_IN: BRAND.appName,
       },
       stdio: 'ignore',
       detached: false,

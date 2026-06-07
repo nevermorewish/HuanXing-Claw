@@ -1,7 +1,7 @@
 /**
- * Huanxing Connection Store
+ * Account Connection Store
  *
- * Drives the "connect to Huanxing-api" flow: log in (handled in the main
+ * Drives the "connect to Account-api" flow: log in (handled in the main
  * process so the HttpOnly session cookie can be held), fetch the usable model
  * list + a `sk-` API key, then turn the user-selected models into custom
  * provider accounts via the existing provider store.
@@ -13,9 +13,9 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { hostApi } from '@/lib/host-api';
 
-export const DEFAULT_HUANXING_URL = 'http://localhost:3000';
+export const DEFAULT_ACCOUNT_URL = 'http://localhost:3000';
 
-export interface HuanxingUser {
+export interface AccountUser {
   id: number;
   username: string;
   displayName: string;
@@ -24,27 +24,27 @@ export interface HuanxingUser {
   group: string;
 }
 
-export interface HuanxingModelEntry {
+export interface AccountModelEntry {
   id: string;
   name: string;
   contextWindow?: number;
   reasoning?: boolean;
 }
 
-export interface HuanxingModelConfig {
+export interface AccountModelConfig {
   baseUrl: string;
-  models: HuanxingModelEntry[];
+  models: AccountModelEntry[];
   primary: string | null;
 }
 
-export interface HuanxingTestResult {
+export interface AccountTestResult {
   ok: boolean;
   latencyMs?: number;
   reply?: string;
   error?: string;
 }
 
-export interface HuanxingBalance {
+export interface AccountBalance {
   quota: number;
   usedQuota: number;
   quotaPerUnit: number;
@@ -52,19 +52,19 @@ export interface HuanxingBalance {
   topUpUrl: string;
 }
 
-interface HuanxingState {
+interface AccountState {
   serverUrl: string;
   lastUsername: string;
   loggedIn: boolean;
-  user: HuanxingUser | null;
+  user: AccountUser | null;
   /** Models fetched after login, awaiting selection. Not persisted. */
   models: string[];
   /** The sk- key obtained for the account. Held only in memory. */
   apiKey: string | null;
-  /** The huanxing provider config read from openclaw.json. Not persisted. */
-  modelConfig: HuanxingModelConfig | null;
+  /** The account provider config read from openclaw.json. Not persisted. */
+  modelConfig: AccountModelConfig | null;
   /** Account balance, fetched after login. Not persisted. */
-  balance: HuanxingBalance | null;
+  balance: AccountBalance | null;
   loading: boolean;
   error: string | null;
 
@@ -76,21 +76,21 @@ interface HuanxingState {
   fetchBalance: () => Promise<void>;
   /** Open the server's recharge / top-up page in the external browser. */
   openRecharge: () => Promise<void>;
-  /** Write the selected models as the single huanxing provider. Returns count. */
-  saveModels: (models: HuanxingModelEntry[], primaryModelId?: string | null) => Promise<number>;
-  /** Read the huanxing provider config from openclaw.json. */
-  loadModelConfig: () => Promise<HuanxingModelConfig | null>;
+  /** Write the selected models as the single account provider. Returns count. */
+  saveModels: (models: AccountModelEntry[], primaryModelId?: string | null) => Promise<number>;
+  /** Read the account provider config from openclaw.json. */
+  loadModelConfig: () => Promise<AccountModelConfig | null>;
   setPrimaryModel: (modelId: string) => Promise<void>;
   deleteModel: (modelId: string) => Promise<void>;
-  testModel: (modelId: string) => Promise<HuanxingTestResult>;
+  testModel: (modelId: string) => Promise<AccountTestResult>;
   logout: () => Promise<void>;
   clearError: () => void;
 }
 
-export const useHuanxingStore = create<HuanxingState>()(
+export const useAccountStore = create<AccountState>()(
   persist(
     (set, get) => ({
-      serverUrl: DEFAULT_HUANXING_URL,
+      serverUrl: DEFAULT_ACCOUNT_URL,
       lastUsername: '',
       loggedIn: false,
       user: null,
@@ -105,7 +105,7 @@ export const useHuanxingStore = create<HuanxingState>()(
       clearError: () => set({ error: null }),
 
       savedCredentials: async () => {
-        const result = await hostApi.huanxing.savedCredentials();
+        const result = await hostApi.account.savedCredentials();
         if (!result.success) {
           throw new Error(result.error || '读取已保存凭据失败');
         }
@@ -115,13 +115,13 @@ export const useHuanxingStore = create<HuanxingState>()(
       fetchBalance: async () => {
         if (!get().loggedIn) return;
         try {
-          const result = await hostApi.huanxing.getBalance();
+          const result = await hostApi.account.getBalance();
           if (result.success) {
             set({ balance: result.balance ?? null });
           }
         } catch (error) {
           // Balance is non-critical; don't surface a hard error.
-          console.error('Failed to load Huanxing balance', error);
+          console.error('Failed to load Account balance', error);
         }
       },
 
@@ -132,15 +132,15 @@ export const useHuanxingStore = create<HuanxingState>()(
       },
 
       login: async (username, password) => {
-        const baseUrl = get().serverUrl.trim() || DEFAULT_HUANXING_URL;
+        const baseUrl = get().serverUrl.trim() || DEFAULT_ACCOUNT_URL;
         set({ loading: true, error: null });
         try {
-          const loginResult = await hostApi.huanxing.login({ baseUrl, username, password });
+          const loginResult = await hostApi.account.login({ baseUrl, username, password });
           if (!loginResult.success) {
             throw new Error(loginResult.error || '登录失败');
           }
 
-          const setup = await hostApi.huanxing.fetchSetup();
+          const setup = await hostApi.account.fetchSetup();
           if (!setup.success) {
             throw new Error(setup.error || '获取模型列表失败');
           }
@@ -179,7 +179,7 @@ export const useHuanxingStore = create<HuanxingState>()(
         if (clean.length === 0) {
           return 0;
         }
-        const result = await hostApi.huanxing.saveModelConfig({
+        const result = await hostApi.account.saveModelConfig({
           models: clean,
           primaryModelId: primaryModelId ?? null,
         });
@@ -192,7 +192,7 @@ export const useHuanxingStore = create<HuanxingState>()(
 
       loadModelConfig: async () => {
         try {
-          const result = await hostApi.huanxing.getModelConfig();
+          const result = await hostApi.account.getModelConfig();
           if (!result.success) {
             throw new Error(result.error || '读取模型配置失败');
           }
@@ -201,13 +201,13 @@ export const useHuanxingStore = create<HuanxingState>()(
           return config;
         } catch (error) {
           // Don't surface a hard error for a missing config — just leave it empty.
-          console.error('Failed to load Huanxing model config', error);
+          console.error('Failed to load Account model config', error);
           return null;
         }
       },
 
       setPrimaryModel: async (modelId) => {
-        const result = await hostApi.huanxing.setPrimaryModel({ modelId });
+        const result = await hostApi.account.setPrimaryModel({ modelId });
         if (!result.success) {
           throw new Error(result.error || '设置主模型失败');
         }
@@ -215,7 +215,7 @@ export const useHuanxingStore = create<HuanxingState>()(
       },
 
       deleteModel: async (modelId) => {
-        const result = await hostApi.huanxing.deleteModel({ modelId });
+        const result = await hostApi.account.deleteModel({ modelId });
         if (!result.success) {
           throw new Error(result.error || '删除模型失败');
         }
@@ -223,7 +223,7 @@ export const useHuanxingStore = create<HuanxingState>()(
       },
 
       testModel: async (modelId) => {
-        const result = await hostApi.huanxing.testModel({ modelId });
+        const result = await hostApi.account.testModel({ modelId });
         if (!result.success) {
           return { ok: false, error: result.error || '测试失败' };
         }
@@ -232,7 +232,7 @@ export const useHuanxingStore = create<HuanxingState>()(
 
       logout: async () => {
         try {
-          await hostApi.huanxing.logout();
+          await hostApi.account.logout();
         } catch {
           // ignore — clearing local state is enough
         }
@@ -240,7 +240,7 @@ export const useHuanxingStore = create<HuanxingState>()(
       },
     }),
     {
-      name: 'huanxing-connection',
+      name: 'account-connection',
       partialize: (state) => ({
         serverUrl: state.serverUrl,
         lastUsername: state.lastUsername,

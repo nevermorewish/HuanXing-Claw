@@ -5,7 +5,7 @@ describe('assistant media path display cleanup', () => {
   it('strips bare OpenClaw media paths when the image is shown as an attachment card', () => {
     const text = [
       '宇航员图片生成完成啦 🧑‍🚀✨',
-      '/Users/zhonghaolu/.openclaw/media/tool-image-generation/clawx-image-1---82d6c7e6-ea44-4850-a24b-9e88e1660683.png',
+      '/Users/zhonghaolu/.openclaw/media/tool-image-generation/deepclaw-image-1---82d6c7e6-ea44-4850-a24b-9e88e1660683.png',
     ].join('\n');
 
     expect(extractText({ role: 'assistant', content: text })).toBe('宇航员图片生成完成啦 🧑‍🚀✨');

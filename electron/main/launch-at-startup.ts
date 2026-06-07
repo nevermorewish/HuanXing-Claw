@@ -3,8 +3,9 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { logger } from '../utils/logger';
 import { getSetting } from '../utils/store';
+import { BRAND } from '@shared/brand';
 
-const LINUX_AUTOSTART_FILE = join('.config', 'autostart', 'clawx.desktop');
+const LINUX_AUTOSTART_FILE = join('.config', 'autostart', `${BRAND.executableName}.desktop`);
 
 function quoteDesktopArg(value: string): string {
   if (!value) return '""';
@@ -30,8 +31,8 @@ function getLinuxDesktopEntry(): string {
     '[Desktop Entry]',
     'Type=Application',
     'Version=1.0',
-    'Name=ClawX',
-    'Comment=ClawX - AI Assistant',
+    `Name=${BRAND.appName}`,
+    `Comment=${BRAND.appName} - ${BRAND.tagline}`,
     `Exec=${getLinuxExecCommand()}`,
     'Terminal=false',
     'Categories=Utility;',

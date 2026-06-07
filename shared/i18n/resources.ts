@@ -1,4 +1,15 @@
 import type { LanguageCode } from '../language';
+import { BRAND } from '../brand';
+
+// Brand namespace — language-independent proper noun, injected from the active
+// white-label brand. Locale strings reference it via i18next nesting:
+//   "Welcome to $t(brand:appName)"
+const BRAND_NS = {
+  appName: BRAND.appName,
+  displayName: BRAND.appName,
+  tagline: BRAND.tagline,
+} as const;
+
 
 // EN
 import enCommon from './locales/en/common.json';
@@ -74,6 +85,7 @@ export const I18N_NAMESPACES = [
   'menu',
   'logs',
   'config',
+  'brand',
 ] as const;
 
 export const I18N_RESOURCES = {
@@ -91,6 +103,7 @@ export const I18N_RESOURCES = {
     menu: enMenu,
     logs: enLogs,
     config: enConfig,
+    brand: BRAND_NS,
   },
   zh: {
     common: zhCommon,
@@ -106,6 +119,7 @@ export const I18N_RESOURCES = {
     menu: zhMenu,
     logs: zhLogs,
     config: zhConfig,
+    brand: BRAND_NS,
   },
   ja: {
     common: jaCommon,
@@ -121,6 +135,7 @@ export const I18N_RESOURCES = {
     menu: jaMenu,
     logs: jaLogs,
     config: jaConfig,
+    brand: BRAND_NS,
   },
   ru: {
     common: ruCommon,
@@ -136,6 +151,7 @@ export const I18N_RESOURCES = {
     menu: ruMenu,
     logs: ruLogs,
     config: ruConfig,
+    brand: BRAND_NS,
   },
 } as const;
 

@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
+import { BRAND } from '@shared/brand';
 
 const require = createRequire(import.meta.url);
 
@@ -24,7 +25,7 @@ function getElectronApp() {
     return (require('electron') as typeof import('electron')).app;
   }
 
-  const fallbackUserData = process.env.CLAWX_USER_DATA_DIR?.trim() || join(homedir(), '.clawx');
+  const fallbackUserData = process.env.DEEPCLAW_USER_DATA_DIR?.trim() || join(homedir(), BRAND.dataDirName);
   const fallbackAppPath = process.cwd();
   const fallbackApp: ElectronAppLike = {
     isPackaged: false,
@@ -110,21 +111,21 @@ export function getOpenClawSkillsDir(): string {
 }
 
 /**
- * Get ClawX config directory
+ * Get the brand's config directory (e.g. ~/.deepclaw)
  */
-export function getClawXConfigDir(): string {
-  return join(homedir(), '.clawx');
+export function getBrandConfigDir(): string {
+  return join(homedir(), BRAND.dataDirName);
 }
 
 /**
- * Get ClawX logs directory
+ * Get brand logs directory
  */
 export function getLogsDir(): string {
   return join(getElectronApp().getPath('userData'), 'logs');
 }
 
 /**
- * Get ClawX data directory
+ * Get brand data directory
  */
 export function getDataDir(): string {
   return getElectronApp().getPath('userData');

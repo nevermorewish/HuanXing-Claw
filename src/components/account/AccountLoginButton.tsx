@@ -1,5 +1,5 @@
 /**
- * Huanxing Login Button / Account Panel
+ * Account Login Button / Account Panel
  *
  * Sidebar footer entry point (below Settings).
  *   - Logged out: a "登录" nav item that opens the login dialog.
@@ -11,10 +11,10 @@
 import { useEffect, useState } from 'react';
 import { LogIn, CheckCircle2, Wallet, LogOut, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useHuanxingStore } from '@/stores/huanxing';
-import { HuanxingLoginDialog } from './HuanxingLoginDialog';
+import { useAccountStore } from '@/stores/account';
+import { AccountLoginDialog } from './AccountLoginDialog';
 
-interface HuanxingLoginButtonProps {
+interface AccountLoginButtonProps {
   collapsed?: boolean;
 }
 
@@ -30,14 +30,14 @@ function formatBalance(balance: {
   return balance.quota.toLocaleString();
 }
 
-export function HuanxingLoginButton({ collapsed = false }: HuanxingLoginButtonProps) {
+export function AccountLoginButton({ collapsed = false }: AccountLoginButtonProps) {
   const [open, setOpen] = useState(false);
-  const loggedIn = useHuanxingStore((s) => s.loggedIn);
-  const user = useHuanxingStore((s) => s.user);
-  const balance = useHuanxingStore((s) => s.balance);
-  const fetchBalance = useHuanxingStore((s) => s.fetchBalance);
-  const openRecharge = useHuanxingStore((s) => s.openRecharge);
-  const logout = useHuanxingStore((s) => s.logout);
+  const loggedIn = useAccountStore((s) => s.loggedIn);
+  const user = useAccountStore((s) => s.user);
+  const balance = useAccountStore((s) => s.balance);
+  const fetchBalance = useAccountStore((s) => s.fetchBalance);
+  const openRecharge = useAccountStore((s) => s.openRecharge);
+  const logout = useAccountStore((s) => s.logout);
   const [refreshing, setRefreshing] = useState(false);
 
   // Refresh the balance whenever the panel becomes logged-in.
@@ -62,9 +62,9 @@ export function HuanxingLoginButton({ collapsed = false }: HuanxingLoginButtonPr
       <>
         <button
           type="button"
-          data-testid="sidebar-huanxing-login"
+          data-testid="sidebar-account-login"
           onClick={() => setOpen(true)}
-          title="登录 Huanxing"
+          title="登录 Account"
           className={cn(
             'sidebar-nav-text flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
             'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
@@ -78,7 +78,7 @@ export function HuanxingLoginButton({ collapsed = false }: HuanxingLoginButtonPr
             <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">登录</span>
           )}
         </button>
-        <HuanxingLoginDialog open={open} onOpenChange={setOpen} />
+        <AccountLoginDialog open={open} onOpenChange={setOpen} />
       </>
     );
   }
@@ -89,7 +89,7 @@ export function HuanxingLoginButton({ collapsed = false }: HuanxingLoginButtonPr
       <>
         <button
           type="button"
-          data-testid="sidebar-huanxing-account"
+          data-testid="sidebar-account-account"
           onClick={() => setOpen(true)}
           title={`${user?.displayName || '已登录'}${balance ? ` · ${formatBalance(balance)}` : ''}`}
           className="sidebar-nav-text flex w-full items-center justify-center rounded-lg px-0 py-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80"
@@ -98,7 +98,7 @@ export function HuanxingLoginButton({ collapsed = false }: HuanxingLoginButtonPr
             <CheckCircle2 className="h-4 w-4 text-emerald-500" strokeWidth={2} />
           </div>
         </button>
-        <HuanxingLoginDialog open={open} onOpenChange={setOpen} />
+        <AccountLoginDialog open={open} onOpenChange={setOpen} />
       </>
     );
   }
@@ -107,14 +107,14 @@ export function HuanxingLoginButton({ collapsed = false }: HuanxingLoginButtonPr
   return (
     <>
       <div
-        data-testid="sidebar-huanxing-account"
+        data-testid="sidebar-account-account"
         className="rounded-lg border border-black/5 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] px-2.5 py-2"
       >
         {/* Username */}
         <button
           type="button"
           onClick={() => setOpen(true)}
-          title="管理 Huanxing 连接"
+          title="管理 Account 连接"
           className="flex w-full items-center gap-2 rounded-md text-left text-foreground/90 hover:text-foreground transition-colors"
         >
           <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" strokeWidth={2} />
@@ -143,7 +143,7 @@ export function HuanxingLoginButton({ collapsed = false }: HuanxingLoginButtonPr
         <div className="mt-2 flex items-center gap-1.5">
           <button
             type="button"
-            data-testid="sidebar-huanxing-recharge"
+            data-testid="sidebar-account-recharge"
             onClick={() => void openRecharge()}
             className="flex flex-1 items-center justify-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-meta font-medium text-primary hover:bg-primary/15 transition-colors"
           >
@@ -152,7 +152,7 @@ export function HuanxingLoginButton({ collapsed = false }: HuanxingLoginButtonPr
           </button>
           <button
             type="button"
-            data-testid="sidebar-huanxing-logout"
+            data-testid="sidebar-account-logout"
             onClick={() => void logout()}
             title="登出"
             className="flex items-center justify-center gap-1 rounded-md px-2 py-1 text-meta font-medium text-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
@@ -163,7 +163,7 @@ export function HuanxingLoginButton({ collapsed = false }: HuanxingLoginButtonPr
         </div>
       </div>
 
-      <HuanxingLoginDialog open={open} onOpenChange={setOpen} />
+      <AccountLoginDialog open={open} onOpenChange={setOpen} />
     </>
   );
 }
