@@ -19,6 +19,7 @@
     "deleteConfirm": "このチャンネルを削除してもよろしいですか？",
     "showAll": "すべて表示",
     "pluginBadge": "プラグイン",
+    "recommendedBadge": "おすすめ",
     "toast": {
         "whatsappConnected": "WhatsApp が正常に接続されました",
         "whatsappFailed": "WhatsApp 接続に失敗しました: {{error}}",

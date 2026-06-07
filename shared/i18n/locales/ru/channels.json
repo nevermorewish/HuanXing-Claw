@@ -19,6 +19,7 @@
     "deleteConfirm": "Вы уверены, что хотите удалить этот канал?",
     "showAll": "Показать все",
     "pluginBadge": "Плагин",
+    "recommendedBadge": "Рекомендуется",
     "toast": {
         "whatsappConnected": "WhatsApp успешно подключён",
         "whatsappFailed": "Не удалось подключить WhatsApp: {{error}}",

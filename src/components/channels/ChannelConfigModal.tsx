@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useChannelsStore } from '@/stores/channels';
 
 import { hostApi } from '@/lib/host-api';
@@ -90,6 +91,7 @@ export function ChannelConfigModal({
   const [connecting, setConnecting] = useState(false);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [qrCode, setQrCode] = useState<string | null>(null);
+  const [feishuTab, setFeishuTab] = useState<'scan' | 'manual'>('scan');
   const [validating, setValidating] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [isExistingConfig, setIsExistingConfig] = useState(false);
@@ -506,6 +508,13 @@ export function ChannelConfigModal({
                     <div className="flex flex-col flex-1 min-w-0 py-0.5 mt-1">
                       <div className="flex items-center gap-2 mb-1">
                         <p className="text-base font-semibold text-foreground truncate">{channelMeta.name}</p>
+                        {type === 'feishu' && (
+                          <Badge
+                            className="text-2xs font-medium px-2 py-0.5 rounded-full bg-blue-600 hover:bg-blue-600 text-white border-0 shadow-none"
+                          >
+                            {t('recommendedBadge')}
+                          </Badge>
+                        )}
                         {channelMeta.isPlugin && (
                           <Badge
                             variant="secondary"
@@ -565,6 +574,23 @@ export function ChannelConfigModal({
             </div>
           ) : (
             <div className="space-y-6">
+              {selectedType === 'feishu' && (
+                <Tabs value={feishuTab} onValueChange={(value) => setFeishuTab(value as 'scan' | 'manual')}>
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="scan">{t('dialog.feishuScanTab')}</TabsTrigger>
+                    <TabsTrigger value="manual">{t('dialog.feishuManualTab')}</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              )}
+              {selectedType === 'feishu' && feishuTab === 'scan' ? (
+                <FeishuScanPanel
+                  onCredentials={(creds) => {
+                    setConfigValues((prev) => ({ ...prev, ...creds }));
+                    setFeishuTab('manual');
+                  }}
+                />
+              ) : (
+              <>
               {isExistingConfig && (
                 <div className="bg-blue-500/10 text-blue-600 dark:text-blue-400 p-4 rounded-2xl text-sm flex items-center gap-2 border border-blue-500/20">
                   <CheckCircle className="h-4 w-4 shrink-0" />
@@ -742,6 +768,8 @@ export function ChannelConfigModal({
                   </Button>
                 </div>
               </div>
+              </>
+              )}
             </div>
           )}
         </CardContent>
@@ -756,6 +784,127 @@ interface ConfigFieldProps {
   onChange: (value: string) => void;
   showSecret: boolean;
   onToggleSecret: () => void;
+}
+
+interface FeishuScanPanelProps {
+  onCredentials: (creds: { appId: string; appSecret: string }) => void;
+}
+
+function FeishuScanPanel({ onCredentials }: FeishuScanPanelProps) {
+  const { t } = useTranslation('channels');
+  const [qr, setQr] = useState<string | null>(null);
+  const [userCode, setUserCode] = useState<string | null>(null);
+  const [flowId, setFlowId] = useState<string | null>(null);
+  const [intervalSeconds, setIntervalSeconds] = useState(5);
+  const [starting, setStarting] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'pending' | 'expired' | 'denied' | 'confirmed'>('idle');
+
+  const onCredentialsRef = useRef(onCredentials);
+  useEffect(() => {
+    onCredentialsRef.current = onCredentials;
+  }, [onCredentials]);
+
+  const start = async () => {
+    setStarting(true);
+    setStatus('idle');
+    setQr(null);
+    setUserCode(null);
+    setFlowId(null);
+    try {
+      const result = await hostApi.channels.feishuOnboardingBegin();
+      setQr(result.qr ?? null);
+      setUserCode(result.userCode ?? null);
+      setFlowId(result.flowId);
+      setIntervalSeconds(Math.max(2, result.intervalSeconds || 5));
+      setStatus('pending');
+    } catch (error) {
+      toast.error(t('toast.qrFailed', { name: CHANNEL_NAMES.feishu, error: String(error) }));
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!flowId || status !== 'pending') return;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const result = await hostApi.channels.feishuOnboardingPoll(flowId);
+        if (cancelled) return;
+        if (result.status === 'confirmed' && result.appId && result.appSecret) {
+          setStatus('confirmed');
+          toast.success(t('dialog.feishuConfirmed'));
+          onCredentialsRef.current({ appId: result.appId, appSecret: result.appSecret });
+          return;
+        }
+        if (result.status === 'expired') {
+          setStatus('expired');
+          return;
+        }
+        if (result.status === 'denied') {
+          setStatus('denied');
+        }
+      } catch {
+        // transient errors are retried on the next tick
+      }
+    };
+
+    const id = window.setInterval(poll, intervalSeconds * 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [flowId, status, intervalSeconds, t]);
+
+  const showRegenerate = status === 'expired' || status === 'denied';
+
+  return (
+    <div className="text-center space-y-6 py-2">
+      {qr && status === 'pending' ? (
+        <>
+          <div className="bg-transparent p-4 rounded-3xl inline-block shadow-sm border border-black/10 dark:border-white/10">
+            <img src={qr} alt="Feishu QR Code" className="w-64 h-64 object-contain rounded-2xl" />
+          </div>
+          <p className="text-sm text-muted-foreground">{t('dialog.feishuScanHint')}</p>
+          {userCode && (
+            <p className="text-xs font-mono text-muted-foreground/80">
+              {t('dialog.feishuUserCode', { code: userCode })}
+            </p>
+          )}
+        </>
+      ) : (
+        <div className="flex flex-col items-center gap-4 py-8">
+          {showRegenerate ? (
+            <p className="text-sm text-destructive">
+              {status === 'expired' ? t('dialog.feishuExpired') : t('dialog.feishuDenied')}
+            </p>
+          ) : (
+            <div className="h-64 w-64 rounded-2xl border border-dashed border-black/10 dark:border-white/10 flex items-center justify-center">
+              <QrCode className="h-24 w-24 text-muted-foreground/40" />
+            </div>
+          )}
+          <Button
+            onClick={() => { void start(); }}
+            disabled={starting}
+            className={primaryButtonClasses}
+          >
+            {starting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                {t('dialog.generatingQR')}
+              </>
+            ) : (
+              <>
+                <QrCode className="h-4 w-4 mr-2" />
+                {showRegenerate ? t('dialog.feishuRegenerate') : t('dialog.feishuGenerateQr')}
+              </>
+            )}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ChannelLogo({ type }: { type: ChannelType }) {

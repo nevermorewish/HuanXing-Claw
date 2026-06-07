@@ -19,6 +19,7 @@
     "deleteConfirm": "Are you sure you want to delete this channel?",
     "showAll": "Show All",
     "pluginBadge": "Plugin",
+    "recommendedBadge": "Recommended",
     "toast": {
         "whatsappConnected": "WhatsApp connected successfully",
         "whatsappFailed": "WhatsApp connection failed: {{error}}",
