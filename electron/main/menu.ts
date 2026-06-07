@@ -6,6 +6,7 @@ import { Menu, app, shell, BrowserWindow } from 'electron';
 import { MENU_LABELS } from '@shared/i18n/resources';
 import { resolveSupportedLanguage, type LanguageCode } from '@shared/language';
 import { getSetting } from '../utils/store';
+import { refreshTrayMenu } from './tray';
 
 function applyAppName(label: string): string {
   return label.replaceAll('{{appName}}', app.name);
@@ -210,4 +211,7 @@ export async function createMenu(language?: string): Promise<void> {
   
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
+
+  // Keep the tray context menu in sync with the app menu's language.
+  await refreshTrayMenu(language);
 }

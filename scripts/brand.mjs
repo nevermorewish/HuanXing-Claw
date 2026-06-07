@@ -28,6 +28,7 @@ const REQUIRED_FIELDS = [
   'instanceLockName',
   'providerKey',
   'serviceUrl',
+  'updateFeedBaseUrl',
   'copyright',
   'vendor',
   'maintainer',

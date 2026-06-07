@@ -8,6 +8,7 @@
   "instanceLockName": "frogclaw",
   "providerKey": "frogclaw",
   "serviceUrl": "https://frogclaw.com",
+  "updateFeedBaseUrl": "https://oss.intelli-spectrum.com/frogclaw",
   "copyright": "Copyright © 2026 FrogClaw",
   "vendor": "FrogClaw",
   "maintainer": "FrogClaw Team <support@frogclaw.ai>",

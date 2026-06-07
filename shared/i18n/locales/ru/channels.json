@@ -98,7 +98,16 @@
         "generateQRCode": "Сгенерировать QR-код",
         "updateAndReconnect": "Обновить и переподключить",
         "saveAndConnect": "Сохранить и подключить",
-        "envVar": "Переменная окружения: {{var}}"
+        "envVar": "Переменная окружения: {{var}}",
+        "feishuScanTab": "Сканировать QR",
+        "feishuManualTab": "Ручной ввод",
+        "feishuGenerateQr": "Сгенерировать QR-код",
+        "feishuScanHint": "Отсканируйте код в мобильном приложении Feishu и подтвердите авторизацию",
+        "feishuRegenerate": "Сгенерировать заново",
+        "feishuExpired": "Срок действия QR-кода истёк, сгенерируйте заново",
+        "feishuDenied": "Авторизация отменена или отклонена",
+        "feishuConfirmed": "Учётные данные приложения получены, проверьте и сохраните",
+        "feishuUserCode": "Код: {{code}}"
     },
     "health": {
         "state": {

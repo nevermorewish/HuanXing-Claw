@@ -8,6 +8,7 @@
   "instanceLockName": "fengchiclaw",
   "providerKey": "fengchiclaw",
   "serviceUrl": "https://ai.fengchiyun.com",
+  "updateFeedBaseUrl": "https://oss.intelli-spectrum.com/fengchiclaw",
   "copyright": "Copyright © 2026 FengchiClaw",
   "vendor": "FengchiClaw",
   "maintainer": "FengchiClaw Team <support@fengchiclaw.ai>",

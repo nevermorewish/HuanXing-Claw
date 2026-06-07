@@ -89,6 +89,19 @@ function buildBrandedConfig(brand) {
     StartupWMClass: brand.linuxWMClass,
   };
 
+  // ── Publish/update feed ──
+  if (Array.isArray(base.publish)) {
+    base.publish = base.publish.map((entry) => {
+      if (entry.provider === 'generic') {
+        return {
+          ...entry,
+          url: `${String(brand.updateFeedBaseUrl).replace(/\/+$/, '')}/latest`,
+        };
+      }
+      return entry;
+    });
+  }
+
   return base;
 }
 

@@ -11,9 +11,7 @@ import { BrowserWindow, app, ipcMain } from 'electron';
 import { logger } from '../utils/logger';
 import { EventEmitter } from 'events';
 import { setQuitting } from './app-state';
-
-/** Base CDN URL (without trailing channel path) */
-const OSS_BASE_URL = 'https://oss.intelli-spectrum.com';
+import { BRAND } from '@shared/brand';
 
 export interface UpdateStatus {
   status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
@@ -69,16 +67,16 @@ export class AppUpdater extends EventEmitter {
       debug: (msg: string) => logger.debug('[Updater]', msg),
     };
 
-    // Override feed URL for prerelease channels so that
-    // alpha -> /alpha/alpha-mac.yml, beta -> /beta/beta-mac.yml, etc.
+    // Override feed URL per brand/channel. electron-updater still requests the
+    // standard yml names; brand separation is done by directory.
     const version = app.getVersion();
     const channel = detectChannel(version);
-    const feedUrl = `${OSS_BASE_URL}/${channel}`;
+    const feedUrl = `${BRAND.updateFeedBaseUrl.replace(/\/+$/, '')}/${channel}`;
 
-    logger.info(`[Updater] Version: ${version}, channel: ${channel}, feedUrl: ${feedUrl}`);
+    logger.info(`[Updater] Brand: ${BRAND.id}, version: ${version}, channel: ${channel}, feedUrl: ${feedUrl}`);
 
     // Set channel so electron-updater requests the correct yml filename.
-    // e.g. channel "alpha" → requests alpha-mac.yml, channel "latest" → requests latest-mac.yml
+    // e.g. channel "alpha" requests alpha.yml, channel "latest" requests latest.yml on Windows.
     autoUpdater.channel = channel;
 
     autoUpdater.setFeedURL({

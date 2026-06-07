@@ -8,6 +8,7 @@
   "instanceLockName": "deepclaw",
   "providerKey": "deepclaw",
   "serviceUrl": "http://localhost:3000",
+  "updateFeedBaseUrl": "https://oss.intelli-spectrum.com/deepclaw",
   "copyright": "Copyright © 2026 DeepClaw",
   "vendor": "DeepClaw",
   "maintainer": "DeepClaw Team <public@deepclaw.ai>",

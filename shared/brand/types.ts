@@ -29,6 +29,8 @@ export interface BrandConfig {
   providerKey: string;
   /** Default account/login service address (the login dialog's prefilled server URL). */
   serviceUrl: string;
+  /** Base update feed URL; the updater appends the release channel such as `/latest` or `/alpha`. */
+  updateFeedBaseUrl: string;
   /** Copyright line for installers/app metadata. */
   copyright: string;
   /** Vendor name (Linux packaging). */

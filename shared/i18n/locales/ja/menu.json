@@ -55,5 +55,15 @@
     "documentation": "ドキュメント",
     "reportIssue": "問題を報告",
     "openClawDocumentation": "OpenClaw ドキュメント"
+  },
+  "tray": {
+    "show": "{{appName}} を表示",
+    "gatewayStatus": "ゲートウェイ状態",
+    "running": "実行中",
+    "quickActions": "クイック操作",
+    "openChat": "チャットを開く",
+    "openSettings": "設定を開く",
+    "checkForUpdates": "アップデートを確認...",
+    "quit": "{{appName}} を終了"
   }
 }

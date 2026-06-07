@@ -13,7 +13,16 @@ permissions:
 
 jobs:
   package-windows:
+    name: Package Windows (${{ matrix.brand }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        brand:
+          - huanxingclaw
+          - deepclaw
+          - fengchiclaw
+          - frogclaw
 
     steps:
       - name: Checkout code
@@ -57,41 +66,47 @@ jobs:
       - name: Download agent-browser binaries for Windows
         run: pnpm run agent-browser:download:win
 
+      - name: Download Node.js binaries for Windows
+        run: pnpm run node:download:win
+
       - name: Build Windows package (no publish)
         env:
+          BRAND: ${{ matrix.brand }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run package:win
+        run: |
+          pnpm run package
+          node scripts/run-electron-builder.mjs --win --publish never --config.directories.output=release/${{ matrix.brand }}
 
       - name: Upload Windows Installer (x64)
         uses: actions/upload-artifact@v4
         with:
-          name: windows-installer-x64
-          path: release/*-win-x64.exe
+          name: windows-installer-${{ matrix.brand }}-x64
+          path: release/${{ matrix.brand }}/*-win-x64.exe
           if-no-files-found: error
           retention-days: 7
 
       - name: Upload Windows Installer (arm64)
         uses: actions/upload-artifact@v4
         with:
-          name: windows-installer-arm64
-          path: release/*-win-arm64.exe
+          name: windows-installer-${{ matrix.brand }}-arm64
+          path: release/${{ matrix.brand }}/*-win-arm64.exe
           if-no-files-found: warn
           retention-days: 7
 
       - name: Upload Windows Blockmap Files
         uses: actions/upload-artifact@v4
         with:
-          name: windows-blockmap
-          path: release/*.blockmap
+          name: windows-blockmap-${{ matrix.brand }}
+          path: release/${{ matrix.brand }}/*.blockmap
           if-no-files-found: warn
           retention-days: 7
 
       - name: Upload Windows Update Manifests
         uses: actions/upload-artifact@v4
         with:
-          name: windows-update-manifests
+          name: windows-update-manifests-${{ matrix.brand }}
           path: |
-            release/*.yml
-            !release/builder-debug.yml
+            release/${{ matrix.brand }}/*.yml
+            !release/${{ matrix.brand }}/builder-debug.yml
           if-no-files-found: warn
           retention-days: 7

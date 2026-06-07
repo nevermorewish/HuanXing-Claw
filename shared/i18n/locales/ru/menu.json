@@ -55,5 +55,15 @@
     "documentation": "Документация",
     "reportIssue": "Сообщить о проблеме",
     "openClawDocumentation": "Документация OpenClaw"
+  },
+  "tray": {
+    "show": "Показать {{appName}}",
+    "gatewayStatus": "Состояние шлюза",
+    "running": "Работает",
+    "quickActions": "Быстрые действия",
+    "openChat": "Открыть чат",
+    "openSettings": "Открыть настройки",
+    "checkForUpdates": "Проверить обновления...",
+    "quit": "Выйти из {{appName}}"
   }
 }

@@ -98,7 +98,16 @@
         "generateQRCode": "QRコードを生成",
         "updateAndReconnect": "更新して再接続",
         "saveAndConnect": "保存して接続",
-        "envVar": "環境変数: {{var}}"
+        "envVar": "環境変数: {{var}}",
+        "feishuScanTab": "QRで取得",
+        "feishuManualTab": "手動入力",
+        "feishuGenerateQr": "QRコードを生成",
+        "feishuScanHint": "Feishuモバイルアプリでスキャンし、認可を承認してください",
+        "feishuRegenerate": "再生成",
+        "feishuExpired": "QRコードの有効期限が切れました。再生成してください",
+        "feishuDenied": "認可がキャンセルまたは拒否されました",
+        "feishuConfirmed": "アプリ認証情報を取得しました。確認して保存してください",
+        "feishuUserCode": "認証コード: {{code}}"
     },
     "health": {
         "state": {

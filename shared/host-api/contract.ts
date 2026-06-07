@@ -265,6 +265,28 @@ export type ChannelSaveConfigResult = HostSuccess & {
 };
 export type ChannelConfiguredResult = HostSuccess & { channels?: Array<string | JsonRecord> };
 
+export type FeishuOnboardingStatus = 'pending' | 'confirmed' | 'expired' | 'denied';
+export type FeishuOnboardingBeginResult = HostSuccess & {
+  flowId: string;
+  status: FeishuOnboardingStatus;
+  qr?: string;
+  qrUrl?: string;
+  userCode?: string;
+  intervalSeconds: number;
+  expiresAtMs: number;
+  message?: string;
+};
+export type FeishuOnboardingPollPayload = { flowId: string };
+export type FeishuOnboardingPollResult = HostSuccess & {
+  flowId: string;
+  status: FeishuOnboardingStatus;
+  appId?: string;
+  appSecret?: string;
+  intervalSeconds: number;
+  expiresAtMs: number;
+  message?: string;
+};
+
 export type AgentSnapshotResult = AgentsSnapshot & OptionalHostSuccess;
 export type AgentCreatePayload = { name: string; inheritWorkspace?: boolean };
 export type AgentUpdatePayload = { id: string; name: string };
@@ -886,6 +908,8 @@ export type HostApiContract = {
     deleteConfig: (payload: ChannelAccountPayload) => HostSuccess;
     startLogin: (payload: ChannelAccountPayload) => HostSuccess;
     cancelLogin: (payload: ChannelAccountPayload) => HostSuccess;
+    feishuOnboardingBegin: () => FeishuOnboardingBeginResult;
+    feishuOnboardingPoll: (payload: FeishuOnboardingPollPayload) => FeishuOnboardingPollResult;
   };
   agents: {
     list: () => AgentSnapshotResult;

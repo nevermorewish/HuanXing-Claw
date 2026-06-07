@@ -186,6 +186,10 @@ export const hostApi = {
     cancelLogin: (channelType: string, input?: { accountId?: string }) => (
       invokeHost('channels', 'cancelLogin', { channelType, ...input })
     ),
+    feishuOnboardingBegin: () => invokeHost('channels', 'feishuOnboardingBegin'),
+    feishuOnboardingPoll: (flowId: string) => (
+      invokeHost('channels', 'feishuOnboardingPoll', { flowId })
+    ),
   },
   agents: {
     list: () => invokeHost('agents', 'list'),

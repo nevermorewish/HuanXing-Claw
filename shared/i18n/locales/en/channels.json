@@ -98,7 +98,16 @@
         "generateQRCode": "Generate QR Code",
         "updateAndReconnect": "Update & Reconnect",
         "saveAndConnect": "Save & Connect",
-        "envVar": "Environment Variable: {{var}}"
+        "envVar": "Environment Variable: {{var}}",
+        "feishuScanTab": "Scan QR",
+        "feishuManualTab": "Manual entry",
+        "feishuGenerateQr": "Generate QR code",
+        "feishuScanHint": "Scan with the Feishu mobile app and approve the authorization",
+        "feishuRegenerate": "Regenerate",
+        "feishuExpired": "QR code expired, please regenerate",
+        "feishuDenied": "Authorization cancelled or denied",
+        "feishuConfirmed": "App credentials obtained, please review and save",
+        "feishuUserCode": "Code: {{code}}"
     },
     "health": {
         "state": {
