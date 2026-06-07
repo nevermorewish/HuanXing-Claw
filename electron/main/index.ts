@@ -30,6 +30,7 @@ import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToPro
 import { isQuitting, setQuitting } from './app-state';
 import { getMacTrafficLightPosition, syncMacTrafficLightPosition } from './traffic-light-layout';
 import { getSetting } from '../utils/store';
+import { setOpenClawConfigDirOverride } from '../utils/paths';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
 import {
@@ -310,6 +311,14 @@ async function initialize(): Promise<void> {
   logger.debug(
     `Runtime: platform=${process.platform}/${process.arch}, electron=${process.versions.electron}, node=${process.versions.node}, packaged=${app.isPackaged}, pid=${process.pid}, ppid=${process.ppid}`
   );
+
+  // Seed the custom OpenClaw config-directory override (if any) before any
+  // code resolves getOpenClawConfigDir() or the gateway is launched.
+  try {
+    setOpenClawConfigDirOverride(await getSetting('openClawConfigDir'));
+  } catch (err) {
+    logger.warn('Failed to apply custom OpenClaw config dir on startup:', err);
+  }
 
   if (!isE2EMode) {
     // Warm up network optimization (non-blocking)

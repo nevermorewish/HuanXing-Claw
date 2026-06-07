@@ -44,6 +44,14 @@ export interface HuanxingTestResult {
   error?: string;
 }
 
+export interface HuanxingBalance {
+  quota: number;
+  usedQuota: number;
+  quotaPerUnit: number;
+  displayInCurrency: boolean;
+  topUpUrl: string;
+}
+
 interface HuanxingState {
   serverUrl: string;
   lastUsername: string;
@@ -55,6 +63,8 @@ interface HuanxingState {
   apiKey: string | null;
   /** The huanxing provider config read from openclaw.json. Not persisted. */
   modelConfig: HuanxingModelConfig | null;
+  /** Account balance, fetched after login. Not persisted. */
+  balance: HuanxingBalance | null;
   loading: boolean;
   error: string | null;
 
@@ -62,6 +72,10 @@ interface HuanxingState {
   savedCredentials: () => Promise<{ baseUrl: string; username: string; password: string } | null>;
   /** Log in and fetch models + key. Returns the model list on success. */
   login: (username: string, password: string) => Promise<string[]>;
+  /** Refresh the account balance. Safe to call when logged out (no-op). */
+  fetchBalance: () => Promise<void>;
+  /** Open the server's recharge / top-up page in the external browser. */
+  openRecharge: () => Promise<void>;
   /** Write the selected models as the single huanxing provider. Returns count. */
   saveModels: (models: HuanxingModelEntry[], primaryModelId?: string | null) => Promise<number>;
   /** Read the huanxing provider config from openclaw.json. */
@@ -83,6 +97,7 @@ export const useHuanxingStore = create<HuanxingState>()(
       models: [],
       apiKey: null,
       modelConfig: null,
+      balance: null,
       loading: false,
       error: null,
 
@@ -95,6 +110,25 @@ export const useHuanxingStore = create<HuanxingState>()(
           throw new Error(result.error || '读取已保存凭据失败');
         }
         return result.credentials ?? null;
+      },
+
+      fetchBalance: async () => {
+        if (!get().loggedIn) return;
+        try {
+          const result = await hostApi.huanxing.getBalance();
+          if (result.success) {
+            set({ balance: result.balance ?? null });
+          }
+        } catch (error) {
+          // Balance is non-critical; don't surface a hard error.
+          console.error('Failed to load Huanxing balance', error);
+        }
+      },
+
+      openRecharge: async () => {
+        const serverUrl = get().serverUrl.trim().replace(/\/+$/, '');
+        if (!serverUrl) return;
+        await hostApi.shell.openExternal(`${serverUrl}/wallet`);
       },
 
       login: async (username, password) => {
@@ -130,6 +164,8 @@ export const useHuanxingStore = create<HuanxingState>()(
             serverUrl: baseUrl,
             loading: false,
           });
+          // Fetch balance in the background — don't block the login flow.
+          void get().fetchBalance();
           return models;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -200,7 +236,7 @@ export const useHuanxingStore = create<HuanxingState>()(
         } catch {
           // ignore — clearing local state is enough
         }
-        set({ loggedIn: false, user: null, models: [], apiKey: null });
+        set({ loggedIn: false, user: null, models: [], apiKey: null, balance: null });
       },
     }),
     {

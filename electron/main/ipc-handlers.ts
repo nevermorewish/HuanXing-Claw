@@ -53,6 +53,7 @@ import { createUpdatesApi } from '../services/updates-api';
 import { createUvApi } from '../services/uv-api';
 import { createGatewayApi } from '../services/gateway-api';
 import { createLogsApi } from '../services/logs-api';
+import { createConfigApi } from '../services/config-api';
 import { createSettingsApi } from '../services/settings-api';
 import { createChannelsApi } from '../services/channels-api';
 import { createAgentsApi } from '../services/agents-api';
@@ -65,6 +66,7 @@ import { createSessionsApi } from '../services/sessions-api';
 import { createSkillsApi } from '../services/skills-api';
 import { createUsageApi } from '../services/usage-api';
 import { createHuanXingApi } from '../services/huanxing-api';
+import { createModelProvidersApi } from '../services/model-providers-api';
 import {
   isLaunchAtStartupKey,
   isProxyKey,
@@ -145,6 +147,7 @@ function registerTypedHostHandlers(
     settings: createSettingsApi(gatewayManager),
     gateway: createGatewayApi(gatewayManager, gatewayRpcBackpressure),
     logs: createLogsApi(),
+    config: createConfigApi({ gatewayManager }),
     channels: createChannelsApi({ gatewayManager, mainWindow }),
     agents: createAgentsApi({ gatewayManager }),
     providers: createProvidersApi({ gatewayManager, mainWindow }),
@@ -156,6 +159,7 @@ function registerTypedHostHandlers(
     skills: createSkillsApi({ clawHubService, gatewayManager }),
     usage: createUsageApi(),
     huanxing: createHuanXingApi({ gatewayManager }),
+    modelProviders: createModelProvidersApi({ gatewayManager }),
   });
   registerHostInvokeHandler(hostApiRegistry);
 }

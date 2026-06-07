@@ -397,6 +397,110 @@ function extractModelReply(data: unknown, isAnthropic: boolean): string {
   }
 }
 
+export type RemoteModelsResult =
+  | { ok: true; models: Array<{ id: string; name?: string }> }
+  | { ok: false; error: string; notSupported?: boolean };
+
+/** Extract model ids from the various shapes a `/models` endpoint may return. */
+function parseRemoteModelsBody(data: unknown): Array<{ id: string }> | null {
+  // OpenAI shape: { data: [{ id }] }
+  const obj = data as Record<string, unknown> | null;
+  const list =
+    obj && Array.isArray(obj.data) ? obj.data
+    : obj && Array.isArray(obj.models) ? obj.models   // some relays use { models: [...] }
+    : Array.isArray(data) ? data                       // bare array
+    : null;
+  if (!list) return null;
+  const ids: Array<{ id: string }> = [];
+  for (const item of list) {
+    if (typeof item === 'string') {
+      if (item.trim()) ids.push({ id: item });
+    } else if (item && typeof item === 'object') {
+      const rec = item as Record<string, unknown>;
+      const id = typeof rec.id === 'string' ? rec.id
+        : typeof rec.name === 'string' ? rec.name
+        : '';
+      if (id.trim()) ids.push({ id });
+    }
+  }
+  return ids;
+}
+
+/**
+ * Fetch the model list from a provider's `/models` endpoint (clawpanel-style).
+ * Uses protocol-appropriate auth: Bearer for OpenAI-compatible, x-api-key for
+ * Anthropic, `?key=` for Google. Returns `notSupported: true` when the endpoint
+ * doesn't implement model listing (404/501, or 400 without a parseable body) so
+ * the UI can guide the user to add models manually.
+ */
+export async function listRemoteModels(
+  baseUrl: string,
+  apiKey: string,
+  api: string = 'openai-completions',
+): Promise<RemoteModelsResult> {
+  const trimmedBaseUrl = baseUrl.trim();
+  if (!trimmedBaseUrl) {
+    return { ok: false, error: 'Base URL is required to fetch models' };
+  }
+
+  const base = normalizeBaseUrl(trimmedBaseUrl);
+  const isAnthropic = api === 'anthropic-messages';
+  const isGoogle = api === 'google-generative-ai';
+
+  let url: string;
+  const headers: Record<string, string> = {};
+  if (isAnthropic) {
+    url = `${base}/models?limit=1000`;
+    headers['x-api-key'] = apiKey;
+    headers['anthropic-version'] = '2023-06-01';
+  } else if (isGoogle) {
+    url = `${base}/models?pageSize=1000&key=${encodeURIComponent(apiKey)}`;
+  } else {
+    url = `${base}/models`;
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  try {
+    logValidationRequest('listRemoteModels', 'GET', url, headers);
+    const response = await proxyAwareFetch(url, { headers });
+    logValidationStatus('listRemoteModels', response.status);
+    const data = await response.json().catch(() => null);
+
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, error: 'Invalid API key' };
+    }
+    if (response.status === 404 || response.status === 501) {
+      return { ok: false, error: `HTTP ${response.status}`, notSupported: true };
+    }
+    if (response.status < 200 || response.status >= 300) {
+      const obj = data as { error?: { message?: string }; message?: string } | null;
+      const msg = obj?.error?.message || obj?.message || `HTTP ${response.status}`;
+      return { ok: false, error: msg };
+    }
+
+    const parsed = parseRemoteModelsBody(data);
+    if (!parsed) {
+      return { ok: false, error: 'Unrecognized /models response', notSupported: true };
+    }
+    // De-dupe and sort descending (newest-ish first), like clawpanel.
+    const seen = new Set<string>();
+    const models = parsed
+      .filter((m) => {
+        if (seen.has(m.id)) return false;
+        seen.add(m.id);
+        return true;
+      })
+      .map((m) => ({ id: m.id, name: m.id }))
+      .sort((a, b) => b.id.localeCompare(a.id));
+    return { ok: true, models };
+  } catch (error) {
+    return {
+      ok: false,
+      error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
 async function validateAnthropicHeaderKey(
   providerType: string,
   apiKey: string,

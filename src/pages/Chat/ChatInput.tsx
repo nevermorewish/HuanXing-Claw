@@ -19,7 +19,7 @@ import { useChatStore } from '@/stores/chat';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import { useProviderStore } from '@/stores/providers';
-import { useHuanxingStore } from '@/stores/huanxing';
+import { useModelProvidersStore } from '@/stores/modelProviders';
 import { buildConfiguredModelOptions, formatModelRefLabel, type ConfiguredModelOption } from '@/lib/model-options';
 import type { AgentSummary } from '@/types/agent';
 import type { QuickAccessSkill } from '@/types/skill';
@@ -220,8 +220,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const providerStatuses = useProviderStore((s) => s.statuses);
   const providerDefaultAccountId = useProviderStore((s) => s.defaultAccountId);
   const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
-  const huanxingModelConfig = useHuanxingStore((s) => s.modelConfig);
-  const loadHuanxingModelConfig = useHuanxingStore((s) => s.loadModelConfig);
+  const modelProviders = useModelProvidersStore((s) => s.providers);
+  const loadModelProviders = useModelProvidersStore((s) => s.load);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
@@ -237,28 +237,28 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       providerStatuses,
       providerDefaultAccountId,
     );
-    // Merge the single huanxing provider's nested models. They live in
-    // openclaw.json (not the account store), so buildConfiguredModelOptions —
-    // which is account-driven — can't surface them. Map each to a
-    // "huanxing/<id>" modelRef and de-dupe against the account options.
-    const huanxingOptions: ConfiguredModelOption[] = (huanxingModelConfig?.models ?? []).map(
-      (model) => ({
-        modelRef: `huanxing/${model.id}`,
+    // Merge every provider's nested models from openclaw.json (the
+    // clawpanel-style config). These live outside the account store, so
+    // buildConfiguredModelOptions can't surface them. Map each to a
+    // "<provider>/<id>" modelRef and de-dupe against the account options.
+    const providerOptions: ConfiguredModelOption[] = modelProviders.flatMap((provider) =>
+      provider.models.map((model) => ({
+        modelRef: `${provider.key}/${model.id}`,
         label: model.id,
-        runtimeProviderKey: 'huanxing',
-        accountId: 'huanxing',
-      }),
+        runtimeProviderKey: provider.key,
+        accountId: provider.key,
+      })),
     );
     const seen = new Set(accountOptions.map((o) => o.modelRef));
     const merged = [...accountOptions];
-    for (const option of huanxingOptions) {
+    for (const option of providerOptions) {
       if (!seen.has(option.modelRef)) {
         seen.add(option.modelRef);
         merged.push(option);
       }
     }
     return merged;
-  }, [providerAccounts, providerDefaultAccountId, providerStatuses, huanxingModelConfig]);
+  }, [providerAccounts, providerDefaultAccountId, providerStatuses, modelProviders]);
   const effectiveModelRef = optimisticModelRef || currentAgent?.modelRef || defaultModelRef || modelOptions[0]?.modelRef || null;
   const currentModelLabel = formatModelRefLabel(effectiveModelRef);
   const mentionableAgents = useMemo(
@@ -291,8 +291,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   }, [refreshProviderSnapshot]);
 
   useEffect(() => {
-    void loadHuanxingModelConfig();
-  }, [loadHuanxingModelConfig]);
+    void loadModelProviders();
+  }, [loadModelProviders]);
 
   useEffect(() => {
     if (gatewayStatus.state === 'running') return;
@@ -302,14 +302,14 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
         if (cancelled) return;
         if (status.state === 'running') {
           void refreshProviderSnapshot();
-          void loadHuanxingModelConfig();
+          void loadModelProviders();
         }
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [gatewayStatus.state, refreshProviderSnapshot, loadHuanxingModelConfig]);
+  }, [gatewayStatus.state, refreshProviderSnapshot, loadModelProviders]);
 
   useEffect(() => {
     setOptimisticModelRef(null);

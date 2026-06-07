@@ -35,8 +35,8 @@ vi.mock('@/lib/telemetry', () => ({
   trackUiEvent: (...args: unknown[]) => trackUiEventMock(...args),
 }));
 
-vi.mock('@/components/settings/ProvidersSettings', () => ({
-  ProvidersSettings: () => null,
+vi.mock('@/components/models/ProvidersModelConfig', () => ({
+  ProvidersModelConfig: () => null,
 }));
 
 vi.mock('@/components/common/FeedbackState', () => ({

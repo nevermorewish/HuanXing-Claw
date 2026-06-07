@@ -5,7 +5,7 @@
  * session, then lets the user pick which fetched models to register as custom
  * provider accounts.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { LogIn, Loader2, Boxes } from 'lucide-react';
 import {
@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useHuanxingStore, DEFAULT_HUANXING_URL } from '@/stores/huanxing';
+import { HUANXING_BRAND } from '@/lib/huanxing-brand';
 
 interface HuanxingLoginDialogProps {
   open: boolean;
@@ -33,6 +34,7 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
   const savedCredentials = useHuanxingStore((s) => s.savedCredentials);
   const login = useHuanxingStore((s) => s.login);
   const saveModels = useHuanxingStore((s) => s.saveModels);
+  const loadModelConfig = useHuanxingStore((s) => s.loadModelConfig);
 
   const [step, setStep] = useState<Step>('credentials');
   const [url, setUrl] = useState(serverUrl || DEFAULT_HUANXING_URL);
@@ -44,17 +46,28 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
   const [models, setModels] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  // Reset to a clean state whenever the dialog is opened.
+  // Track whether we've already initialised for the current open cycle, so the
+  // reset only runs on the open→ transition. Without this guard, handleLogin's
+  // setServerUrl()/login() mutate serverUrl/lastUsername in the store, which
+  // would re-fire a [serverUrl, lastUsername]-keyed reset, bounce step back to
+  // 'credentials', and wipe the user's model selection.
+  const initialisedRef = useRef(false);
+
+  // Reset to a clean state whenever the dialog is (re)opened — once per open.
   useEffect(() => {
-    if (open) {
-      setStep('credentials');
-      setUrl(serverUrl || DEFAULT_HUANXING_URL);
-      setUsername(lastUsername);
-      setPassword('');
-      setError(null);
-      setModels([]);
-      setSelected(new Set());
+    if (!open) {
+      initialisedRef.current = false;
+      return;
     }
+    if (initialisedRef.current) return;
+    initialisedRef.current = true;
+    setStep('credentials');
+    setUrl(serverUrl || DEFAULT_HUANXING_URL);
+    setUsername(lastUsername);
+    setPassword('');
+    setError(null);
+    setModels([]);
+    setSelected(new Set());
   }, [open, serverUrl, lastUsername]);
 
   useEffect(() => {
@@ -91,8 +104,12 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
     try {
       setServerUrl(url.trim() || DEFAULT_HUANXING_URL);
       const fetched = await login(username.trim(), password);
+      // Pre-select models that are already configured so re-login doesn't drop
+      // them, plus every newly-fetched model.
+      const existing = await loadModelConfig().catch(() => null);
+      const existingIds = new Set((existing?.models ?? []).map((m) => m.id));
       setModels(fetched);
-      setSelected(new Set(fetched));
+      setSelected(new Set([...fetched, ...fetched.filter((id) => existingIds.has(id))]));
       if (fetched.length === 0) {
         toast.info('登录成功，但该账号暂无可用模型');
         onOpenChange(false);
@@ -132,7 +149,7 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
     setError(null);
     try {
       const count = await saveModels(Array.from(selected).map((id) => ({ id, name: id })));
-      toast.success(`已添加 ${count} 个 Huanxing 模型，可在「模型」页查看`);
+      toast.success(`已添加 ${count} 个 ${HUANXING_BRAND} 模型，可在「模型」页查看`);
       onOpenChange(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -149,10 +166,10 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
         {step === 'credentials' ? (
           <>
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
-              <LogIn size={18} /> 连接 Huanxing
+              <LogIn size={18} /> 连接 {HUANXING_BRAND}
             </DialogTitle>
             <DialogDescription className="mt-1 text-sm text-muted-foreground">
-              登录到 Huanxing API 服务，拉取可用模型并添加为可用的 Provider。
+              登录到 {HUANXING_BRAND} API 服务，拉取可用模型并添加为可用的 Provider。
             </DialogDescription>
 
             <div className="mt-4 space-y-3">

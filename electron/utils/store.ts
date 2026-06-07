@@ -52,6 +52,12 @@ export interface AppSettings {
   sidebarCollapsed: boolean;
   devModeUnlocked: boolean;
 
+  // OpenClaw
+  // Custom OpenClaw config/state directory. Empty string => use the default
+  // (~/.openclaw). When set, it is resolved by getOpenClawConfigDir() and also
+  // passed to the spawned gateway via OPENCLAW_STATE_DIR.
+  openClawConfigDir: string;
+
   // Presets
   selectedBundles: string[];
   enabledSkills: string[];
@@ -102,6 +108,9 @@ function createDefaultSettings(): AppSettings {
     // UI State
     sidebarCollapsed: false,
     devModeUnlocked: false,
+
+    // OpenClaw
+    openClawConfigDir: '',
 
     // Presets
     selectedBundles: ['productivity', 'developer'],

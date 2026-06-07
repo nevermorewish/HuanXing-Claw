@@ -3,7 +3,7 @@
  * Cross-platform path resolution helpers
  */
 import { createRequire } from 'node:module';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
 
@@ -48,10 +48,58 @@ export function expandPath(path: string): string {
 }
 
 /**
- * Get OpenClaw config directory
+ * Default OpenClaw config/state directory (~/.openclaw).
+ */
+export function getDefaultOpenClawConfigDir(): string {
+  return join(homedir(), '.openclaw');
+}
+
+/**
+ * In-process override for the OpenClaw config/state directory.
+ *
+ * `getOpenClawConfigDir()` is called synchronously from many call sites, so the
+ * override is held in a module-level cache rather than read from the async
+ * settings store on each call. The main process seeds it at startup (after
+ * settings load) via `setOpenClawConfigDirOverride()`, and the config-management
+ * API refreshes it whenever the user changes the directory.
+ */
+let openClawConfigDirOverride: string | null = null;
+
+/**
+ * Normalize a user-supplied OpenClaw config directory.
+ * Ported from clawpanel `normalize_custom_openclaw_dir`:
+ *   trim -> expand leading ~ -> make absolute (relative to cwd).
+ * Returns '' when the input is empty after trimming (meaning "use default").
+ */
+export function normalizeOpenClawConfigDir(raw: string): string {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return '';
+  const expanded = expandPath(trimmed);
+  return resolve(expanded);
+}
+
+/**
+ * Set (or clear) the OpenClaw config directory override.
+ * An empty/whitespace string clears the override (falls back to ~/.openclaw).
+ */
+export function setOpenClawConfigDirOverride(dir: string | null | undefined): void {
+  const normalized = normalizeOpenClawConfigDir(dir ?? '');
+  openClawConfigDirOverride = normalized || null;
+}
+
+/**
+ * Get OpenClaw config directory.
+ * Honors a custom directory when one has been set, otherwise ~/.openclaw.
  */
 export function getOpenClawConfigDir(): string {
-  return join(homedir(), '.openclaw');
+  return openClawConfigDirOverride ?? getDefaultOpenClawConfigDir();
+}
+
+/**
+ * Whether a custom (non-default) OpenClaw config directory is currently active.
+ */
+export function isOpenClawConfigDirCustom(): boolean {
+  return openClawConfigDirOverride !== null;
 }
 
 /**

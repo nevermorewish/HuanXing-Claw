@@ -245,7 +245,7 @@
   }
 
   .clawx-dialog-content {
-    @apply fixed left-1/2 top-1/2 z-50 w-full outline-none;
+    @apply fixed left-1/2 top-1/2 z-50 w-full outline-none rounded-2xl border border-border bg-background text-foreground shadow-2xl;
     transform: translate(-50%, -50%);
     transform-origin: center;
     will-change: opacity, transform;

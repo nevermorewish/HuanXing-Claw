@@ -21,6 +21,9 @@ import {
   Check,
   X,
   Cpu,
+  BarChart3,
+  ScrollText,
+  SlidersHorizontal,
   ImagePlus,
   Moon,
   ChevronRight,
@@ -39,6 +42,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { hostApi } from '@/lib/host-api';
+import { HuanxingLoginButton } from '@/components/huanxing/HuanxingLoginButton';
 import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '@shared/sidebar-layout';
 import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
@@ -320,6 +324,9 @@ export function Sidebar() {
     { to: '/channels', icon: <Network className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.channels'), testId: 'sidebar-nav-channels' },
     { to: '/skills', icon: <Puzzle className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.skills'), testId: 'sidebar-nav-skills' },
     { to: '/cron', icon: <Clock className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.cronTasks'), testId: 'sidebar-nav-cron' },
+    { to: '/config', icon: <SlidersHorizontal className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.configManagement'), testId: 'sidebar-nav-config' },
+    { to: '/logs', icon: <ScrollText className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.logViewer'), testId: 'sidebar-nav-logs' },
+    { to: '/usage', icon: <BarChart3 className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.usage'), testId: 'sidebar-nav-usage' },
     ...(devModeUnlocked
       ? [
         { to: '/image-generation', icon: <ImagePlus className="h-4 w-4" strokeWidth={2} />, label: t('common:sidebar.imageGeneration'), testId: 'sidebar-nav-image-generation' },
@@ -592,6 +599,8 @@ export function Sidebar() {
             {!sidebarCollapsed && <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.settings')}</span>}
           </>
         </NavLink>
+
+        <HuanxingLoginButton collapsed={sidebarCollapsed} />
 
         {devModeUnlocked && (
           <Button

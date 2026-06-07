@@ -167,6 +167,41 @@ export function createHuanXingApi(
       }
     },
 
+    getBalance: async () => {
+      try {
+        if (!huanxingSession.isLoggedIn()) {
+          return { success: false, error: '尚未登录' };
+        }
+        const [{ quota, usedQuota }, status] = await Promise.all([
+          huanxingSession.fetchSelfQuota(),
+          huanxingSession.fetchStatus(),
+        ]);
+        const baseUrl = huanxingSession.getBaseUrl() ?? '';
+        // New-API top_up_link may be absolute or a path; resolve against baseUrl.
+        let topUpUrl = '';
+        if (status.topUpLink) {
+          topUpUrl = /^https?:\/\//i.test(status.topUpLink)
+            ? status.topUpLink
+            : `${baseUrl.replace(/\/+$/, '')}/${status.topUpLink.replace(/^\/+/, '')}`;
+        } else if (baseUrl) {
+          topUpUrl = `${baseUrl.replace(/\/+$/, '')}/topup`;
+        }
+        return {
+          success: true,
+          balance: {
+            quota,
+            usedQuota,
+            quotaPerUnit: status.quotaPerUnit,
+            displayInCurrency: status.displayInCurrency,
+            topUpUrl,
+          },
+        };
+      } catch (error) {
+        logger.error('huanxing.getBalance failed', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+
     logout: async () => {
       huanxingSession.logout();
       return { success: true };

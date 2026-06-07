@@ -151,6 +151,34 @@ export type LogFileEntry = {
 };
 export type LogFilesResult = { files: LogFileEntry[] };
 
+// ── Config management ─────────────────────────────────────────────
+export type ConfigReadResult = { content: string; exists: boolean; path: string };
+export type ConfigWritePayload = { content: string };
+export type ConfigValidateResult = {
+  valid: boolean;
+  error?: string;
+  backupExists?: boolean;
+  warnings: string[];
+  uiFields: string[];
+};
+export type ConfigCalibrateMode = 'inherit' | 'reset';
+export type ConfigCalibratePayload = { mode: ConfigCalibrateMode };
+export type ConfigCalibrateResult = {
+  mode: ConfigCalibrateMode;
+  source: string;
+  backup: string | null;
+  inheritedKeys: string[];
+  warnings: string[];
+  message: string;
+  success: boolean;
+};
+export type ConfigBackupEntry = { name: string; size: number; createdAt: number };
+export type ConfigBackupsResult = { backups: ConfigBackupEntry[] };
+export type ConfigCreateBackupResult = HostSuccess & { name?: string; size?: number };
+export type ConfigBackupNamePayload = { name: string };
+export type ConfigDirResult = { dir: string; defaultDir: string; isCustom: boolean };
+export type ConfigSetDirPayload = { dir: string };
+
 export type GatewayHealthSummary = {
   state: 'healthy' | 'degraded' | 'unresponsive';
   reasons: string[];
@@ -688,6 +716,19 @@ export type HuanxingCredentials = {
 export type HuanxingCredentialsResult = HostSuccess & {
   credentials?: HuanxingCredentials | null;
 };
+export type HuanxingBalance = {
+  /** Raw New-API quota units. */
+  quota: number;
+  /** Quota already consumed, in the same units. */
+  usedQuota: number;
+  /** Divisor to convert quota units → a currency amount. */
+  quotaPerUnit: number;
+  /** Whether the server prefers showing a currency amount over raw quota. */
+  displayInCurrency: boolean;
+  /** Resolved absolute URL of the server's top-up / recharge page. */
+  topUpUrl: string;
+};
+export type HuanxingBalanceResult = HostSuccess & { balance?: HuanxingBalance };
 export type HuanxingLoginResult = HostSuccess & { user?: HuanxingUser };
 export type HuanxingSetupResult = HostSuccess & {
   user?: HuanxingUser;
@@ -713,6 +754,48 @@ export type HuanxingSaveModelConfigPayload = {
 };
 export type HuanxingModelIdPayload = { modelId: string };
 export type HuanxingTestModelResult = HostSuccess & { latencyMs?: number; reply?: string };
+
+// ── Generic model-provider config (clawpanel-style, all providers) ──
+export type ModelProviderEntry = {
+  id: string;
+  name: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+};
+export type ModelProviderDTO = {
+  key: string;
+  baseUrl: string;
+  api: string;
+  hasKey: boolean;
+  maskedKey: string | null;
+  models: ModelProviderEntry[];
+  /** This provider's `provider/modelId` ref if it owns the global primary. */
+  primary: string | null;
+};
+export type ListModelProvidersResult = HostSuccess & {
+  providers?: ModelProviderDTO[];
+  /** Global default model ref (`provider/modelId`). */
+  primary?: string | null;
+  fallbacks?: string[];
+};
+export type SaveModelProviderPayload = {
+  key: string;
+  baseUrl: string;
+  api: string;
+  /** Omit / empty to preserve an existing inline key. */
+  apiKey?: string;
+  models: ModelProviderEntry[];
+  primaryModelId?: string | null;
+};
+export type ModelProviderKeyPayload = { key: string };
+export type ModelProviderModelsPayload = { key: string; models: ModelProviderEntry[] };
+export type ModelProviderModelPayload = { key: string; modelId: string };
+export type ModelProviderEditModelPayload = { key: string; modelId: string; model: ModelProviderEntry };
+export type SetPrimaryModelRefPayload = { modelRef: string };
+export type FetchRemoteModelsResult = HostSuccess & {
+  models?: ModelProviderEntry[];
+  notSupported?: boolean;
+};
 
 export type HostApiContract = {
   app: {
@@ -775,6 +858,18 @@ export type HostApiContract = {
     filePath: () => LogFilePathResult;
     listFiles: () => LogFilesResult;
     readFile: (payload: LogReadFilePayload) => LogContentResult;
+  };
+  config: {
+    read: () => ConfigReadResult;
+    write: (payload: ConfigWritePayload) => HostSuccess;
+    validate: () => ConfigValidateResult;
+    calibrate: (payload: ConfigCalibratePayload) => ConfigCalibrateResult;
+    listBackups: () => ConfigBackupsResult;
+    createBackup: () => ConfigCreateBackupResult;
+    restoreBackup: (payload: ConfigBackupNamePayload) => HostSuccess;
+    deleteBackup: (payload: ConfigBackupNamePayload) => HostSuccess;
+    getConfigDir: () => ConfigDirResult;
+    setConfigDir: (payload: ConfigSetDirPayload) => HostSuccess;
   };
   channels: {
     configured: () => ChannelConfiguredResult;
@@ -895,12 +990,24 @@ export type HostApiContract = {
     login: (payload: HuanxingLoginPayload) => HuanxingLoginResult;
     fetchSetup: () => HuanxingSetupResult;
     savedCredentials: () => HuanxingCredentialsResult;
+    getBalance: () => HuanxingBalanceResult;
     logout: () => HostSuccess;
     getModelConfig: () => HuanxingModelConfigResult;
     saveModelConfig: (payload: HuanxingSaveModelConfigPayload) => HuanxingModelConfigResult;
     setPrimaryModel: (payload: HuanxingModelIdPayload) => HuanxingModelConfigResult;
     deleteModel: (payload: HuanxingModelIdPayload) => HuanxingModelConfigResult;
     testModel: (payload: HuanxingModelIdPayload) => HuanxingTestModelResult;
+  };
+  modelProviders: {
+    list: () => ListModelProvidersResult;
+    saveProvider: (payload: SaveModelProviderPayload) => ListModelProvidersResult;
+    deleteProvider: (payload: ModelProviderKeyPayload) => ListModelProvidersResult;
+    setPrimary: (payload: SetPrimaryModelRefPayload) => ListModelProvidersResult;
+    addModels: (payload: ModelProviderModelsPayload) => ListModelProvidersResult;
+    deleteModel: (payload: ModelProviderModelPayload) => ListModelProvidersResult;
+    editModel: (payload: ModelProviderEditModelPayload) => ListModelProvidersResult;
+    testModel: (payload: ModelProviderModelPayload) => HuanxingTestModelResult;
+    fetchRemoteModels: (payload: ModelProviderKeyPayload) => FetchRemoteModelsResult;
   };
 };
 

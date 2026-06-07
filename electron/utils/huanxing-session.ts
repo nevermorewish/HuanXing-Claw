@@ -280,6 +280,50 @@ export class HuanxingSession {
   }
 
   /**
+   * GET /api/user/self — the account's quota figures.
+   *
+   * New-API stores balances as integer "quota" units; dividing by the server's
+   * `quota_per_unit` (see {@link fetchStatus}) converts to a currency amount.
+   */
+  async fetchSelfQuota(): Promise<{ quota: number; usedQuota: number }> {
+    const res = await this.requestJson<Record<string, unknown>>(this.url('/api/user/self'), {
+      headers: this.authHeaders(),
+    });
+    if (!res.body.success) {
+      throw this.envelopeError('获取账户信息', res);
+    }
+    const data = res.body.data ?? {};
+    return {
+      quota: Number(data.quota ?? 0),
+      usedQuota: Number(data.used_quota ?? 0),
+    };
+  }
+
+  /**
+   * GET /api/status — server display options needed to render the balance:
+   * `quota_per_unit` (quota→currency divisor), whether to show a currency
+   * amount vs. raw quota, and the top-up page link.
+   *
+   * This endpoint is public (no auth needed) and omits `success` on success,
+   * mirroring /api/pricing, so only an explicit `success: false` is an error.
+   */
+  async fetchStatus(): Promise<{ quotaPerUnit: number; displayInCurrency: boolean; topUpLink: string }> {
+    const res = await this.requestJson<Record<string, unknown>>(this.url('/api/status'), {
+      headers: this.authHeaders(),
+    });
+    if (res.body.success === false) {
+      throw this.envelopeError('获取服务状态', res);
+    }
+    const data = res.body.data ?? {};
+    const quotaPerUnit = Number(data.quota_per_unit);
+    return {
+      quotaPerUnit: Number.isFinite(quotaPerUnit) && quotaPerUnit > 0 ? quotaPerUnit : 500000,
+      displayInCurrency: data.display_in_currency !== false,
+      topUpLink: typeof data.top_up_link === 'string' ? data.top_up_link : '',
+    };
+  }
+
+  /**
    * Return a usable `sk-` API key, creating a token first if the account has
    * none. The token list returns masked keys, so the full key must be fetched
    * via GET /api/token/{id}/key.

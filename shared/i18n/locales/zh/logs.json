@@ -1,0 +1,19 @@
+{
+  "title": "日志查看",
+  "subtitle": "查看网关运行日志与错误",
+  "tabGateway": "网关日志",
+  "tabError": "网关错误",
+  "searchPlaceholder": "搜索日志...",
+  "refresh": "刷新",
+  "autoRefresh": "自动刷新",
+  "lines": "行数",
+  "copy": "复制",
+  "copied": "已复制到剪贴板",
+  "copyFailed": "复制失败",
+  "empty": "暂无日志",
+  "noResults": "未找到匹配结果",
+  "loadFailed": "加载日志失败",
+  "loading": "加载中...",
+  "entries": "条",
+  "matched": "匹配"
+}
