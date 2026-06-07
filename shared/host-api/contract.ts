@@ -680,6 +680,14 @@ export type HuanxingLoginPayload = {
   username: string;
   password: string;
 };
+export type HuanxingCredentials = {
+  baseUrl: string;
+  username: string;
+  password: string;
+};
+export type HuanxingCredentialsResult = HostSuccess & {
+  credentials?: HuanxingCredentials | null;
+};
 export type HuanxingLoginResult = HostSuccess & { user?: HuanxingUser };
 export type HuanxingSetupResult = HostSuccess & {
   user?: HuanxingUser;
@@ -868,6 +876,7 @@ export type HostApiContract = {
   huanxing: {
     login: (payload: HuanxingLoginPayload) => HuanxingLoginResult;
     fetchSetup: () => HuanxingSetupResult;
+    savedCredentials: () => HuanxingCredentialsResult;
     logout: () => HostSuccess;
   };
 };

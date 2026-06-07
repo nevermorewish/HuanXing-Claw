@@ -338,6 +338,7 @@ export const hostApi = {
       invokeHost('huanxing', 'login', input)
     ),
     fetchSetup: () => invokeHost('huanxing', 'fetchSetup'),
+    savedCredentials: () => invokeHost('huanxing', 'savedCredentials'),
     logout: () => invokeHost('huanxing', 'logout'),
   },
 };

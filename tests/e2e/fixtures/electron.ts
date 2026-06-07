@@ -114,6 +114,18 @@ async function closeElectronApp(app: ElectronApplication, timeoutMs = 5_000): Pr
   }
 }
 
+async function removeTempDir(path: string): Promise<void> {
+  if (process.platform === 'win32' && path.includes('clawx-e2e-home-')) {
+    console.warn(`[e2e] Leaving temporary home directory on Windows to avoid locked external app files: ${path}`);
+    return;
+  }
+  try {
+    await rm(path, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+  } catch (error) {
+    console.warn(`[e2e] Failed to remove temporary directory ${path}:`, error);
+  }
+}
+
 async function seedE2eSettings(userDataDir: string): Promise<void> {
   const settingsPath = join(userDataDir, 'settings.json');
   try {
@@ -172,7 +184,7 @@ export const test = base.extend<ElectronFixtures>({
     try {
       await provideHomeDir(homeDir);
     } finally {
-      await rm(homeDir, { recursive: true, force: true });
+      await removeTempDir(homeDir);
     }
   },
 
@@ -181,7 +193,7 @@ export const test = base.extend<ElectronFixtures>({
     try {
       await provideUserDataDir(userDataDir);
     } finally {
-      await rm(userDataDir, { recursive: true, force: true });
+      await removeTempDir(userDataDir);
     }
   },
 

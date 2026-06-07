@@ -10,13 +10,15 @@
  * require a `New-Api-User: <id>` header that must match the session user id,
  * even when the cookie is present (see Huanxing-api middleware/auth.go).
  *
- * Transport note: we use undici's low-level `request` rather than Electron's
- * `net.fetch`. `net.fetch` runs through Chromium's network stack, which treats
- * `Cookie` as a forbidden header name and silently strips it — so a manually
- * managed session cookie never reaches the server. `undici.request` sends
- * headers verbatim, which is exactly what cookie-based auth needs.
+ * Transport note: we use Node's built-in `node:http`/`node:https` rather than
+ * Electron's `net.fetch`. `net.fetch` runs through Chromium's network stack,
+ * which treats `Cookie` as a forbidden header name and silently strips it — so
+ * a manually managed session cookie never reaches the server. The Node core
+ * client sends headers verbatim (which cookie-based auth needs) and, unlike
+ * undici, is always available in the packaged app without bundling a dependency.
  */
-import { request } from 'undici';
+import http from 'node:http';
+import https from 'node:https';
 
 export interface HuanxingUser {
   id: number;
@@ -33,6 +35,18 @@ interface ApiEnvelope<T> {
   data?: T;
 }
 
+/** A model entry from GET /api/pricing (new Huanxing-api). */
+interface PricingModel {
+  model_name: string;
+  enable_groups?: string[];
+  supported_endpoint_types?: string[];
+}
+
+/** Full GET /api/pricing body (data + group gating live as siblings). */
+interface PricingResponse extends ApiEnvelope<PricingModel[]> {
+  usable_group?: Record<string, string>;
+}
+
 interface JsonResponse<T> {
   status: number;
   body: ApiEnvelope<T>;
@@ -43,12 +57,6 @@ interface JsonResponse<T> {
 /** Strip a trailing slash so we can append `/api/...` paths uniformly. */
 function normalizeBaseUrl(input: string): string {
   return input.trim().replace(/\/+$/, '');
-}
-
-/** Normalize undici's set-cookie header (string | string[] | undefined). */
-function collectSetCookies(header: string | string[] | undefined): string[] {
-  if (!header) return [];
-  return Array.isArray(header) ? header : [header];
 }
 
 /** Pull the `session=...` pair out of one or more Set-Cookie headers. */
@@ -68,7 +76,55 @@ function snippet(raw: string, max = 200): string {
   return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed;
 }
 
-class HuanxingSession {
+/** Issue a request via Node core http/https and parse a JSON envelope. */
+function rawRequest(
+  url: string,
+  init: { method?: string; headers?: Record<string, string>; body?: string },
+): Promise<{ status: number; raw: string; setCookies: string[] }> {
+  return new Promise((resolve, reject) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      reject(new Error(`无效的服务地址: ${url}`));
+      return;
+    }
+    const transport = parsed.protocol === 'https:' ? https : http;
+    const headers: Record<string, string> = { ...init.headers };
+    if (init.body != null && headers['Content-Length'] == null && headers['content-length'] == null) {
+      headers['Content-Length'] = String(Buffer.byteLength(init.body));
+    }
+
+    const req = transport.request(
+      url,
+      { method: init.method ?? 'GET', headers },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(chunk as Buffer));
+        res.on('end', () => {
+          const setCookieHeader = res.headers['set-cookie'];
+          const setCookies = Array.isArray(setCookieHeader)
+            ? setCookieHeader
+            : setCookieHeader
+              ? [setCookieHeader]
+              : [];
+          resolve({
+            status: res.statusCode ?? 0,
+            raw: Buffer.concat(chunks).toString('utf-8'),
+            setCookies,
+          });
+        });
+      },
+    );
+    req.on('error', reject);
+    if (init.body != null) {
+      req.write(init.body);
+    }
+    req.end();
+  });
+}
+
+export class HuanxingSession {
   private baseUrl: string | null = null;
   private sessionCookie: string | null = null;
   private user: HuanxingUser | null = null;
@@ -115,20 +171,14 @@ class HuanxingSession {
     url: string,
     init: { method?: string; headers?: Record<string, string>; body?: string },
   ): Promise<JsonResponse<T>> {
-    const res = await request(url, {
-      method: (init.method as 'GET' | 'POST') ?? 'GET',
-      headers: init.headers,
-      body: init.body,
-    });
-    const raw = await res.body.text();
-    const setCookies = collectSetCookies(res.headers['set-cookie']);
+    const res = await rawRequest(url, init);
     let body: ApiEnvelope<T>;
     try {
-      body = raw ? (JSON.parse(raw) as ApiEnvelope<T>) : {};
+      body = res.raw ? (JSON.parse(res.raw) as ApiEnvelope<T>) : {};
     } catch {
-      throw new Error(`服务返回非 JSON 响应 (HTTP ${res.statusCode}): ${snippet(raw)}`);
+      throw new Error(`服务返回非 JSON 响应 (HTTP ${res.status}): ${snippet(res.raw)}`);
     }
-    return { status: res.statusCode, body, raw, setCookies };
+    return { status: res.status, body, raw: res.raw, setCookies: res.setCookies };
   }
 
   /** Build an error from a failed envelope, preferring the server's message. */
@@ -187,15 +237,46 @@ class HuanxingSession {
     return this.user;
   }
 
-  /** GET /api/user/self/models — the model names usable by this account. */
+  /**
+   * GET /api/pricing — the model names usable by this account.
+   *
+   * The newer Huanxing-api dropped /api/user/self/models (it 404s via the
+   * OpenAI relay's catch-all). Models now live in the pricing list, mirroring
+   * frogclaw's flow. Each entry carries `enable_groups`; we keep models enabled
+   * for one of the account's usable groups, falling back to all entries when
+   * the server omits group gating.
+   */
   async fetchModels(): Promise<string[]> {
-    const res = await this.requestJson<string[]>(this.url('/api/user/self/models'), {
+    const res = await this.requestJson<PricingModel[]>(this.url('/api/pricing'), {
       headers: this.authHeaders(),
     });
-    if (!res.body.success) {
+    const pricing = res.body as PricingResponse;
+    // /api/pricing usually omits `success` on success; only treat an explicit
+    // `success: false` as an error.
+    if (pricing.success === false) {
       throw this.envelopeError('获取模型列表', res);
     }
-    return Array.isArray(res.body.data) ? res.body.data.filter((m) => typeof m === 'string') : [];
+
+    const models = Array.isArray(pricing.data) ? pricing.data : [];
+    const usableGroups = new Set<string>(Object.keys(pricing.usable_group ?? {}));
+    if (this.user?.group) {
+      usableGroups.add(this.user.group);
+    }
+
+    const names = models
+      .filter((m) => {
+        if (!m || typeof m.model_name !== 'string' || !m.model_name) return false;
+        const groups = m.enable_groups;
+        // No group info, or no known usable groups → don't over-filter.
+        if (!Array.isArray(groups) || groups.length === 0 || usableGroups.size === 0) {
+          return true;
+        }
+        return groups.some((g) => usableGroups.has(g));
+      })
+      .map((m) => m.model_name);
+
+    // De-duplicate while preserving order.
+    return [...new Set(names)];
   }
 
   /**
@@ -246,6 +327,7 @@ class HuanxingSession {
 
   private async fetchTokenKey(tokenId: number): Promise<string> {
     const res = await this.requestJson<{ key?: string }>(this.url(`/api/token/${tokenId}/key`), {
+      method: 'POST',
       headers: this.authHeaders(),
     });
     if (!res.body.success || !res.body.data?.key) {

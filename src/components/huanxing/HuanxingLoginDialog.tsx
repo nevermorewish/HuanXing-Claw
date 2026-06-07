@@ -30,6 +30,7 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
   const serverUrl = useHuanxingStore((s) => s.serverUrl);
   const lastUsername = useHuanxingStore((s) => s.lastUsername);
   const setServerUrl = useHuanxingStore((s) => s.setServerUrl);
+  const savedCredentials = useHuanxingStore((s) => s.savedCredentials);
   const login = useHuanxingStore((s) => s.login);
   const createAccounts = useHuanxingStore((s) => s.createAccounts);
 
@@ -55,6 +56,30 @@ export function HuanxingLoginDialog({ open, onOpenChange }: HuanxingLoginDialogP
       setSelected(new Set());
     }
   }, [open, serverUrl, lastUsername]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    let cancelled = false;
+    void savedCredentials()
+      .then((credentials) => {
+        if (cancelled || !credentials) {
+          return;
+        }
+        setUrl((current) => current || credentials.baseUrl || DEFAULT_HUANXING_URL);
+        setUsername((current) => current || credentials.username);
+        setPassword((current) => current || credentials.password);
+      })
+      .catch(() => {
+        // Keep the dialog usable when no stored credentials are available.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, savedCredentials]);
 
   const handleLogin = async () => {
     if (!username.trim() || !password) {

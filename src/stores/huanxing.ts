@@ -39,6 +39,7 @@ interface HuanxingState {
   error: string | null;
 
   setServerUrl: (url: string) => void;
+  savedCredentials: () => Promise<{ baseUrl: string; username: string; password: string } | null>;
   /** Log in and fetch models + key. Returns the model list on success. */
   login: (username: string, password: string) => Promise<string[]>;
   /** Create one custom provider account per selected model. Returns count. */
@@ -70,6 +71,14 @@ export const useHuanxingStore = create<HuanxingState>()(
 
       setServerUrl: (url) => set({ serverUrl: url }),
       clearError: () => set({ error: null }),
+
+      savedCredentials: async () => {
+        const result = await hostApi.huanxing.savedCredentials();
+        if (!result.success) {
+          throw new Error(result.error || '读取已保存凭据失败');
+        }
+        return result.credentials ?? null;
+      },
 
       login: async (username, password) => {
         const baseUrl = get().serverUrl.trim() || DEFAULT_HUANXING_URL;

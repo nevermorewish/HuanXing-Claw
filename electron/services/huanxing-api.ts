@@ -7,8 +7,24 @@
  */
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { HuanxingUser } from '@shared/host-api/contract';
+import { safeStorage } from 'electron';
+import { getClawXProviderStore } from './providers/store-instance';
 import { huanxingSession } from '../utils/huanxing-session';
 import { logger } from '../utils/logger';
+
+type SavedHuanxingCredentials = {
+  baseUrl: string;
+  username: string;
+  password: string;
+};
+type StoredHuanxingCredentials = {
+  baseUrl: string;
+  username: string;
+  password?: string;
+  encryptedPassword?: string;
+};
+
+const HUANXING_CREDENTIALS_KEY = 'huanxingCredentials';
 
 function toContractUser(user: HuanxingUser): HuanxingUser {
   return {
@@ -21,6 +37,54 @@ function toContractUser(user: HuanxingUser): HuanxingUser {
   };
 }
 
+function encryptPassword(password: string): Pick<StoredHuanxingCredentials, 'password' | 'encryptedPassword'> {
+  if (safeStorage.isEncryptionAvailable()) {
+    return {
+      encryptedPassword: safeStorage.encryptString(password).toString('base64'),
+    };
+  }
+  return { password };
+}
+
+function decryptPassword(value: StoredHuanxingCredentials): string {
+  if (typeof value.encryptedPassword === 'string' && value.encryptedPassword) {
+    try {
+      return safeStorage.decryptString(Buffer.from(value.encryptedPassword, 'base64'));
+    } catch (error) {
+      logger.warn('huanxing.savedCredentials decrypt failed', error);
+    }
+  }
+  return typeof value.password === 'string' ? value.password : '';
+}
+
+function normalizeCredentials(value: unknown): SavedHuanxingCredentials | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const record = value as StoredHuanxingCredentials;
+  const baseUrl = typeof record.baseUrl === 'string' ? record.baseUrl : '';
+  const username = typeof record.username === 'string' ? record.username : '';
+  const password = decryptPassword(record);
+  if (!baseUrl || !username || !password) {
+    return null;
+  }
+  return { baseUrl, username, password };
+}
+
+async function getSavedCredentials(): Promise<SavedHuanxingCredentials | null> {
+  const store = await getClawXProviderStore();
+  return normalizeCredentials(store.get(HUANXING_CREDENTIALS_KEY));
+}
+
+async function saveCredentials(credentials: SavedHuanxingCredentials): Promise<void> {
+  const store = await getClawXProviderStore();
+  store.set(HUANXING_CREDENTIALS_KEY, {
+    baseUrl: credentials.baseUrl,
+    username: credentials.username,
+    ...encryptPassword(credentials.password),
+  } satisfies StoredHuanxingCredentials);
+}
+
 export function createHuanXingApi(): CompleteHostServiceRegistry['huanxing'] {
   return {
     login: async (payload) => {
@@ -30,6 +94,11 @@ export function createHuanXingApi(): CompleteHostServiceRegistry['huanxing'] {
           payload.username,
           payload.password,
         );
+        await saveCredentials({
+          baseUrl: payload.baseUrl,
+          username: payload.username,
+          password: payload.password,
+        });
         return { success: true, user: toContractUser(user) };
       } catch (error) {
         logger.error('huanxing.login failed', error);
@@ -55,6 +124,15 @@ export function createHuanXingApi(): CompleteHostServiceRegistry['huanxing'] {
         };
       } catch (error) {
         logger.error('huanxing.fetchSetup failed', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+
+    savedCredentials: async () => {
+      try {
+        return { success: true, credentials: await getSavedCredentials() };
+      } catch (error) {
+        logger.error('huanxing.savedCredentials failed', error);
         return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     },
