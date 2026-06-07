@@ -9,7 +9,7 @@
 import { ACTIVE_BRAND } from './active.generated';
 import type { BrandConfig } from './types';
 
-export type { BrandConfig, BrandUrls } from './types';
+export type { BrandConfig } from './types';
 
 export const BRAND: BrandConfig = ACTIVE_BRAND;
 

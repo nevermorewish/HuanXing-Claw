@@ -10,15 +10,6 @@
  * ("openclaw") is NOT a brand and must never be parameterized here.
  */
 
-export interface BrandUrls {
-  /** Public source/marketing repo or site. */
-  github: string;
-  /** Issue tracker / support link surfaced in the Help menu. */
-  issues: string;
-  /** Auto-update feed base URL (generic provider). */
-  updateFeed: string;
-}
-
 export interface BrandConfig {
   /** Stable lowercase identifier; matches the `brands/<id>.json` filename. */
   id: string;
@@ -36,6 +27,8 @@ export interface BrandConfig {
   instanceLockName: string;
   /** openclaw.json `models.providers.*` key for the account brand. */
   providerKey: string;
+  /** Default account/login service address (the login dialog's prefilled server URL). */
+  serviceUrl: string;
   /** Copyright line for installers/app metadata. */
   copyright: string;
   /** Vendor name (Linux packaging). */
@@ -46,8 +39,6 @@ export interface BrandConfig {
   linuxWMClass: string;
   /** Short tagline ("AI Assistant"). */
   tagline: string;
-  /** Brand URLs. */
-  urls: BrandUrls;
   /** Directory (repo-relative) holding this brand's icons + logo.svg. */
   assetsDir: string;
 }

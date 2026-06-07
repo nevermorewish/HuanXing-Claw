@@ -239,15 +239,37 @@ export class AccountSession {
   }
 
   /**
-   * GET /api/pricing — the model names usable by this account.
+   * Fetch the model names usable by this account.
    *
-   * The newer Account-api dropped /api/user/self/models (it 404s via the
-   * OpenAI relay's catch-all). Models now live in the pricing list, mirroring
-   * frogclaw's flow. Each entry carries `enable_groups`; we keep models enabled
-   * for one of the account's usable groups, falling back to all entries when
-   * the server omits group gating.
+   * Server generations expose the usable models differently, so we probe in
+   * order and fall back so both new and old newapi servers work:
+   *   1. GET /api/pricing — newer Account-api (new-api/frogclaw). Returns rich
+   *      entries with `enable_groups`; we keep models enabled for one of the
+   *      account's usable groups.
+   *   2. GET /api/user/self/models (or /api/user/models) — older newapi. Returns
+   *      a flat string array already filtered to the user's usable groups.
+   *
+   * Pricing is tried first because newer servers dropped the legacy endpoint
+   * (it 404s via the OpenAI relay's catch-all). A successful-but-empty pricing
+   * response is authoritative (no fallback); only a genuine failure (404 /
+   * non-JSON / explicit error) drops through to the legacy endpoints.
    */
   async fetchModels(): Promise<string[]> {
+    try {
+      return await this.fetchModelsFromPricing();
+    } catch (pricingError) {
+      // Older newapi has no /api/pricing — fall back to the legacy flat list.
+      try {
+        return await this.fetchModelsLegacy();
+      } catch {
+        // Surface the modern-path error as the primary failure.
+        throw pricingError;
+      }
+    }
+  }
+
+  /** GET /api/pricing — the newer Account-api model list, group-filtered. */
+  private async fetchModelsFromPricing(): Promise<string[]> {
     const res = await this.requestJson<PricingModel[]>(this.url('/api/pricing'), {
       headers: this.authHeaders(),
     });
@@ -278,6 +300,36 @@ export class AccountSession {
 
     // De-duplicate while preserving order.
     return [...new Set(names)];
+  }
+
+  /**
+   * GET /api/user/self/models — older newapi's usable-model list.
+   *
+   * The legacy endpoint returns a flat `data: string[]` already filtered to the
+   * account's usable groups, so no client-side group gating is needed. The exact
+   * path moved between versions, so we try the known variants in order.
+   */
+  private async fetchModelsLegacy(): Promise<string[]> {
+    const paths = ['/api/user/self/models', '/api/user/models'];
+    let lastError: Error | null = null;
+    for (const path of paths) {
+      try {
+        const res = await this.requestJson<unknown[]>(this.url(path), {
+          headers: this.authHeaders(),
+        });
+        if (res.body.success === false) {
+          // Endpoint exists but rejected the request — record it, try the next.
+          lastError = this.envelopeError('获取模型列表', res);
+          continue;
+        }
+        const data = Array.isArray(res.body.data) ? res.body.data : [];
+        const names = data.filter((m): m is string => typeof m === 'string' && m.length > 0);
+        return [...new Set(names)];
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+      }
+    }
+    throw lastError ?? new Error('获取模型列表失败 (旧版接口不可用)');
   }
 
   /**

@@ -12,8 +12,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { hostApi } from '@/lib/host-api';
+import { BRAND } from '@shared/brand';
 
-export const DEFAULT_ACCOUNT_URL = 'http://localhost:3000';
+/** Default account/login service address, configured per-brand. */
+export const DEFAULT_ACCOUNT_URL = BRAND.serviceUrl;
 
 export interface AccountUser {
   id: number;

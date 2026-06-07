@@ -6,7 +6,6 @@ import { Menu, app, shell, BrowserWindow } from 'electron';
 import { MENU_LABELS } from '@shared/i18n/resources';
 import { resolveSupportedLanguage, type LanguageCode } from '@shared/language';
 import { getSetting } from '../utils/store';
-import { BRAND } from '@shared/brand';
 
 function applyAppName(label: string): string {
   return label.replaceAll('{{appName}}', app.name);
@@ -199,19 +198,6 @@ export async function createMenu(language?: string): Promise<void> {
       role: 'help',
       label: labels.help.label,
       submenu: [
-        {
-          label: labels.help.documentation,
-          click: async () => {
-            await shell.openExternal(BRAND.urls.github);
-          },
-        },
-        {
-          label: labels.help.reportIssue,
-          click: async () => {
-            await shell.openExternal(BRAND.urls.issues);
-          },
-        },
-        { type: 'separator' },
         {
           label: labels.help.openClawDocumentation,
           click: async () => {

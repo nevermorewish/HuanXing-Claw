@@ -89,16 +89,6 @@ function buildBrandedConfig(brand) {
     StartupWMClass: brand.linuxWMClass,
   };
 
-  // ── Publish (GitHub repo follows the brand; OSS feed stays shared infra) ──
-  if (Array.isArray(base.publish)) {
-    base.publish = base.publish.map((entry) => {
-      if (entry.provider === 'generic') {
-        return { ...entry, url: brand.urls.updateFeed };
-      }
-      return entry;
-    });
-  }
-
   return base;
 }
 

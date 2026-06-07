@@ -27,12 +27,12 @@ const REQUIRED_FIELDS = [
   'dataDirName',
   'instanceLockName',
   'providerKey',
+  'serviceUrl',
   'copyright',
   'vendor',
   'maintainer',
   'linuxWMClass',
   'tagline',
-  'urls',
   'assetsDir',
 ];
 
@@ -75,9 +75,6 @@ export function loadBrand(id) {
   }
   if (brand.id !== brandId) {
     throw new Error(`[brand] ${file} declares id "${brand.id}" but filename is "${brandId}.json".`);
-  }
-  for (const k of ['github', 'issues', 'updateFeed']) {
-    if (!brand.urls[k]) throw new Error(`[brand] ${file} urls.${k} is required.`);
   }
 
   return brand;

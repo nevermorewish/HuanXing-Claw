@@ -6,7 +6,6 @@ if /i "%1"=="update" (
     echo.
     echo To update openclaw, update __BRAND_NAME__:
     echo   Open __BRAND_NAME__ ^> Settings ^> Check for Updates
-    echo   Or download the latest version from __BRAND_GITHUB__
     exit /b 0
 )
 

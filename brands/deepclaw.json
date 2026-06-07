@@ -7,15 +7,11 @@
   "dataDirName": ".deepclaw",
   "instanceLockName": "deepclaw",
   "providerKey": "deepclaw",
+  "serviceUrl": "http://localhost:3000",
   "copyright": "Copyright © 2026 DeepClaw",
   "vendor": "DeepClaw",
   "maintainer": "DeepClaw Team <public@deepclaw.ai>",
   "linuxWMClass": "deepclaw",
   "tagline": "AI Assistant",
-  "urls": {
-    "github": "https://github.com/ValueCell-ai/DeepClaw",
-    "issues": "https://github.com/ValueCell-ai/DeepClaw/issues",
-    "updateFeed": "https://oss.intelli-spectrum.com/latest"
-  },
   "assetsDir": "resources/brands/deepclaw"
 }

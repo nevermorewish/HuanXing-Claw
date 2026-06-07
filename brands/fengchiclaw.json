@@ -7,15 +7,11 @@
   "dataDirName": ".fengchiclaw",
   "instanceLockName": "fengchiclaw",
   "providerKey": "fengchiclaw",
+  "serviceUrl": "https://ai.fengchiyun.com",
   "copyright": "Copyright © 2026 FengchiClaw",
   "vendor": "FengchiClaw",
   "maintainer": "FengchiClaw Team <support@fengchiclaw.ai>",
   "linuxWMClass": "fengchiclaw",
   "tagline": "AI Assistant",
-  "urls": {
-    "github": "https://github.com/fengchiclaw/FengchiClaw",
-    "issues": "https://github.com/fengchiclaw/FengchiClaw/issues",
-    "updateFeed": "https://oss.intelli-spectrum.com/latest"
-  },
   "assetsDir": "resources/brands/fengchiclaw"
 }
