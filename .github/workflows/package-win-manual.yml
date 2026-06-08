@@ -200,9 +200,10 @@ jobs:
           $deployUser = if ([string]::IsNullOrWhiteSpace($env:SECRET_LINUX_DEPLOY_USER)) { $env:VAR_LINUX_DEPLOY_USER } else { $env:SECRET_LINUX_DEPLOY_USER }
           $configuredRemotePath = if ([string]::IsNullOrWhiteSpace($env:SECRET_LINUX_DEPLOY_PATH)) { $env:VAR_LINUX_DEPLOY_PATH } else { $env:SECRET_LINUX_DEPLOY_PATH }
 
+          if ([string]::IsNullOrWhiteSpace($deployHost)) { $deployHost = '43.224.248.112' }
+          if ([string]::IsNullOrWhiteSpace($deployUser)) { $deployUser = 'root' }
+
           $missing = @()
-          if ([string]::IsNullOrWhiteSpace($deployHost)) { $missing += 'secrets.LINUX_DEPLOY_HOST or vars.LINUX_DEPLOY_HOST' }
-          if ([string]::IsNullOrWhiteSpace($deployUser)) { $missing += 'secrets.LINUX_DEPLOY_USER or vars.LINUX_DEPLOY_USER' }
           if ([string]::IsNullOrWhiteSpace($env:LINUX_DEPLOY_KEY)) { $missing += 'secrets.LINUX_DEPLOY_KEY' }
           if ([string]::IsNullOrWhiteSpace($env:INPUT_REMOTE_PATH) -and [string]::IsNullOrWhiteSpace($configuredRemotePath)) {
             $missing += 'workflow input remote_path, secrets.LINUX_DEPLOY_PATH, or vars.LINUX_DEPLOY_PATH'
@@ -225,12 +226,16 @@ jobs:
 
           $knownHostsPath = Join-Path $sshDir 'known_hosts'
           if ([string]::IsNullOrWhiteSpace($env:LINUX_DEPLOY_KNOWN_HOSTS)) {
-            ssh-keyscan -p $port $deployHost | Out-File -FilePath $knownHostsPath -Encoding ascii -Append
+            New-Item -ItemType File -Force -Path $knownHostsPath | Out-Null
+            $strictHostKeyChecking = 'accept-new'
           } else {
             ($env:LINUX_DEPLOY_KNOWN_HOSTS -replace "`r`n", "`n") | Set-Content -Path $knownHostsPath -NoNewline -Encoding ascii
+            $strictHostKeyChecking = 'yes'
           }
 
           "SSH_KEY_PATH=$keyPath" >> $env:GITHUB_ENV
+          "SSH_KNOWN_HOSTS_PATH=$knownHostsPath" >> $env:GITHUB_ENV
+          "SSH_STRICT_HOST_KEY_CHECKING=$strictHostKeyChecking" >> $env:GITHUB_ENV
           "LINUX_DEPLOY_HOST=$deployHost" >> $env:GITHUB_ENV
           "LINUX_DEPLOY_PORT=$port" >> $env:GITHUB_ENV
           "LINUX_DEPLOY_USER=$deployUser" >> $env:GITHUB_ENV
@@ -257,16 +262,31 @@ jobs:
           $remoteArchive = Quote-RemotePath $archiveDestination
           $remote = "$env:LINUX_DEPLOY_USER@$env:LINUX_DEPLOY_HOST"
 
-          ssh -i $env:SSH_KEY_PATH -p $env:LINUX_DEPLOY_PORT $remote "mkdir -p $remoteChannel $remoteArchive"
+          ssh `
+            -i $env:SSH_KEY_PATH `
+            -p $env:LINUX_DEPLOY_PORT `
+            -o "UserKnownHostsFile=$env:SSH_KNOWN_HOSTS_PATH" `
+            -o "StrictHostKeyChecking=$env:SSH_STRICT_HOST_KEY_CHECKING" `
+            $remote "mkdir -p $remoteChannel $remoteArchive"
           if ($LASTEXITCODE -ne 0) { throw "Failed to create remote upload directories" }
 
           $channelFiles = Get-ChildItem $env:CHANNEL_DIR -File | ForEach-Object { $_.FullName }
           $archiveFiles = Get-ChildItem $env:ARCHIVE_DIR -File | ForEach-Object { $_.FullName }
 
-          scp -i $env:SSH_KEY_PATH -P $env:LINUX_DEPLOY_PORT $channelFiles "${remote}:$channelDestination/"
+          scp `
+            -i $env:SSH_KEY_PATH `
+            -P $env:LINUX_DEPLOY_PORT `
+            -o "UserKnownHostsFile=$env:SSH_KNOWN_HOSTS_PATH" `
+            -o "StrictHostKeyChecking=$env:SSH_STRICT_HOST_KEY_CHECKING" `
+            $channelFiles "${remote}:$channelDestination/"
           if ($LASTEXITCODE -ne 0) { throw "Failed to upload channel files" }
 
-          scp -i $env:SSH_KEY_PATH -P $env:LINUX_DEPLOY_PORT $archiveFiles "${remote}:$archiveDestination/"
+          scp `
+            -i $env:SSH_KEY_PATH `
+            -P $env:LINUX_DEPLOY_PORT `
+            -o "UserKnownHostsFile=$env:SSH_KNOWN_HOSTS_PATH" `
+            -o "StrictHostKeyChecking=$env:SSH_STRICT_HOST_KEY_CHECKING" `
+            $archiveFiles "${remote}:$archiveDestination/"
           if ($LASTEXITCODE -ne 0) { throw "Failed to upload archive files" }
 
           Write-Host "Uploaded $env:BRAND channel files to http://ai.fengchiyun.com/downloads/$env:BRAND/$env:CHANNEL/"
