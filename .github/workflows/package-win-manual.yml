@@ -25,6 +25,7 @@ jobs:
     runs-on: windows-latest
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         brand:
           - huanxingclaw
@@ -59,6 +60,11 @@ jobs:
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
+
+      - name: Show runner disk space
+        shell: pwsh
+        run: |
+          Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
 
       - name: Prefer HTTPS for public GitHub git dependencies
         run: |
@@ -95,13 +101,39 @@ jobs:
           Write-Host "Configured $env:BRAND serviceUrl=$($brand.serviceUrl)"
           Write-Host "Configured $env:BRAND updateFeedBaseUrl=$($brand.updateFeedBaseUrl)"
 
+      - name: Generate brand and extension bridge
+        env:
+          BRAND: ${{ matrix.brand }}
+        run: node scripts/generate-brand.mjs && node scripts/generate-ext-bridge.mjs
+
+      - name: Build Vite bundles
+        run: pnpm run build:vite
+
+      - name: Bundle OpenClaw runtime
+        run: pnpm exec zx scripts/bundle-openclaw.mjs
+
+      - name: Bundle OpenClaw plugins
+        run: pnpm exec zx scripts/bundle-openclaw-plugins.mjs
+
+      - name: Verify committed preinstalled skills
+        shell: pwsh
+        run: |
+          if (!(Test-Path build/preinstalled-skills/.preinstalled-lock.json)) {
+            throw "Missing committed build/preinstalled-skills/.preinstalled-lock.json. Run pnpm exec zx scripts/bundle-preinstalled-skills.mjs and commit build/preinstalled-skills."
+          }
+
+          $skills = Get-ChildItem build/preinstalled-skills -Directory
+          if ($skills.Count -eq 0) {
+            throw "No committed preinstalled skills found under build/preinstalled-skills."
+          }
+
+          $skills | Select-Object Name
+
       - name: Build Windows package (no publish)
         env:
           BRAND: ${{ matrix.brand }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          pnpm run package
-          node scripts/run-electron-builder.mjs --win --publish never --config.directories.output=release/${{ matrix.brand }}
+        run: node scripts/run-electron-builder.mjs --win --publish never --config.directories.output=release/${{ matrix.brand }}
 
       - name: Prepare Linux upload payload
         id: upload_payload
