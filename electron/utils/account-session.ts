@@ -77,6 +77,28 @@ function snippet(raw: string, max = 200): string {
   return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed;
 }
 
+/**
+ * Ensure an API key carries the conventional `sk-` prefix.
+ *
+ * Account-api generations are inconsistent: some return the raw 48-char key
+ * (frogclaw's GetTokenKey, and the inline key on token list/detail), others
+ * prepend `sk-`. The relay's auth middleware trims `sk-` either way, but we
+ * normalize to the prefixed form so callers always get a ready-to-use key.
+ */
+function ensureSkPrefix(key: string): string {
+  const trimmed = key.trim();
+  return trimmed.startsWith('sk-') ? trimmed : `sk-${trimmed}`;
+}
+
+/**
+ * Whether a key embedded in a list/detail envelope is the full secret rather
+ * than a masked preview. Some forks mask inline keys (e.g. `sk-abc…xyz`); those
+ * are unusable and must be fetched through a dedicated key endpoint instead.
+ */
+function isFullKey(key: unknown): key is string {
+  return typeof key === 'string' && key.length > 0 && !/[*…]/.test(key) && !key.includes('...');
+}
+
 /** Issue a request via Node core http/https and parse a JSON envelope. */
 function rawRequest(
   url: string,
@@ -378,23 +400,32 @@ export class AccountSession {
 
   /**
    * Return a usable `sk-` API key, creating a token first if the account has
-   * none. The token list returns masked keys, so the full key must be fetched
-   * via GET /api/token/{id}/key.
+   * none.
+   *
+   * Account-api generations differ in how they expose the secret:
+   *   - Newer frogclaw returns the full key inline on the token list/detail
+   *     (the rows are never `.Clean()`-ed), so we use it directly when present.
+   *   - Otherwise we fetch it through {@link fetchTokenKey}, which probes the
+   *     POST `/key` endpoint and falls back to GET detail for older backends.
    */
   async ensureApiKey(): Promise<string> {
-    let tokenId = await this.findUsableTokenId();
-    if (tokenId == null) {
+    let token = await this.findUsableToken();
+    if (token == null) {
       await this.createToken();
-      tokenId = await this.findUsableTokenId();
+      token = await this.findUsableToken();
     }
-    if (tokenId == null) {
+    if (token == null) {
       throw new Error('未找到可用的 API 令牌，且自动创建失败');
     }
-    return this.fetchTokenKey(tokenId);
+    // Newer backends hand back the full key inline — no extra round-trip needed.
+    if (isFullKey(token.key)) {
+      return ensureSkPrefix(token.key);
+    }
+    return this.fetchTokenKey(token.id);
   }
 
-  private async findUsableTokenId(): Promise<number | null> {
-    const res = await this.requestJson<{ items?: Array<{ id: number; status: number }> }>(
+  private async findUsableToken(): Promise<{ id: number; key?: string } | null> {
+    const res = await this.requestJson<{ items?: Array<{ id: number; status: number; key?: string }> }>(
       this.url('/api/token/?p=0&size=100'),
       { headers: this.authHeaders() },
     );
@@ -403,7 +434,7 @@ export class AccountSession {
     }
     const items = res.body.data?.items ?? [];
     const usable = items.find((t) => Number(t.status) === 1) ?? items[0];
-    return usable ? Number(usable.id) : null;
+    return usable ? { id: Number(usable.id), key: usable.key } : null;
   }
 
   private async createToken(): Promise<void> {
@@ -422,16 +453,55 @@ export class AccountSession {
     }
   }
 
+  /**
+   * Fetch the full (unmasked) key for a token id.
+   *
+   * Backends disagree on where this lives, so we probe in order:
+   *   1. POST /api/token/{id}/key — the dedicated endpoint on newer frogclaw.
+   *      Added 2026-06-01; older builds 404 it through the OpenAI relay's
+   *      catch-all (`{"error":{"type":"invalid_request_error", ...}}`), which
+   *      is JSON but has no `success` field, so it drops to the fallback.
+   *   2. GET /api/token/{id} — the token detail, which embeds the full key
+   *      inline (this is the path frogclaw's own legacy frontend uses).
+   *
+   * The key is normalized to the `sk-` prefixed form regardless of which
+   * shape the backend returned.
+   */
   private async fetchTokenKey(tokenId: number): Promise<string> {
+    const viaKeyEndpoint = await this.tryFetchTokenKeyViaPost(tokenId);
+    if (viaKeyEndpoint != null) {
+      return ensureSkPrefix(viaKeyEndpoint);
+    }
+    const viaDetail = await this.tryFetchTokenKeyViaDetail(tokenId);
+    if (viaDetail != null) {
+      return ensureSkPrefix(viaDetail);
+    }
+    throw new Error('获取令牌密钥失败：服务未提供可用的密钥接口');
+  }
+
+  /** POST /api/token/{id}/key — returns the raw key, or null if unsupported. */
+  private async tryFetchTokenKeyViaPost(tokenId: number): Promise<string | null> {
     const res = await this.requestJson<{ key?: string }>(this.url(`/api/token/${tokenId}/key`), {
       method: 'POST',
       headers: this.authHeaders(),
     });
-    if (!res.body.success || !res.body.data?.key) {
-      throw this.envelopeError('获取令牌密钥', res);
+    // A relay catch-all 404 returns valid JSON without `success` — treat any
+    // non-affirmative envelope as "endpoint unavailable" and fall back.
+    if (res.body.success !== true) {
+      return null;
     }
-    // GetFullKey() already returns the `sk-` prefixed value.
-    return res.body.data.key;
+    return isFullKey(res.body.data?.key) ? (res.body.data!.key as string) : null;
+  }
+
+  /** GET /api/token/{id} — reads the full key embedded in the token detail. */
+  private async tryFetchTokenKeyViaDetail(tokenId: number): Promise<string | null> {
+    const res = await this.requestJson<{ key?: string }>(this.url(`/api/token/${tokenId}`), {
+      headers: this.authHeaders(),
+    });
+    if (res.body.success !== true) {
+      return null;
+    }
+    return isFullKey(res.body.data?.key) ? (res.body.data!.key as string) : null;
   }
 }
 
