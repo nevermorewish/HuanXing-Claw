@@ -20,6 +20,8 @@ vi.mock('@electron/utils/paths', () => ({
   getOpenClawDir: () => state.openclawDir,
   getOpenClawResolvedDir: () => state.openclawDir,
   getResourcesDir: () => '',
+  getOpenClawConfigDir: () => state.homeDir,
+  getDefaultOpenClawConfigDir: () => state.homeDir,
 }));
 
 describe('bundled OpenClaw skill trimming', () => {

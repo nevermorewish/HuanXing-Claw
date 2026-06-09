@@ -38,10 +38,19 @@ vi.mock('@electron/utils/store', () => ({
 vi.mock('@electron/utils/paths', async () => {
   const actual = await vi.importActual<typeof import('@electron/utils/paths')>('@electron/utils/paths');
   const resolvedDir = join(testHome, '.openclaw-test-openclaw');
+  // openclaw-auth.ts hardcodes its config/state paths to homedir()/.openclaw
+  // (OPENCLAW_CONFIG_PATH, auth-profiles, models.json). Agent discovery, by
+  // contrast, resolves via getOpenClawConfigDir(), whose real default is now
+  // brand-specific (BRAND.dataDirName). Pin the config dir to the same .openclaw
+  // path the source hardcodes so discovery reads the fixtures the test writes,
+  // independent of the active brand.
+  const configDir = join(testHome, '.openclaw');
   return {
     ...actual,
     getOpenClawResolvedDir: () => resolvedDir,
     getOpenClawDir: () => resolvedDir,
+    getOpenClawConfigDir: () => configDir,
+    getDefaultOpenClawConfigDir: () => configDir,
   };
 });
 
@@ -626,6 +635,8 @@ describe('sanitizeOpenClawConfig', () => {
       return {
         ...actual,
         getOpenClawResolvedDir: () => openclawDir,
+        getOpenClawConfigDir: () => join(testHome, '.openclaw'),
+        getDefaultOpenClawConfigDir: () => join(testHome, '.openclaw'),
       };
     });
 
@@ -772,6 +783,8 @@ describe('sanitizeOpenClawConfig', () => {
         ...actual,
         getOpenClawResolvedDir: () => openclawDir,
         getOpenClawDir: () => openclawDir,
+        getOpenClawConfigDir: () => join(testHome, '.openclaw'),
+        getDefaultOpenClawConfigDir: () => join(testHome, '.openclaw'),
       };
     });
 
@@ -841,6 +854,8 @@ describe('sanitizeOpenClawConfig', () => {
       return {
         ...actual,
         getOpenClawResolvedDir: () => openclawDir,
+        getOpenClawConfigDir: () => join(testHome, '.openclaw'),
+        getDefaultOpenClawConfigDir: () => join(testHome, '.openclaw'),
       };
     });
 
@@ -885,6 +900,8 @@ describe('syncProviderConfigToOpenClaw', () => {
       return {
         ...actual,
         getOpenClawResolvedDir: () => openclawDir,
+        getOpenClawConfigDir: () => join(testHome, '.openclaw'),
+        getDefaultOpenClawConfigDir: () => join(testHome, '.openclaw'),
       };
     });
 
@@ -935,6 +952,8 @@ describe('syncProviderConfigToOpenClaw', () => {
       return {
         ...actual,
         getOpenClawResolvedDir: () => openclawDir,
+        getOpenClawConfigDir: () => join(testHome, '.openclaw'),
+        getDefaultOpenClawConfigDir: () => join(testHome, '.openclaw'),
       };
     });
 
@@ -1211,6 +1230,8 @@ describe('auth-backed provider discovery', () => {
       return {
         ...actual,
         getOpenClawResolvedDir: () => openclawDir,
+        getOpenClawConfigDir: () => join(testHome, '.openclaw'),
+        getDefaultOpenClawConfigDir: () => join(testHome, '.openclaw'),
       };
     });
 
@@ -1257,6 +1278,8 @@ describe('auth-backed provider discovery', () => {
       return {
         ...actual,
         getOpenClawResolvedDir: () => openclawDir,
+        getOpenClawConfigDir: () => join(testHome, '.openclaw'),
+        getDefaultOpenClawConfigDir: () => join(testHome, '.openclaw'),
       };
     });
 

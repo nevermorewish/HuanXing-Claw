@@ -9,7 +9,7 @@ import { constants } from 'fs';
 import { join, resolve, sep } from 'path';
 import { homedir } from 'os';
 import { logger } from './logger';
-import { getResourcesDir } from './paths';
+import { getResourcesDir, getOpenClawConfigDir } from './paths';
 import { BRAND } from '@shared/brand';
 
 const DEEPCLAW_BEGIN = '<!-- deepclaw:begin -->';
@@ -24,7 +24,7 @@ async function fileExists(p: string): Promise<boolean> {
 }
 
 function isCurrentOpenClawPath(p: string): boolean {
-  const openclawDir = resolve(join(homedir(), '.openclaw'));
+  const openclawDir = resolve(getOpenClawConfigDir());
   const workspaceDir = resolve(p);
   return workspaceDir === openclawDir || workspaceDir.startsWith(openclawDir + sep);
 }
@@ -210,7 +210,7 @@ type WorkspaceDir = {
  * Collect all unique workspace directories from the openclaw config.
  */
 async function resolveAllWorkspaceDirs(): Promise<WorkspaceDir[]> {
-  const openclawDir = join(homedir(), '.openclaw');
+  const openclawDir = getOpenClawConfigDir();
   const dirs = new Map<string, WorkspaceDir>();
   const addDir = (dir: string, waitForGatewaySeed: boolean) => {
     const existing = dirs.get(dir);

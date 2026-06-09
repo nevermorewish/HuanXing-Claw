@@ -49,10 +49,16 @@ export function expandPath(path: string): string {
 }
 
 /**
- * Default OpenClaw config/state directory (~/.openclaw).
+ * Default OpenClaw config/state directory.
+ *
+ * Each brand gets its own home directory (e.g. ~/.frogclaw, ~/.fengchiclaw)
+ * derived from BRAND.dataDirName, so white-label builds don't share the same
+ * ~/.openclaw state. The spawned gateway and the bundled CLI are pinned to this
+ * dir via OPENCLAW_STATE_DIR (see config-sync.ts and the CLI wrappers) — the
+ * engine's own default is ~/.openclaw, which we deliberately override.
  */
 export function getDefaultOpenClawConfigDir(): string {
-  return join(homedir(), '.openclaw');
+  return join(homedir(), BRAND.dataDirName);
 }
 
 /**

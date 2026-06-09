@@ -14,6 +14,11 @@ case "$1" in
 esac
 
 export OPENCLAW_EMBEDDED_IN="__BRAND_NAME__"
+# Pin the bundled CLI to this brand's config/state dir (~/__BRAND_DATA_DIR__),
+# matching the desktop app. Honor an explicit override if the user set one.
+if [ -z "$OPENCLAW_STATE_DIR" ]; then
+  export OPENCLAW_STATE_DIR="$HOME/__BRAND_DATA_DIR__"
+fi
 NODE_EXE="$INSTALL_DIR/resources/bin/node.exe"
 OPENCLAW_ENTRY="$INSTALL_DIR/resources/openclaw/openclaw.mjs"
 

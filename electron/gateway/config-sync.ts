@@ -23,7 +23,6 @@ import {
   getOpenClawEntryPath,
   getOpenClawResolvedDir,
   getOpenClawSkillsDir,
-  isOpenClawConfigDirCustom,
   isOpenClawPresent,
 } from '../utils/paths';
 import { getUvMirrorEnv } from '../utils/uv-env';
@@ -638,13 +637,11 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     OPENCLAW_SKIP_CHANNELS: skipChannels ? '1' : '',
     CLAWDBOT_SKIP_CHANNELS: skipChannels ? '1' : '',
     OPENCLAW_NO_RESPAWN: '1',
-    // When the user has configured a custom OpenClaw config/state directory,
-    // point the spawned gateway at it so it reads/writes the same openclaw.json
-    // the in-app config editor manages. Empty/default => leave unset so OpenClaw
-    // falls back to ~/.openclaw.
-    ...(isOpenClawConfigDirCustom()
-      ? { OPENCLAW_STATE_DIR: getOpenClawConfigDir() }
-      : {}),
+    // Pin the spawned gateway to the same config/state dir the app uses. The
+    // app defaults to the brand dir (~/.frogclaw, …); OpenClaw's own default is
+    // ~/.openclaw, so we must always set this — otherwise the gateway would read
+    // /write a different dir than the in-app config editor manages.
+    OPENCLAW_STATE_DIR: getOpenClawConfigDir(),
   };
 
   // Ensure extension-specific packages (e.g. grammy from the telegram

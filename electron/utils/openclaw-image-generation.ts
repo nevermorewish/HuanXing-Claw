@@ -12,6 +12,7 @@ import {
 import { ensureDeepClawOpenAiImagePluginInstalled } from './plugin-install';
 import { listAgentsSnapshot, type AgentsSnapshot } from './agent-config';
 import { expandPath } from './paths';
+import { BRAND } from '@shared/brand';
 import {
   generateImageInProcess,
   listImageGenerationProvidersInProcess,
@@ -381,7 +382,7 @@ export async function listImageGenerationProvidersFromRuntime(): Promise<ImageGe
 
 function resolveAgentDirForTest(agentId: string, snapshot: AgentsSnapshot): string {
   const entry = snapshot.agents.find((agent) => agent.id === agentId);
-  const agentDir = entry?.agentDir || `~/.openclaw/agents/${agentId}/agent`;
+  const agentDir = entry?.agentDir || `~/${BRAND.dataDirName}/agents/${agentId}/agent`;
   return expandPath(agentDir);
 }
 

@@ -77,7 +77,8 @@ function generateCliWrappers(brand) {
     text
       .replaceAll('__BRAND_NAME__', brand.appName)
       .replaceAll('__BRAND_PRODUCT__', brand.productName)
-      .replaceAll('__BRAND_EXE__', brand.executableName);
+      .replaceAll('__BRAND_EXE__', brand.executableName)
+      .replaceAll('__BRAND_DATA_DIR__', brand.dataDirName);
 
   let count = 0;
   for (const platform of ['posix', 'win32']) {

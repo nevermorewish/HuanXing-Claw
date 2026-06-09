@@ -8,11 +8,17 @@ import { expandPath, getOpenClawConfigDir } from './paths';
 import * as logger from './logger';
 import { toUiChannelType } from './channel-alias';
 import { ensureDeepClawIdentityFile } from './openclaw-workspace';
+import { BRAND } from '@shared/brand';
 
 const MAIN_AGENT_ID = 'main';
 const MAIN_AGENT_NAME = 'Main Agent';
 const DEFAULT_ACCOUNT_ID = 'default';
-const DEFAULT_WORKSPACE_PATH = '~/.openclaw/workspace';
+// Agent workspace/agentDir defaults are stored in openclaw.json as `~/`-prefixed
+// paths the engine expands at runtime. They live under the brand's config dir
+// (e.g. ~/.frogclaw) so each brand's agents stay isolated, matching the dir the
+// gateway is pinned to via OPENCLAW_STATE_DIR.
+const BRAND_HOME = `~/${BRAND.dataDirName}`;
+const DEFAULT_WORKSPACE_PATH = `${BRAND_HOME}/workspace`;
 const AGENT_BOOTSTRAP_FILES = [
   'AGENTS.md',
   'SOUL.md',
@@ -170,7 +176,7 @@ function getDefaultWorkspacePath(config: AgentConfigDocument): string {
 }
 
 function getDefaultAgentDirPath(agentId: string): string {
-  return `~/.openclaw/agents/${agentId}/agent`;
+  return `${BRAND_HOME}/agents/${agentId}/agent`;
 }
 
 function createImplicitMainEntry(config: AgentConfigDocument): AgentListEntry {
@@ -352,7 +358,7 @@ function trimTrailingSeparators(path: string): string {
 function getManagedWorkspaceDirectory(agent: AgentListEntry): string | null {
   if (agent.id === MAIN_AGENT_ID) return null;
 
-  const configuredWorkspace = expandPath(agent.workspace || `~/.openclaw/workspace-${agent.id}`);
+  const configuredWorkspace = expandPath(agent.workspace || `${BRAND_HOME}/workspace-${agent.id}`);
   const managedWorkspace = join(getOpenClawConfigDir(), `workspace-${agent.id}`);
   const normalizedConfigured = trimTrailingSeparators(normalize(configuredWorkspace));
   const normalizedManaged = trimTrailingSeparators(normalize(managedWorkspace));
@@ -411,7 +417,7 @@ async function provisionAgentFilesystem(
   const { entries } = normalizeAgentsConfig(config);
   const mainEntry = entries.find((entry) => entry.id === MAIN_AGENT_ID) ?? createImplicitMainEntry(config);
   const sourceWorkspace = expandPath(mainEntry.workspace || getDefaultWorkspacePath(config));
-  const targetWorkspace = expandPath(agent.workspace || `~/.openclaw/workspace-${agent.id}`);
+  const targetWorkspace = expandPath(agent.workspace || `${BRAND_HOME}/workspace-${agent.id}`);
   const sourceAgentDir = expandPath(mainEntry.agentDir || getDefaultAgentDirPath(MAIN_AGENT_ID));
   const targetAgentDir = expandPath(agent.agentDir || getDefaultAgentDirPath(agent.id));
   const targetSessionsDir = join(getOpenClawConfigDir(), 'agents', agent.id, 'sessions');
@@ -523,7 +529,7 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument, preloadedCha
       modelRef: explicitModelRef || defaultModelRef || null,
       overrideModelRef: explicitModelRef,
       inheritedModel,
-      workspace: entry.workspace || (entry.id === MAIN_AGENT_ID ? getDefaultWorkspacePath(config) : `~/.openclaw/workspace-${entry.id}`),
+      workspace: entry.workspace || (entry.id === MAIN_AGENT_ID ? getDefaultWorkspacePath(config) : `${BRAND_HOME}/workspace-${entry.id}`),
       agentDir: entry.agentDir || getDefaultAgentDirPath(entry.id),
       mainSessionKey: buildAgentMainSessionKey(config, entry.id),
       channelTypes: configuredChannels
@@ -599,7 +605,7 @@ export async function createAgent(
     const newAgent: AgentListEntry = {
       id: nextId,
       name: normalizedName,
-      workspace: `~/.openclaw/workspace-${nextId}`,
+      workspace: `${BRAND_HOME}/workspace-${nextId}`,
       agentDir: getDefaultAgentDirPath(nextId),
     };
 

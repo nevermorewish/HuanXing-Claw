@@ -34,8 +34,8 @@ export function getPort(key: keyof typeof PORTS): number {
  * Application paths
  */
 export const APP_PATHS = {
-  /** OpenClaw configuration directory */
-  OPENCLAW_CONFIG: '~/.openclaw',
+  /** OpenClaw configuration directory (brand-specific, e.g. ~/.frogclaw) */
+  OPENCLAW_CONFIG: `~/${BRAND.dataDirName}`,
 
   /** Brand configuration directory */
   BRAND_CONFIG: `~/${BRAND.dataDirName}`,

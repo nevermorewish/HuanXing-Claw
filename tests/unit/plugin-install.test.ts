@@ -1,4 +1,6 @@
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { BRAND } from '@shared/brand';
 
 const {
   mockExistsSync,
@@ -208,7 +210,7 @@ describe('plugin installer diagnostics', () => {
       '[plugin] Bundled mirror install failed for WeCom',
       expect.objectContaining({
         sourceDir,
-        targetDir: expect.stringContaining('.openclaw/extensions/wecom'),
+        targetDir: expect.stringContaining(path.join(BRAND.dataDirName, 'extensions', 'wecom')),
         platform: 'win32',
         attempts: [
           expect.objectContaining({ attempt: 1, code: 'EPERM' }),

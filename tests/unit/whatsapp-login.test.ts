@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, writeFileSync, readdirSync, rmSync } from 'fs';
 import { rm } from 'fs/promises';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BRAND } from '@shared/brand';
 
 /**
  * Tests for the WhatsApp login cancel cleanup logic.
@@ -64,10 +65,10 @@ vi.mock('@electron/utils/logger', () => ({
  * CommonJS require('os') calls.
  */
 function cleanupWhatsAppLoginCredentials(accountId: string): void {
-  const authDir = join(testHome, '.openclaw', 'credentials', 'whatsapp', accountId);
+  const authDir = join(testHome, BRAND.dataDirName, 'credentials', 'whatsapp', accountId);
   if (existsSync(authDir)) {
     rmSync(authDir, { recursive: true, force: true });
-    const parentDir = join(testHome, '.openclaw', 'credentials', 'whatsapp');
+    const parentDir = join(testHome, BRAND.dataDirName, 'credentials', 'whatsapp');
     if (existsSync(parentDir)) {
       const remaining = readdirSync(parentDir);
       if (remaining.length === 0) {
@@ -78,7 +79,7 @@ function cleanupWhatsAppLoginCredentials(accountId: string): void {
 }
 
 describe('WhatsApp login cancel cleanup logic', () => {
-  const whatsappCredsDir = () => join(testHome, '.openclaw', 'credentials', 'whatsapp');
+  const whatsappCredsDir = () => join(testHome, BRAND.dataDirName, 'credentials', 'whatsapp');
   const accountAuthDir = (accountId: string) => join(whatsappCredsDir(), accountId);
 
   beforeEach(async () => {
@@ -135,7 +136,7 @@ describe('listConfiguredChannels WhatsApp detection', () => {
   });
 
   it('reports WhatsApp as configured when credentials directory has a session', async () => {
-    const authDir = join(testHome, '.openclaw', 'credentials', 'whatsapp', 'default');
+    const authDir = join(testHome, BRAND.dataDirName, 'credentials', 'whatsapp', 'default');
     mkdirSync(authDir, { recursive: true });
     writeFileSync(join(authDir, 'creds.json'), '{}', 'utf8');
 
@@ -147,7 +148,7 @@ describe('listConfiguredChannels WhatsApp detection', () => {
 
   it('does NOT report WhatsApp as configured when credentials directory is empty', async () => {
     // Create parent dir but no account subdirectories
-    const whatsappDir = join(testHome, '.openclaw', 'credentials', 'whatsapp');
+    const whatsappDir = join(testHome, BRAND.dataDirName, 'credentials', 'whatsapp');
     mkdirSync(whatsappDir, { recursive: true });
 
     const { listConfiguredChannels } = await import('@electron/utils/channel-config');
@@ -158,7 +159,7 @@ describe('listConfiguredChannels WhatsApp detection', () => {
 
   it('does NOT report WhatsApp as configured when credentials directory does not exist', async () => {
     // Ensure the openclaw dir exists but no whatsapp credentials
-    mkdirSync(join(testHome, '.openclaw'), { recursive: true });
+    mkdirSync(join(testHome, BRAND.dataDirName), { recursive: true });
 
     const { listConfiguredChannels } = await import('@electron/utils/channel-config');
     const channels = await listConfiguredChannels();
@@ -168,7 +169,7 @@ describe('listConfiguredChannels WhatsApp detection', () => {
 
   it('does NOT report WhatsApp after cleanup removes the credentials directory', async () => {
     // Simulate start(): create the auth dir
-    const authDir = join(testHome, '.openclaw', 'credentials', 'whatsapp', 'default');
+    const authDir = join(testHome, BRAND.dataDirName, 'credentials', 'whatsapp', 'default');
     mkdirSync(authDir, { recursive: true });
 
     const { listConfiguredChannels } = await import('@electron/utils/channel-config');

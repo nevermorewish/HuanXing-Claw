@@ -15,6 +15,7 @@ import {
   type ImageGenerationModelConfig,
 } from '../utils/openclaw-image-generation';
 import { isRecord } from './payload-utils';
+import { getOpenClawConfigDir } from '../utils/paths';
 
 type ThumbnailEntry = {
   filePath?: unknown;
@@ -70,7 +71,7 @@ async function resolveOutgoingMediaUrl(
     if (!match) return null;
     const attachmentId = decodeURIComponent(match[1]);
     if (!/^[A-Za-z0-9._-]+$/.test(attachmentId)) return null;
-    const recordPath = join(homedir(), '.openclaw', 'media', 'outgoing', 'records', `${attachmentId}.json`);
+    const recordPath = join(getOpenClawConfigDir(), 'media', 'outgoing', 'records', `${attachmentId}.json`);
     const fsP = await import('node:fs/promises');
     const raw = await fsP.readFile(recordPath, 'utf8');
     const record = JSON.parse(raw) as {

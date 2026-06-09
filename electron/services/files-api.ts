@@ -1,6 +1,5 @@
 import { app, nativeImage } from 'electron';
 import crypto from 'node:crypto';
-import { homedir } from 'node:os';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
 import type {
   FilePreviewTreeNode,
@@ -8,7 +7,7 @@ import type {
   FileReadBinaryOptions,
 } from '@shared/host-api/contract';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
-import { expandPath } from '../utils/paths';
+import { expandPath, getDefaultOpenClawConfigDir, getOpenClawConfigDir } from '../utils/paths';
 import { isRecord } from './payload-utils';
 
 const EXT_MIME_MAP: Record<string, string> = {
@@ -54,7 +53,7 @@ const EXT_MIME_MAP: Record<string, string> = {
   '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 };
 
-const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
+const OUTBOUND_DIR = join(getDefaultOpenClawConfigDir(), 'media', 'outbound');
 const DIRECTORY_MIME_TYPE = 'application/x-directory';
 const FILE_PREVIEW_MAX_TEXT_BYTES = 2 * 1024 * 1024;
 const FILE_PREVIEW_MAX_BINARY_BYTES = 50 * 1024 * 1024;
@@ -145,7 +144,7 @@ function isPathInside(child: string, parent: string): boolean {
 
 function getFilePreviewWriteRoots(): string[] {
   const roots: string[] = [];
-  roots.push(resolve(join(homedir(), '.openclaw')));
+  roots.push(resolve(getOpenClawConfigDir()));
   try {
     roots.push(resolve(app.getPath('userData')));
   } catch {

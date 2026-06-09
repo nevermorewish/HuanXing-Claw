@@ -15,6 +15,9 @@ for /f "tokens=2 delims=:." %%a in ('chcp') do set /a "_CP=%%a" 2>nul
 chcp 65001 >nul 2>&1
 
 set OPENCLAW_EMBEDDED_IN=__BRAND_NAME__
+rem Pin the bundled CLI to this brand's config/state dir (~\__BRAND_DATA_DIR__),
+rem matching the desktop app. Honor an explicit override if the user set one.
+if not defined OPENCLAW_STATE_DIR set "OPENCLAW_STATE_DIR=%USERPROFILE%\__BRAND_DATA_DIR__"
 set "NODE_EXE=%~dp0..\bin\node.exe"
 set "OPENCLAW_ENTRY=%~dp0..\openclaw\openclaw.mjs"
 

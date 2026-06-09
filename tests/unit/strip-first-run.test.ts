@@ -25,6 +25,7 @@ import {
   mergeDeepClawSection,
   stripFirstRunSection,
 } from '../../electron/utils/openclaw-workspace';
+import { BRAND } from '@shared/brand';
 
 beforeEach(async () => {
   await rm(testHome, { recursive: true, force: true });
@@ -225,13 +226,13 @@ describe('ensureDeepClawDefaultIdentity', () => {
   it('creates the default workspace and seeds IDENTITY.md for startup-owned workspaces', async () => {
     await ensureDeepClawDefaultIdentity();
 
-    await expect(readFile(join(testHome, '.openclaw', 'workspace', 'IDENTITY.md'), 'utf-8')).resolves.toContain('DeepClaw');
+    await expect(readFile(join(testHome, BRAND.dataDirName, 'workspace', 'IDENTITY.md'), 'utf-8')).resolves.toContain('DeepClaw');
   });
 });
 
 describe('ensureDeepClawContext', () => {
   it('does not wait for missing files in non-default agent workspaces', async () => {
-    const openclawDir = join(testHome, '.openclaw');
+    const openclawDir = join(testHome, BRAND.dataDirName);
     const defaultWorkspace = join(openclawDir, 'workspace-main');
     const agentWorkspace = join(openclawDir, 'workspace-agent');
     await mkdir(defaultWorkspace, { recursive: true });
@@ -262,7 +263,7 @@ describe('ensureDeepClawContext', () => {
   });
 
   it('does not wait for missing external default workspaces', async () => {
-    const openclawDir = join(testHome, '.openclaw');
+    const openclawDir = join(testHome, BRAND.dataDirName);
     const externalWorkspace = join(testHome, '..', `external-missing-${Date.now()}`);
     await mkdir(openclawDir, { recursive: true });
     await writeFile(
