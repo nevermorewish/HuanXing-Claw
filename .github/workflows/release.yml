@@ -10,7 +10,7 @@ on:
         description: 'Version to release (e.g., 0.4.9). Must match package.json.'
         required: true
       remote_path:
-        description: 'Linux server web root mapped to https://ai.fengchiyun.com/. Leave empty to use LINUX_DEPLOY_PATH.'
+        description: 'Linux server download root. Use /www/wwwroot/downloads, or leave empty to use LINUX_DEPLOY_PATH.'
         required: false
         default: ''
 
@@ -324,7 +324,15 @@ jobs:
             return "'" + $value.Replace("'", "'\''") + "'"
           }
 
-          $destinationRoot = "$env:LINUX_DEPLOY_REMOTE_PATH/downloads/$env:BRAND"
+          $remoteRoot = $env:LINUX_DEPLOY_REMOTE_PATH.TrimEnd('/', '\')
+          $feedPath = ([Uri]$env:UPDATE_FEED_BASE_URL).AbsolutePath.Trim('/')
+          $feedDir = if ($feedPath) { ($feedPath -split '/')[-1] } else { '' }
+          $remoteLeaf = Split-Path -Path $remoteRoot -Leaf
+          if ($feedDir -and $remoteLeaf -ne $feedDir) {
+            $remoteRoot = "$remoteRoot/$feedDir"
+          }
+
+          $destinationRoot = "$remoteRoot/$env:BRAND"
           $channelDestination = "$destinationRoot/$env:CHANNEL"
           $archiveDestination = "$destinationRoot/releases/v$env:VERSION"
 
