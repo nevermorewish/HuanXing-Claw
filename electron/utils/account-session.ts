@@ -30,6 +30,16 @@ export interface AccountUser {
   group: string;
 }
 
+export interface AccountToken {
+  id: number;
+  /** Token display name, e.g. the label set in the web console. */
+  name: string;
+  /** Token-level group override (empty string when it inherits the user group). */
+  group: string;
+  /** New-API token status (1 = enabled). */
+  status: number;
+}
+
 interface ApiEnvelope<T> {
   success?: boolean;
   message?: string;
@@ -408,14 +418,20 @@ export class AccountSession {
    *   - Otherwise we fetch it through {@link fetchTokenKey}, which probes the
    *     POST `/key` endpoint and falls back to GET detail for older backends.
    */
-  async ensureApiKey(): Promise<string> {
-    let token = await this.findUsableToken();
-    if (token == null) {
+  async ensureApiKey(tokenId?: number): Promise<string> {
+    let token = await this.findUsableToken(tokenId);
+    // Only auto-create when the caller didn't pin a specific token — a missing
+    // pinned token is an error, not a cue to mint a new one.
+    if (token == null && tokenId == null) {
       await this.createToken();
       token = await this.findUsableToken();
     }
     if (token == null) {
-      throw new Error('未找到可用的 API 令牌，且自动创建失败');
+      throw new Error(
+        tokenId == null
+          ? '未找到可用的 API 令牌，且自动创建失败'
+          : `未找到指定的 API 令牌 (id ${tokenId})`,
+      );
     }
     // Newer backends hand back the full key inline — no extra round-trip needed.
     if (isFullKey(token.key)) {
@@ -424,17 +440,48 @@ export class AccountSession {
     return this.fetchTokenKey(token.id);
   }
 
-  private async findUsableToken(): Promise<{ id: number; key?: string } | null> {
-    const res = await this.requestJson<{ items?: Array<{ id: number; status: number; key?: string }> }>(
-      this.url('/api/token/?p=0&size=100'),
-      { headers: this.authHeaders() },
-    );
+  /**
+   * List the account's API tokens for selection in the UI.
+   *
+   * Mirrors the New-API web console's token list. Tokens carry an optional
+   * `group` override; an empty group means the token inherits the user's group.
+   * The raw key is never returned here — it's fetched lazily per token via
+   * {@link ensureApiKey} once the user picks one.
+   */
+  async listTokens(): Promise<AccountToken[]> {
+    const items = await this.fetchTokenItems();
+    return items.map((t) => ({
+      id: Number(t.id),
+      name: typeof t.name === 'string' && t.name.trim() ? t.name : `令牌 #${t.id}`,
+      group: typeof t.group === 'string' ? t.group : '',
+      status: Number(t.status ?? 0),
+    }));
+  }
+
+  /** GET /api/token/ — the raw token rows (id, name, group, status, inline key). */
+  private async fetchTokenItems(): Promise<
+    Array<{ id: number; status: number; key?: string; name?: string; group?: string }>
+  > {
+    const res = await this.requestJson<{
+      items?: Array<{ id: number; status: number; key?: string; name?: string; group?: string }>;
+    }>(this.url('/api/token/?p=0&size=100'), { headers: this.authHeaders() });
     if (!res.body.success) {
       throw this.envelopeError('获取令牌列表', res);
     }
-    const items = res.body.data?.items ?? [];
-    const usable = items.find((t) => Number(t.status) === 1) ?? items[0];
-    return usable ? { id: Number(usable.id), key: usable.key } : null;
+    return res.body.data?.items ?? [];
+  }
+
+  /**
+   * Resolve a usable token. With `tokenId` set, return that exact token (or null
+   * if it's gone); otherwise prefer the first enabled token, falling back to the
+   * first token of any status.
+   */
+  private async findUsableToken(tokenId?: number): Promise<{ id: number; key?: string } | null> {
+    const items = await this.fetchTokenItems();
+    const picked = tokenId != null
+      ? items.find((t) => Number(t.id) === tokenId)
+      : items.find((t) => Number(t.status) === 1) ?? items[0];
+    return picked ? { id: Number(picked.id), key: picked.key } : null;
   }
 
   private async createToken(): Promise<void> {

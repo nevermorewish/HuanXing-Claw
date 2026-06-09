@@ -7,7 +7,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { LogIn, Loader2, Boxes } from 'lucide-react';
+import { LogIn, Loader2, Boxes, KeyRound } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -17,7 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAccountStore, DEFAULT_ACCOUNT_URL } from '@/stores/account';
+import { useAccountStore, DEFAULT_ACCOUNT_URL, type AccountToken } from '@/stores/account';
 import { ACCOUNT_BRAND } from '@/lib/account-brand';
 
 interface AccountLoginDialogProps {
@@ -27,12 +27,26 @@ interface AccountLoginDialogProps {
 
 type Step = 'credentials' | 'selectModels';
 
+/**
+ * Pick the token to pre-select: prefer one on the "default" group, else the
+ * first enabled token, else the first token of any status.
+ */
+function pickDefaultToken(tokens: AccountToken[]): number | null {
+  if (tokens.length === 0) return null;
+  const onDefault = tokens.find((t) => t.group === 'default' && t.status === 1)
+    ?? tokens.find((t) => t.group === 'default');
+  if (onDefault) return onDefault.id;
+  const enabled = tokens.find((t) => t.status === 1);
+  return (enabled ?? tokens[0]).id;
+}
+
 export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogProps) {
   const serverUrl = useAccountStore((s) => s.serverUrl);
   const lastUsername = useAccountStore((s) => s.lastUsername);
   const setServerUrl = useAccountStore((s) => s.setServerUrl);
   const savedCredentials = useAccountStore((s) => s.savedCredentials);
   const login = useAccountStore((s) => s.login);
+  const listTokens = useAccountStore((s) => s.listTokens);
   const saveModels = useAccountStore((s) => s.saveModels);
   const loadModelConfig = useAccountStore((s) => s.loadModelConfig);
 
@@ -45,6 +59,8 @@ export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogPro
 
   const [models, setModels] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [tokens, setTokens] = useState<AccountToken[]>([]);
+  const [selectedTokenId, setSelectedTokenId] = useState<number | null>(null);
 
   // Track whether we've already initialised for the current open cycle, so the
   // reset only runs on the open→ transition. Without this guard, handleLogin's
@@ -68,6 +84,8 @@ export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogPro
     setError(null);
     setModels([]);
     setSelected(new Set());
+    setTokens([]);
+    setSelectedTokenId(null);
   }, [open, serverUrl, lastUsername]);
 
   useEffect(() => {
@@ -110,6 +128,12 @@ export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogPro
       const existingIds = new Set((existing?.models ?? []).map((m) => m.id));
       setModels(fetched);
       setSelected(new Set([...fetched, ...fetched.filter((id) => existingIds.has(id))]));
+      // Fetch the account's API tokens so the user can pick which one backs the
+      // provider; default to a "default"-group token. Non-fatal on failure —
+      // omitting a token id lets the backend auto-pick.
+      const fetchedTokens = await listTokens().catch(() => []);
+      setTokens(fetchedTokens);
+      setSelectedTokenId(pickDefaultToken(fetchedTokens));
       if (fetched.length === 0) {
         toast.info('登录成功，但该账号暂无可用模型');
         onOpenChange(false);
@@ -148,7 +172,11 @@ export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogPro
     setSubmitting(true);
     setError(null);
     try {
-      const count = await saveModels(Array.from(selected).map((id) => ({ id, name: id })));
+      const count = await saveModels(
+        Array.from(selected).map((id) => ({ id, name: id })),
+        null,
+        selectedTokenId,
+      );
       toast.success(`已添加 ${count} 个 ${ACCOUNT_BRAND} 模型，可在「模型」页查看`);
       onOpenChange(false);
     } catch (err) {
@@ -233,6 +261,32 @@ export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogPro
             <DialogDescription className="mt-1 text-sm text-muted-foreground">
               选择要添加为 Provider 的模型，每个模型会作为一个可用账号。
             </DialogDescription>
+
+            {tokens.length > 0 && (
+              <div className="mt-4 space-y-1.5">
+                <Label htmlFor="hx-token" className="flex items-center gap-1.5">
+                  <KeyRound size={14} /> API 令牌
+                </Label>
+                <select
+                  id="hx-token"
+                  value={selectedTokenId ?? ''}
+                  onChange={(e) => setSelectedTokenId(e.target.value ? Number(e.target.value) : null)}
+                  disabled={submitting}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {tokens.map((token) => (
+                    <option key={token.id} value={token.id}>
+                      {token.name}
+                      {token.group ? ` · ${token.group}` : ''}
+                      {token.status !== 1 ? '（已禁用）' : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  默认使用 default 分组令牌，所选令牌的密钥将用于已添加的模型。
+                </p>
+              </div>
+            )}
 
             <div className="mt-3 flex items-center justify-between">
               <span className="text-sm text-muted-foreground">

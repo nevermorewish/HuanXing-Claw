@@ -9,7 +9,7 @@
  * Credentials are saved on login, so subsequent opens pre-fill them.
  */
 import { useEffect, useState } from 'react';
-import { LogIn, CheckCircle2, Wallet, LogOut, RefreshCw } from 'lucide-react';
+import { LogIn, CheckCircle2, Wallet, LogOut, RefreshCw, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAccountStore } from '@/stores/account';
 import { AccountLoginDialog } from './AccountLoginDialog';
@@ -37,6 +37,7 @@ export function AccountLoginButton({ collapsed = false }: AccountLoginButtonProp
   const balance = useAccountStore((s) => s.balance);
   const fetchBalance = useAccountStore((s) => s.fetchBalance);
   const openRecharge = useAccountStore((s) => s.openRecharge);
+  const openOfficialSite = useAccountStore((s) => s.openOfficialSite);
   const logout = useAccountStore((s) => s.logout);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -141,6 +142,16 @@ export function AccountLoginButton({ collapsed = false }: AccountLoginButtonProp
 
         {/* Actions */}
         <div className="mt-2 flex items-center gap-1.5">
+          <button
+            type="button"
+            data-testid="sidebar-account-official"
+            onClick={() => void openOfficialSite()}
+            title="官网"
+            className="flex items-center justify-center gap-1 rounded-md bg-black/5 dark:bg-white/5 px-2 py-1 text-meta font-medium text-foreground/70 hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+          >
+            <Globe className="h-3.5 w-3.5" strokeWidth={2} />
+            官网
+          </button>
           <button
             type="button"
             data-testid="sidebar-account-recharge"

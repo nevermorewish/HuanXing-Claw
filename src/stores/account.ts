@@ -17,6 +17,12 @@ import { BRAND } from '@shared/brand';
 /** Default account/login service address, configured per-brand. */
 export const DEFAULT_ACCOUNT_URL = BRAND.serviceUrl;
 
+/** Official site URL (官网 button) — the brand's configured service address. */
+export const OFFICIAL_SITE_URL = BRAND.serviceUrl;
+
+/** Recharge / top-up page URL (充值 button), configured per-brand. */
+export const RECHARGE_URL = BRAND.rechargeUrl;
+
 export interface AccountUser {
   id: number;
   username: string;
@@ -54,6 +60,15 @@ export interface AccountBalance {
   topUpUrl: string;
 }
 
+export interface AccountToken {
+  id: number;
+  name: string;
+  /** Token-level group override; empty string means it inherits the user group. */
+  group: string;
+  /** New-API token status (1 = enabled). */
+  status: number;
+}
+
 interface AccountState {
   serverUrl: string;
   lastUsername: string;
@@ -61,6 +76,8 @@ interface AccountState {
   user: AccountUser | null;
   /** Models fetched after login, awaiting selection. Not persisted. */
   models: string[];
+  /** API tokens fetched after login, awaiting selection. Not persisted. */
+  tokens: AccountToken[];
   /** The sk- key obtained for the account. Held only in memory. */
   apiKey: string | null;
   /** The account provider config read from openclaw.json. Not persisted. */
@@ -76,10 +93,21 @@ interface AccountState {
   login: (username: string, password: string) => Promise<string[]>;
   /** Refresh the account balance. Safe to call when logged out (no-op). */
   fetchBalance: () => Promise<void>;
-  /** Open the server's recharge / top-up page in the external browser. */
+  /** Fetch the account's API tokens for selection. Returns them (also stored). */
+  listTokens: () => Promise<AccountToken[]>;
+  /** Open the brand's recharge / top-up page in the external browser. */
   openRecharge: () => Promise<void>;
-  /** Write the selected models as the single account provider. Returns count. */
-  saveModels: (models: AccountModelEntry[], primaryModelId?: string | null) => Promise<number>;
+  /** Open the brand's official site in the external browser. */
+  openOfficialSite: () => Promise<void>;
+  /**
+   * Write the selected models as the single account provider. Returns count.
+   * `tokenId` pins which API token's key backs the provider (omit to auto-pick).
+   */
+  saveModels: (
+    models: AccountModelEntry[],
+    primaryModelId?: string | null,
+    tokenId?: number | null,
+  ) => Promise<number>;
   /** Read the account provider config from openclaw.json. */
   loadModelConfig: () => Promise<AccountModelConfig | null>;
   setPrimaryModel: (modelId: string) => Promise<void>;
@@ -97,6 +125,7 @@ export const useAccountStore = create<AccountState>()(
       loggedIn: false,
       user: null,
       models: [],
+      tokens: [],
       apiKey: null,
       modelConfig: null,
       balance: null,
@@ -127,10 +156,29 @@ export const useAccountStore = create<AccountState>()(
         }
       },
 
+      listTokens: async () => {
+        if (!get().loggedIn) return [];
+        const result = await hostApi.account.listTokens();
+        if (!result.success) {
+          throw new Error(result.error || '获取令牌列表失败');
+        }
+        const tokens = result.tokens ?? [];
+        set({ tokens });
+        return tokens;
+      },
+
       openRecharge: async () => {
-        const serverUrl = get().serverUrl.trim().replace(/\/+$/, '');
-        if (!serverUrl) return;
-        await hostApi.shell.openExternal(`${serverUrl}/wallet`);
+        // The recharge page is brand-configured (brands/<id>.json → rechargeUrl).
+        const url = RECHARGE_URL.trim();
+        if (!url) return;
+        await hostApi.shell.openExternal(url);
+      },
+
+      openOfficialSite: async () => {
+        // The official site is the brand's configured service address.
+        const url = OFFICIAL_SITE_URL.trim();
+        if (!url) return;
+        await hostApi.shell.openExternal(url);
       },
 
       login: async (username, password) => {
@@ -176,7 +224,7 @@ export const useAccountStore = create<AccountState>()(
         }
       },
 
-      saveModels: async (models, primaryModelId) => {
+      saveModels: async (models, primaryModelId, tokenId) => {
         const clean = models.filter((m) => m.id.trim());
         if (clean.length === 0) {
           return 0;
@@ -184,6 +232,7 @@ export const useAccountStore = create<AccountState>()(
         const result = await hostApi.account.saveModelConfig({
           models: clean,
           primaryModelId: primaryModelId ?? null,
+          tokenId: tokenId ?? null,
         });
         if (!result.success) {
           throw new Error(result.error || '保存模型配置失败');
@@ -238,7 +287,7 @@ export const useAccountStore = create<AccountState>()(
         } catch {
           // ignore — clearing local state is enough
         }
-        set({ loggedIn: false, user: null, models: [], apiKey: null, balance: null });
+        set({ loggedIn: false, user: null, models: [], tokens: [], apiKey: null, balance: null });
       },
     }),
     {

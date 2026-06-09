@@ -13,6 +13,7 @@ export const ACTIVE_BRAND: BrandConfig = {
   instanceLockName: 'deepclaw',
   providerKey: 'deepclaw',
   serviceUrl: 'http://localhost:3000',
+  rechargeUrl: 'http://localhost:3000/topup',
   updateFeedBaseUrl: 'https://oss.intelli-spectrum.com/deepclaw',
   copyright: 'Copyright © 2026 DeepClaw',
   vendor: 'DeepClaw',

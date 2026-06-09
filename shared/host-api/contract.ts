@@ -770,9 +770,20 @@ export type AccountModelConfig = {
   primary: string | null;
 };
 export type AccountModelConfigResult = HostSuccess & { config?: AccountModelConfig };
+export type AccountToken = {
+  id: number;
+  name: string;
+  /** Token-level group override; empty string means it inherits the user group. */
+  group: string;
+  /** New-API token status (1 = enabled). */
+  status: number;
+};
+export type AccountTokensResult = HostSuccess & { tokens?: AccountToken[] };
 export type AccountSaveModelConfigPayload = {
   models: AccountModelEntry[];
   primaryModelId?: string | null;
+  /** Selected token id whose `sk-` key backs the provider. Omit to auto-pick. */
+  tokenId?: number | null;
 };
 export type AccountModelIdPayload = { modelId: string };
 export type AccountTestModelResult = HostSuccess & { latencyMs?: number; reply?: string };
@@ -1015,6 +1026,7 @@ export type HostApiContract = {
     fetchSetup: () => AccountSetupResult;
     savedCredentials: () => AccountCredentialsResult;
     getBalance: () => AccountBalanceResult;
+    listTokens: () => AccountTokensResult;
     logout: () => HostSuccess;
     getModelConfig: () => AccountModelConfigResult;
     saveModelConfig: (payload: AccountSaveModelConfigPayload) => AccountModelConfigResult;

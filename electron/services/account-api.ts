@@ -6,7 +6,7 @@
  * key the renderer can turn into provider accounts.
  */
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
-import type { AccountModelConfig, AccountModelEntry, AccountUser } from '@shared/host-api/contract';
+import type { AccountModelConfig, AccountModelEntry, AccountToken, AccountUser } from '@shared/host-api/contract';
 import { safeStorage } from 'electron';
 import type { GatewayManager } from '../gateway/manager';
 import { getDeepClawProviderStore } from './providers/store-instance';
@@ -202,6 +202,24 @@ export function createAccountApi(
       }
     },
 
+    listTokens: async () => {
+      try {
+        if (!accountSession.isLoggedIn()) {
+          return { success: false, error: '尚未登录' };
+        }
+        const tokens = await accountSession.listTokens();
+        return { success: true, tokens: tokens.map((t): AccountToken => ({
+          id: t.id,
+          name: t.name,
+          group: t.group,
+          status: t.status,
+        })) };
+      } catch (error) {
+        logger.error('account.listTokens failed', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+
     logout: async () => {
       accountSession.logout();
       return { success: true };
@@ -228,7 +246,7 @@ export function createAccountApi(
         }
         let apiKey: string | undefined;
         if (accountSession.isLoggedIn()) {
-          apiKey = await accountSession.ensureApiKey();
+          apiKey = await accountSession.ensureApiKey(payload.tokenId ?? undefined);
         }
         await writeAccountModelConfig({
           baseUrl,

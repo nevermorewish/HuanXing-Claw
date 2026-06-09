@@ -8,6 +8,7 @@
   "instanceLockName": "huanxingclaw",
   "providerKey": "huanxingclaw",
   "serviceUrl": "https://ai.fengchiyun.com/",
+  "rechargeUrl": "https://ai.fengchiyun.com/topup",
   "updateFeedBaseUrl": "https://ai.fengchiyun.com/downloads/huanxingclaw",
   "copyright": "Copyright © 2026 HuanxingClaw",
   "vendor": "HuanxingClaw",

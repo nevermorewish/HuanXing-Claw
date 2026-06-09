@@ -27,8 +27,10 @@ export interface BrandConfig {
   instanceLockName: string;
   /** openclaw.json `models.providers.*` key for the account brand. */
   providerKey: string;
-  /** Default account/login service address (the login dialog's prefilled server URL). */
+  /** Default account/login service address (the login dialog's prefilled server URL). Also the "官网" (official site) link. */
   serviceUrl: string;
+  /** Recharge / top-up page URL opened by the "充值" button. */
+  rechargeUrl: string;
   /** Base update feed URL; the updater appends the release channel such as `/latest` or `/alpha`. */
   updateFeedBaseUrl: string;
   /** Copyright line for installers/app metadata. */

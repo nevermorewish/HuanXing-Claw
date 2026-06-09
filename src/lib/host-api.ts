@@ -356,11 +356,13 @@ export const hostApi = {
     fetchSetup: () => invokeHost('account', 'fetchSetup'),
     savedCredentials: () => invokeHost('account', 'savedCredentials'),
     getBalance: () => invokeHost('account', 'getBalance'),
+    listTokens: () => invokeHost('account', 'listTokens'),
     logout: () => invokeHost('account', 'logout'),
     getModelConfig: () => invokeHost('account', 'getModelConfig'),
     saveModelConfig: (input: {
       models: Array<{ id: string; name: string; contextWindow?: number; reasoning?: boolean }>;
       primaryModelId?: string | null;
+      tokenId?: number | null;
     }) => invokeHost('account', 'saveModelConfig', input),
     setPrimaryModel: (input: { modelId: string }) => invokeHost('account', 'setPrimaryModel', input),
     deleteModel: (input: { modelId: string }) => invokeHost('account', 'deleteModel', input),

@@ -8,6 +8,7 @@
   "instanceLockName": "frogclaw",
   "providerKey": "frogclaw",
   "serviceUrl": "https://ai.fengchiyun.com/",
+  "rechargeUrl": "https://ai.fengchiyun.com/topup",
   "updateFeedBaseUrl": "https://ai.fengchiyun.com/downloads/frogclaw",
   "copyright": "Copyright © 2026 FrogClaw",
   "vendor": "FrogClaw",

@@ -8,6 +8,7 @@
   "instanceLockName": "deepclaw",
   "providerKey": "deepclaw",
   "serviceUrl": "https://ai.fengchiyun.com/",
+  "rechargeUrl": "https://ai.fengchiyun.com/topup",
   "updateFeedBaseUrl": "https://ai.fengchiyun.com/downloads/deepclaw",
   "copyright": "Copyright © 2026 DeepClaw",
   "vendor": "DeepClaw",
