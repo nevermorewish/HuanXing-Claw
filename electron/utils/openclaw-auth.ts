@@ -3040,12 +3040,18 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     // ── tools.profile & sessions.visibility ───────────────────────
-    // OpenClaw 3.8+ requires tools.profile = 'full' and tools.sessions.visibility = 'all'
-    // for DeepClaw to properly integrate with its updated tool system.
+    // sessions.visibility must be 'all' for DeepClaw to integrate with its
+    // tool system. tools.profile, however, is user-tunable: the OpenClaw
+    // kernel accepts 'full' | 'standard' | 'minimal' | 'messaging' | 'none'
+    // and uses it to filter which tools load into the context (smaller
+    // profile = fewer tools = smaller prompt). We only enforce 'full' as a
+    // fallback when the value is missing or invalid, so users can pick a
+    // leaner profile to reduce latency without it being reverted.
+    const VALID_TOOL_PROFILES = ['full', 'standard', 'minimal', 'messaging', 'none'];
     const toolsConfig = (config.tools as Record<string, unknown> | undefined) || {};
     let toolsModified = false;
 
-    if (toolsConfig.profile !== 'full') {
+    if (typeof toolsConfig.profile !== 'string' || !VALID_TOOL_PROFILES.includes(toolsConfig.profile)) {
       toolsConfig.profile = 'full';
       toolsModified = true;
     }
