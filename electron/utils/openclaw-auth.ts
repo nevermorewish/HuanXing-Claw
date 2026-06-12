@@ -12,9 +12,9 @@
 import { access, mkdir, readFile, readdir, writeFile } from 'fs/promises';
 import { constants, readdirSync, readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
-import { homedir } from 'os';
 import { listConfiguredAgentIds } from './agent-config';
-import { getOpenClawResolvedDir } from './paths';
+import { getOpenClawConfigDir, getOpenClawResolvedDir } from './paths';
+import { BRAND } from '@shared/brand';
 import {
   getProviderEnvVar,
   getProviderDefaultModel,
@@ -34,11 +34,12 @@ import { getSetting } from './store';
 import {
   assertValidApiProtocol,
   normalizeOpenClawApiProtocol,
+  type OpenClawApiProtocol,
 } from '../shared/providers/types';
 import { inferCustomModelInputModalities } from '../shared/providers/model-capabilities';
 import {
-  CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
-  CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
+  DEEPCLAW_OPENAI_IMAGE_DEFAULT_MODEL,
+  DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY,
 } from './openclaw-image-relay-constants';
 import {
   migrateAuthProfilesJsonToSqliteIfNeeded,
@@ -414,7 +415,7 @@ function removeProfileFromStore(
 // ── Auth Profiles I/O ────────────────────────────────────────────
 
 function getAuthProfilesPath(agentId = 'main'): string {
-  return join(homedir(), '.openclaw', 'agents', agentId, 'agent', AUTH_PROFILE_FILENAME);
+  return join(getOpenClawConfigDir(), 'agents', agentId, 'agent', AUTH_PROFILE_FILENAME);
 }
 
 async function readAuthProfiles(agentId = 'main'): Promise<AuthProfilesStore> {
@@ -483,7 +484,7 @@ function getApiKeyFromAuthProfilesStore(
 /**
  * Read the API key OpenClaw will use for a runtime provider key.
  *
- * This intentionally reads auth-profiles.json rather than ClawX's provider
+ * This intentionally reads auth-profiles.json rather than DeepClaw's provider
  * cache, so UI status can reflect providers imported or preserved by the
  * OpenClaw runtime across overwrite installs.
  */
@@ -508,7 +509,7 @@ export async function getProviderApiKeyFromOpenClaw(
 // ── Agent Discovery ──────────────────────────────────────────────
 
 async function discoverAgentIds(): Promise<string[]> {
-  const agentsDir = join(homedir(), '.openclaw', 'agents');
+  const agentsDir = join(getOpenClawConfigDir(), 'agents');
   try {
     if (!(await fileExists(agentsDir))) return ['main'];
     return await listConfiguredAgentIds();
@@ -519,7 +520,9 @@ async function discoverAgentIds(): Promise<string[]> {
 
 // ── OpenClaw Config Helpers ──────────────────────────────────────
 
-const OPENCLAW_CONFIG_PATH = join(homedir(), '.openclaw', 'openclaw.json');
+function openClawConfigPath(): string {
+  return join(getOpenClawConfigDir(), 'openclaw.json');
+}
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
 const BUILTIN_CHANNEL_IDS = new Set([
@@ -730,11 +733,11 @@ async function collectActiveProviderIdsFromConfig(config: Record<string, unknown
 }
 
 async function readOpenClawJson(): Promise<Record<string, unknown>> {
-  return (await readJsonFile<Record<string, unknown>>(OPENCLAW_CONFIG_PATH)) ?? {};
+  return (await readJsonFile<Record<string, unknown>>(openClawConfigPath())) ?? {};
 }
 
 async function resolveInstalledFeishuPluginId(): Promise<string | null> {
-  const extensionRoot = join(homedir(), '.openclaw', 'extensions');
+  const extensionRoot = join(getOpenClawConfigDir(), 'extensions');
   for (const dirName of FEISHU_PLUGIN_ID_CANDIDATES) {
     const manifestPath = join(extensionRoot, dirName, 'openclaw.plugin.json');
     const manifest = await readJsonFile<{ id?: unknown }>(manifestPath);
@@ -747,7 +750,7 @@ async function resolveInstalledFeishuPluginId(): Promise<string | null> {
 
 async function discoverInstalledExtensionPluginIds(): Promise<Set<string>> {
   const ids = new Set<string>();
-  const extensionRoot = join(homedir(), '.openclaw', 'extensions');
+  const extensionRoot = join(getOpenClawConfigDir(), 'extensions');
 
   let entries: Array<{ isDirectory: () => boolean; name: string }>;
   try {
@@ -859,7 +862,7 @@ async function writeOpenClawJson(config: Record<string, unknown>): Promise<void>
   commands.restart = true;
   config.commands = commands;
 
-  await writeJsonFile(OPENCLAW_CONFIG_PATH, config);
+  await writeJsonFile(openClawConfigPath(), config);
 }
 
 // ── Exported Functions (all async) ───────────────────────────────
@@ -1135,7 +1138,7 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
 
   // 2. Remove from models.json (per-agent model registry used by pi-ai directly)
   for (const id of agentIds) {
-    const modelsPath = join(homedir(), '.openclaw', 'agents', id, 'agent', 'models.json');
+    const modelsPath = join(getOpenClawConfigDir(), 'agents', id, 'agent', 'models.json');
     try {
       if (await fileExists(modelsPath)) {
         const raw = await readFile(modelsPath, 'utf-8');
@@ -1236,6 +1239,469 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
     console.warn(`Failed to remove provider ${provider} from openclaw.json:`, err);
   }
 }
+
+// ── Account single-provider model config ────────────────────────
+//
+// Account registers as ONE openclaw.json provider (`models.providers.account`)
+// holding many nested models, mirroring the `qtcool` template the user runs:
+//   { api: 'openai-completions', apiKey: '<sk-…>', baseUrl, models: [{id,name,…}] }
+// plus `agents.defaults.model.primary = 'account/<id>'`, the rest rotated into
+// `fallbacks`, and one `agents.defaults.models['account/<id>'] = {}` per model.
+//
+// The API key is stored INLINE on the entry (not auth-profiles / apiKeyEnv) —
+// `account` is not a registry provider, and inline keys are the proven path for
+// such entries (see the user's working `qtcool` config).
+
+export const ACCOUNT_PROVIDER_KEY = BRAND.providerKey;
+
+export interface AccountModelEntry {
+  id: string;
+  name: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+}
+
+/** A model entry on a provider — same shape regardless of provider. */
+export type ProviderModelEntry = AccountModelEntry;
+
+export interface AccountModelConfigData {
+  baseUrl: string;
+  models: AccountModelEntry[];
+  primary: string | null;
+}
+
+/** A single provider's config as surfaced to the renderer (no raw key). */
+export interface ProviderModelConfigData {
+  key: string;
+  baseUrl: string;
+  api: OpenClawApiProtocol;
+  hasKey: boolean;
+  maskedKey: string | null;
+  models: ProviderModelEntry[];
+  primary: string | null;
+}
+
+/** Mask an inline API key for display (never expose the raw value to the UI). */
+function maskProviderApiKey(value: unknown): string | null {
+  if (typeof value !== 'string' || !value) return null;
+  if (value.length <= 8) return `${value.slice(0, 2)}***`;
+  return `${value.slice(0, 4)}***${value.slice(-4)}`;
+}
+
+/** Normalize a raw model entry from config into our shape. */
+function normalizeAccountModelEntry(value: unknown): AccountModelEntry | null {
+  if (typeof value === 'string') {
+    return value.trim() ? { id: value, name: value } : null;
+  }
+  if (!isPlainRecord(value)) return null;
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === 'string' ? record.id.trim() : '';
+  if (!id) return null;
+  const entry: AccountModelEntry = {
+    id,
+    name: typeof record.name === 'string' && record.name.trim() ? record.name : id,
+  };
+  if (typeof record.contextWindow === 'number') entry.contextWindow = record.contextWindow;
+  if (typeof record.reasoning === 'boolean') entry.reasoning = record.reasoning;
+  return entry;
+}
+
+/**
+ * Read a single provider entry (`models.providers.<key>`) + which of its models
+ * is the default. Generic over any provider key. The inline API key is never
+ * returned — only `hasKey` + a masked preview.
+ */
+export async function readProviderModelConfig(key: string): Promise<ProviderModelConfigData> {
+  const config = await readOpenClawJson();
+  const models = config.models as Record<string, unknown> | undefined;
+  const providers = (models?.providers ?? {}) as Record<string, unknown>;
+  const entry = isPlainRecord(providers[key])
+    ? (providers[key] as Record<string, unknown>)
+    : null;
+
+  const baseUrl = entry && typeof entry.baseUrl === 'string' ? entry.baseUrl : '';
+  const api = (entry && typeof entry.api === 'string'
+    ? entry.api
+    : 'openai-completions') as OpenClawApiProtocol;
+  const rawModels = entry && Array.isArray(entry.models) ? entry.models : [];
+  const modelList = rawModels
+    .map(normalizeAccountModelEntry)
+    .filter((m): m is ProviderModelEntry => m != null);
+  const rawKey = entry && typeof entry.apiKey === 'string' ? entry.apiKey : '';
+
+  const agents = config.agents as Record<string, unknown> | undefined;
+  const defaults = agents?.defaults && typeof agents.defaults === 'object'
+    ? (agents.defaults as Record<string, unknown>)
+    : undefined;
+  const modelCfg = defaults?.model && typeof defaults.model === 'object'
+    ? (defaults.model as Record<string, unknown>)
+    : undefined;
+  const primary = typeof modelCfg?.primary === 'string'
+    && modelCfg.primary.startsWith(`${key}/`)
+    ? modelCfg.primary
+    : null;
+
+  return {
+    key,
+    baseUrl,
+    api,
+    hasKey: Boolean(rawKey),
+    maskedKey: maskProviderApiKey(rawKey),
+    models: modelList,
+    primary,
+  };
+}
+
+/**
+ * Write a single provider entry (inline key) + default model into openclaw.json.
+ * Generic over any provider key and api protocol. Mirrors the qtcool template:
+ * `models.providers.<key> = { api, apiKey, baseUrl, models:[{id,name,...}] }`.
+ *
+ * Bypasses {@link upsertOpenClawProviderEntry} because that helper writes
+ * `apiKey` as an env-var NAME; we need the literal key inline. When `apiKey` is
+ * omitted the existing entry's key is preserved (so editing the model list never
+ * drops credentials). `primaryModelId` selects the default; remaining models
+ * rotate into `fallbacks`. When omitted, an existing valid primary is kept,
+ * otherwise the first model is promoted.
+ */
+export async function writeProviderModelConfig(
+  key: string,
+  input: {
+    baseUrl: string;
+    api: OpenClawApiProtocol;
+    apiKey?: string;
+    models: ProviderModelEntry[];
+    primaryModelId?: string | null;
+  },
+): Promise<void> {
+  assertValidApiProtocol(input.api, key);
+  await withConfigLock(async () => {
+    const config = await readOpenClawJson();
+
+    const models = (config.models || {}) as Record<string, unknown>;
+    const providers = (models.providers || {}) as Record<string, unknown>;
+    const existing = isPlainRecord(providers[key])
+      ? (providers[key] as Record<string, unknown>)
+      : {};
+
+    const cleanModels = input.models
+      .map(normalizeAccountModelEntry)
+      .filter((m): m is ProviderModelEntry => m != null);
+
+    // Preserve an existing inline key when the caller doesn't supply one.
+    const apiKey = input.apiKey?.trim()
+      || (typeof existing.apiKey === 'string' ? existing.apiKey : '');
+
+    const nextProvider: Record<string, unknown> = {
+      ...existing,
+      api: input.api,
+      baseUrl: input.baseUrl,
+      models: cleanModels.map((m) => {
+        const entry: Record<string, unknown> = { id: m.id, name: m.name };
+        if (m.contextWindow != null) entry.contextWindow = m.contextWindow;
+        if (m.reasoning != null) entry.reasoning = m.reasoning;
+        return entry;
+      }),
+    };
+    if (apiKey) nextProvider.apiKey = apiKey;
+    providers[key] = nextProvider;
+    models.providers = providers;
+    config.models = models;
+
+    // Resolve primary: explicit choice → existing valid primary → first model.
+    const validRefs = new Set(cleanModels.map((m) => `${key}/${m.id}`));
+    const agents = (config.agents || {}) as Record<string, unknown>;
+    const defaults = (agents.defaults || {}) as Record<string, unknown>;
+    const modelCfg = (defaults.model && typeof defaults.model === 'object'
+      ? defaults.model
+      : {}) as Record<string, unknown>;
+    const currentPrimary = typeof modelCfg.primary === 'string' ? modelCfg.primary : '';
+
+    let primary: string | null = null;
+    if (input.primaryModelId) {
+      const ref = `${key}/${input.primaryModelId}`;
+      if (validRefs.has(ref)) primary = ref;
+    }
+    if (!primary && currentPrimary && validRefs.has(currentPrimary)) {
+      primary = currentPrimary;
+    }
+    if (!primary && currentPrimary && currentPrimary.startsWith(`${key}/`)) {
+      // Current primary belonged to this provider but is no longer valid;
+      // promote the first model below.
+      primary = null;
+    }
+    if (!primary && !currentPrimary && cleanModels.length > 0) {
+      primary = `${key}/${cleanModels[0].id}`;
+    }
+    if (!primary && currentPrimary && !currentPrimary.startsWith(`${key}/`)) {
+      // A different provider owns the primary — leave it alone, just register
+      // this provider's models and fallbacks below.
+      primary = currentPrimary;
+    }
+    if (!primary && cleanModels.length > 0) {
+      primary = `${key}/${cleanModels[0].id}`;
+    }
+
+    if (primary) {
+      modelCfg.primary = primary;
+      // Rotate this provider's non-primary models into fallbacks, preserving any
+      // existing fallbacks that are still valid (clawpanel rotateFallbackChain).
+      const prevFallbacks = Array.isArray(modelCfg.fallbacks)
+        ? (modelCfg.fallbacks as unknown[]).filter((f): f is string => typeof f === 'string')
+        : [];
+      const seen = new Set<string>([primary]);
+      const nextFallbacks: string[] = [];
+      const pushUnique = (ref: string) => {
+        if (!seen.has(ref)) {
+          seen.add(ref);
+          nextFallbacks.push(ref);
+        }
+      };
+      // Keep prior fallbacks: this provider's must still be valid; others as-is.
+      for (const fb of prevFallbacks) {
+        if (fb.startsWith(`${key}/`)) {
+          if (validRefs.has(fb)) pushUnique(fb);
+        } else {
+          pushUnique(fb);
+        }
+      }
+      // Ensure every other model of this provider is represented.
+      for (const ref of validRefs) pushUnique(ref);
+      modelCfg.fallbacks = nextFallbacks;
+    } else {
+      // No models for this provider → clear its references from primary/fallbacks.
+      if (typeof modelCfg.primary === 'string' && modelCfg.primary.startsWith(`${key}/`)) {
+        delete modelCfg.primary;
+      }
+      if (Array.isArray(modelCfg.fallbacks)) {
+        modelCfg.fallbacks = (modelCfg.fallbacks as unknown[])
+          .filter((f): f is string => typeof f === 'string' && !f.startsWith(`${key}/`));
+      }
+    }
+    defaults.model = modelCfg;
+
+    // Register each model under agents.defaults.models (mirrors qtcool template):
+    // keep other entries, replace this provider's set with current models.
+    const modelsMap = (defaults.models && typeof defaults.models === 'object' && !Array.isArray(defaults.models)
+      ? defaults.models
+      : {}) as Record<string, unknown>;
+    for (const mapKey of Object.keys(modelsMap)) {
+      if (mapKey.startsWith(`${key}/`)) delete modelsMap[mapKey];
+    }
+    for (const ref of validRefs) {
+      if (!modelsMap[ref]) modelsMap[ref] = {};
+    }
+    defaults.models = modelsMap;
+    agents.defaults = defaults;
+    config.agents = agents;
+
+    await writeOpenClawJson(config);
+  });
+}
+
+/** List every `models.providers.*` entry + the global default model + fallbacks. */
+export async function listAllProvidersConfig(): Promise<{
+  providers: ProviderModelConfigData[];
+  primary: string | null;
+  fallbacks: string[];
+}> {
+  const config = await readOpenClawJson();
+  const models = config.models as Record<string, unknown> | undefined;
+  const providers = (models?.providers ?? {}) as Record<string, unknown>;
+
+  const agents = config.agents as Record<string, unknown> | undefined;
+  const defaults = agents?.defaults && typeof agents.defaults === 'object'
+    ? (agents.defaults as Record<string, unknown>)
+    : undefined;
+  const modelCfg = defaults?.model && typeof defaults.model === 'object'
+    ? (defaults.model as Record<string, unknown>)
+    : undefined;
+  const primary = typeof modelCfg?.primary === 'string' ? modelCfg.primary : null;
+  const fallbacks = Array.isArray(modelCfg?.fallbacks)
+    ? (modelCfg!.fallbacks as unknown[]).filter((f): f is string => typeof f === 'string')
+    : [];
+
+  const result: ProviderModelConfigData[] = [];
+  for (const [key, raw] of Object.entries(providers)) {
+    if (!isPlainRecord(raw)) continue;
+    const entry = raw as Record<string, unknown>;
+    const rawModels = Array.isArray(entry.models) ? entry.models : [];
+    const modelList = rawModels
+      .map(normalizeAccountModelEntry)
+      .filter((m): m is ProviderModelEntry => m != null);
+    const rawKey = typeof entry.apiKey === 'string' ? entry.apiKey : '';
+    result.push({
+      key,
+      baseUrl: typeof entry.baseUrl === 'string' ? entry.baseUrl : '',
+      api: (typeof entry.api === 'string' ? entry.api : 'openai-completions') as OpenClawApiProtocol,
+      hasKey: Boolean(rawKey),
+      maskedKey: maskProviderApiKey(rawKey),
+      models: modelList,
+      primary: primary && primary.startsWith(`${key}/`) ? primary : null,
+    });
+  }
+
+  return { providers: result, primary, fallbacks };
+}
+
+/**
+ * Set the global default model (`agents.defaults.model.primary`) to an arbitrary
+ * `provider/model` ref, rotating the previous primary into fallbacks. Validates
+ * the ref against an existing `models.providers.<provider>` model.
+ */
+export async function setPrimaryModelRef(modelRef: string): Promise<void> {
+  const slash = modelRef.indexOf('/');
+  if (slash <= 0) {
+    throw new Error(`无效的模型引用: ${modelRef}`);
+  }
+  await withConfigLock(async () => {
+    const config = await readOpenClawJson();
+    const models = config.models as Record<string, unknown> | undefined;
+    const providers = (models?.providers ?? {}) as Record<string, unknown>;
+
+    // Validate the ref points at a real model.
+    const providerKey = modelRef.slice(0, slash);
+    const modelId = modelRef.slice(slash + 1);
+    const entry = isPlainRecord(providers[providerKey])
+      ? (providers[providerKey] as Record<string, unknown>)
+      : null;
+    const entryModels = entry && Array.isArray(entry.models) ? entry.models : [];
+    const exists = entryModels
+      .map(normalizeAccountModelEntry)
+      .some((m) => m?.id === modelId);
+    if (!exists) {
+      throw new Error(`模型不存在: ${modelRef}`);
+    }
+
+    const agents = (config.agents || {}) as Record<string, unknown>;
+    const defaults = (agents.defaults || {}) as Record<string, unknown>;
+    const modelCfg = (defaults.model && typeof defaults.model === 'object'
+      ? defaults.model
+      : {}) as Record<string, unknown>;
+    const oldPrimary = typeof modelCfg.primary === 'string' ? modelCfg.primary : '';
+
+    modelCfg.primary = modelRef;
+    const prevFallbacks = Array.isArray(modelCfg.fallbacks)
+      ? (modelCfg.fallbacks as unknown[]).filter((f): f is string => typeof f === 'string')
+      : [];
+    const seen = new Set<string>([modelRef]);
+    const nextFallbacks: string[] = [];
+    const pushUnique = (ref: string) => {
+      if (!seen.has(ref)) { seen.add(ref); nextFallbacks.push(ref); }
+    };
+    // Demote the old primary into the fallback chain.
+    if (oldPrimary && oldPrimary !== modelRef) pushUnique(oldPrimary);
+    for (const fb of prevFallbacks) pushUnique(fb);
+    modelCfg.fallbacks = nextFallbacks;
+    defaults.model = modelCfg;
+    agents.defaults = defaults;
+    config.agents = agents;
+
+    await writeOpenClawJson(config);
+  });
+}
+
+/** Remove one model from a provider, keeping the provider entry. */
+export async function removeModelFromProvider(key: string, modelId: string): Promise<void> {
+  const current = await readProviderModelConfig(key);
+  const remaining = current.models.filter((m) => m.id !== modelId);
+  // Pass undefined for primaryModelId: writeProviderModelConfig keeps the
+  // current primary when it's still valid, and promotes the first remaining
+  // model when the deleted model had been primary.
+  await writeProviderModelConfig(key, {
+    baseUrl: current.baseUrl,
+    api: current.api,
+    models: remaining,
+  });
+}
+
+/** Read the inline `sk-` API key stored on any provider entry (main-process only). */
+export async function getProviderApiKey(key: string): Promise<string | null> {
+  const config = await readOpenClawJson();
+  const models = config.models as Record<string, unknown> | undefined;
+  const providers = (models?.providers ?? {}) as Record<string, unknown>;
+  const entry = isPlainRecord(providers[key])
+    ? (providers[key] as Record<string, unknown>)
+    : null;
+  return entry && typeof entry.apiKey === 'string' && entry.apiKey ? entry.apiKey : null;
+}
+
+export interface AccountModelConfigData {
+  baseUrl: string;
+  models: AccountModelEntry[];
+  primary: string | null;
+}
+
+/** Read the account provider entry + default model. Delegates to the generic reader. */
+export async function readAccountModelConfig(): Promise<AccountModelConfigData> {
+  const config = await readProviderModelConfig(ACCOUNT_PROVIDER_KEY);
+  return { baseUrl: config.baseUrl, models: config.models, primary: config.primary };
+}
+
+/** Write the account provider (always openai-completions). Delegates to the generic writer. */
+export async function writeAccountModelConfig(input: {
+  baseUrl: string;
+  apiKey?: string;
+  models: AccountModelEntry[];
+  primaryModelId?: string | null;
+}): Promise<void> {
+  await writeProviderModelConfig(ACCOUNT_PROVIDER_KEY, {
+    baseUrl: input.baseUrl,
+    api: 'openai-completions',
+    apiKey: input.apiKey,
+    models: input.models,
+    primaryModelId: input.primaryModelId,
+  });
+}
+
+/** Read the inline `sk-` API key stored on the account provider entry. */
+export async function getAccountApiKey(): Promise<string | null> {
+  return getProviderApiKey(ACCOUNT_PROVIDER_KEY);
+}
+
+/** Remove the account provider entry and all `account/*` model references. */
+export async function deleteAccountProvider(): Promise<void> {
+  await withConfigLock(async () => {
+    const config = await readOpenClawJson();
+    const prefix = `${ACCOUNT_PROVIDER_KEY}/`;
+
+    const models = config.models as Record<string, unknown> | undefined;
+    const providers = (models?.providers ?? {}) as Record<string, unknown>;
+    if (providers[ACCOUNT_PROVIDER_KEY]) {
+      delete providers[ACCOUNT_PROVIDER_KEY];
+    }
+
+    const agents = config.agents as Record<string, unknown> | undefined;
+    const defaults = agents?.defaults && typeof agents.defaults === 'object'
+      ? (agents.defaults as Record<string, unknown>)
+      : undefined;
+    if (defaults) {
+      const modelCfg = defaults.model && typeof defaults.model === 'object'
+        ? (defaults.model as Record<string, unknown>)
+        : undefined;
+      if (modelCfg) {
+        if (typeof modelCfg.primary === 'string' && modelCfg.primary.startsWith(prefix)) {
+          delete modelCfg.primary;
+        }
+        if (Array.isArray(modelCfg.fallbacks)) {
+          modelCfg.fallbacks = (modelCfg.fallbacks as unknown[])
+            .filter((f): f is string => typeof f === 'string' && !f.startsWith(prefix));
+        }
+      }
+      const modelsMap = defaults.models && typeof defaults.models === 'object' && !Array.isArray(defaults.models)
+        ? (defaults.models as Record<string, unknown>)
+        : undefined;
+      if (modelsMap) {
+        for (const mapKey of Object.keys(modelsMap)) {
+          if (mapKey.startsWith(prefix)) delete modelsMap[mapKey];
+        }
+      }
+    }
+
+    await writeOpenClawJson(config);
+  });
+}
+
 
 /**
  * Self-heal helper: walk `models.providers.*` in openclaw.json and remove
@@ -1568,7 +2034,7 @@ function mergeProviderModels(
 /**
  * OpenClaw 2026.5+ requires a positive `maxTokens` on each model (and can
  * fall back to provider-level `maxTokens`) when `api` is `anthropic-messages`.
- * ClawX-written entries historically only included `{ id, name }`.
+ * DeepClaw-written entries historically only included `{ id, name }`.
  *
  * Generic Anthropic-compatible providers should not be capped at 8k by
  * default: OpenClaw's native Anthropic transport caps default requests at 32k
@@ -1749,7 +2215,7 @@ export async function ensureAnthropicMessagesModelMaxTokens(): Promise<string[]>
  *
  * OpenClaw 2026.5+ auto-routes OpenAI providers (`openai`, `openai-codex`) to the
  * external `codex` agent harness, which expects a separate codex plugin install.
- * The bundled OpenClaw distribution ClawX ships does not register that harness,
+ * The bundled OpenClaw distribution DeepClaw ships does not register that harness,
  * so without pinning both keys chat fails with
  * `Requested agent harness "codex" is not registered.`
  */
@@ -1883,9 +2349,9 @@ function upsertOpenClawProviderEntry(
  *
  * Mirrors {@link pruneInvalidApiProviderEntries} — invoked opportunistically
  * before a default-provider switch so that pre-existing on-disk entries
- * (written by earlier ClawX builds that did not pin the runtime) get
+ * (written by earlier DeepClaw builds that did not pin the runtime) get
  * repaired before the next Gateway reload picks them up. Without this, users
- * who upgrade ClawX while still pointing at an OpenAI provider would keep
+ * who upgrade DeepClaw while still pointing at an OpenAI provider would keep
  * hitting `Requested agent harness "codex" is not registered.` until they
  * re-saved the provider manually.
  *
@@ -2069,7 +2535,7 @@ function ensurePluginRegistrationEnabled(config: Record<string, unknown>, plugin
 }
 
 /**
- * Configure a ClawX-owned OpenAI-compatible image provider.
+ * Configure a DeepClaw-owned OpenAI-compatible image provider.
  * This intentionally uses a separate provider key from `openai` so chat model
  * routing and OpenAI API/OAuth credentials remain untouched.
  */
@@ -2085,8 +2551,8 @@ export async function syncOpenAiCompatibleImageRelay(params: {
     if (!params.enabled) {
       const models = (config.models || {}) as Record<string, unknown>;
       const providers = (models.providers || {}) as Record<string, unknown>;
-      if (providers[CLAWX_OPENAI_IMAGE_PROVIDER_KEY]) {
-        delete providers[CLAWX_OPENAI_IMAGE_PROVIDER_KEY];
+      if (providers[DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY]) {
+        delete providers[DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY];
         models.providers = providers;
         config.models = models;
       }
@@ -2098,14 +2564,14 @@ export async function syncOpenAiCompatibleImageRelay(params: {
       const primary = typeof imageGenerationModel?.primary === 'string'
         ? imageGenerationModel.primary.trim().toLowerCase()
         : '';
-      if (defaults && primary.startsWith(`${CLAWX_OPENAI_IMAGE_PROVIDER_KEY}/`)) {
+      if (defaults && primary.startsWith(`${DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY}/`)) {
         delete defaults.imageGenerationModel;
       }
-      removePluginRegistrations(config, [CLAWX_OPENAI_IMAGE_PROVIDER_KEY]);
+      removePluginRegistrations(config, [DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY]);
       await writeOpenClawJson(config);
-      await removeProviderKeyFromOpenClaw(CLAWX_OPENAI_IMAGE_PROVIDER_KEY);
+      await removeProviderKeyFromOpenClaw(DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY);
       if (params.apiKey?.trim()) {
-        await saveProviderKeyToOpenClaw(CLAWX_OPENAI_IMAGE_PROVIDER_KEY, params.apiKey.trim());
+        await saveProviderKeyToOpenClaw(DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY, params.apiKey.trim());
       }
       return;
     }
@@ -2115,20 +2581,20 @@ export async function syncOpenAiCompatibleImageRelay(params: {
       .map((id) => id.trim())
       .filter(Boolean))];
     if (modelIds.length === 0) {
-      modelIds.push(CLAWX_OPENAI_IMAGE_DEFAULT_MODEL);
+      modelIds.push(DEEPCLAW_OPENAI_IMAGE_DEFAULT_MODEL);
     }
-    upsertOpenClawProviderEntry(config, CLAWX_OPENAI_IMAGE_PROVIDER_KEY, {
+    upsertOpenClawProviderEntry(config, DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY, {
       baseUrl,
       api: 'openai-completions',
       modelIds,
       mergeExistingModels: false,
       request: { allowPrivateNetwork: true },
     });
-    ensurePluginRegistrationEnabled(config, CLAWX_OPENAI_IMAGE_PROVIDER_KEY);
+    ensurePluginRegistrationEnabled(config, DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY);
     await writeOpenClawJson(config);
 
     if (params.apiKey?.trim()) {
-      await saveProviderKeyToOpenClaw(CLAWX_OPENAI_IMAGE_PROVIDER_KEY, params.apiKey.trim());
+      await saveProviderKeyToOpenClaw(DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY, params.apiKey.trim());
     }
   });
 }
@@ -2136,14 +2602,14 @@ export async function syncOpenAiCompatibleImageRelay(params: {
 export function readOpenAiCompatibleImageRelayState(
   config: Record<string, unknown>,
 ): { enabled: boolean; baseUrl: string; providerKey?: string } {
-  const clawxRelay = readModelsProvider(config, CLAWX_OPENAI_IMAGE_PROVIDER_KEY);
-  const relayBaseUrl = typeof clawxRelay?.baseUrl === 'string' ? clawxRelay.baseUrl.trim() : '';
+  const deepclawRelay = readModelsProvider(config, DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY);
+  const relayBaseUrl = typeof deepclawRelay?.baseUrl === 'string' ? deepclawRelay.baseUrl.trim() : '';
   if (relayBaseUrl) {
-    return { enabled: true, baseUrl: relayBaseUrl, providerKey: CLAWX_OPENAI_IMAGE_PROVIDER_KEY };
+    return { enabled: true, baseUrl: relayBaseUrl, providerKey: DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY };
   }
 
-  // Backward compatibility for ClawX builds that used models.providers.openai
-  // for image relay. New saves move to the ClawX-owned provider above.
+  // Backward compatibility for DeepClaw builds that used models.providers.openai
+  // for image relay. New saves move to the DeepClaw-owned provider above.
   const openai = readModelsProvidersOpenAi(config);
   const baseUrl = typeof openai?.baseUrl === 'string' ? openai.baseUrl.trim() : '';
   if (!baseUrl || baseUrl === OFFICIAL_OPENAI_API_BASE_URL) {
@@ -2286,7 +2752,7 @@ export async function getActiveOpenClawProviders(): Promise<Set<string>> {
 
 /**
  * Read models.providers entries and agents.defaults.model from openclaw.json.
- * Used by ClawX to seed the provider store when it's empty but providers are
+ * Used by DeepClaw to seed the provider store when it's empty but providers are
  * configured externally (e.g. via CLI or by editing openclaw.json directly).
  */
 export async function getOpenClawProvidersConfig(): Promise<{
@@ -2347,7 +2813,7 @@ function applyControlUiAllowedOrigins(controlUi: Record<string, unknown>, port: 
 }
 
 /**
- * Write the ClawX gateway token into ~/.openclaw/openclaw.json.
+ * Write the DeepClaw gateway token into ~/.openclaw/openclaw.json.
  */
 export async function syncGatewayTokenToConfig(token: string): Promise<void> {
   return withConfigLock(async () => {
@@ -2484,7 +2950,7 @@ export async function syncBrowserConfigToOpenClaw(): Promise<void> {
  * Ensure session idle-reset is configured in ~/.openclaw/openclaw.json.
  *
  * By default OpenClaw resets the "main" session daily at 04:00 local time,
- * which means conversations disappear after roughly one day.  ClawX sets
+ * which means conversations disappear after roughly one day.  DeepClaw sets
  * `session.idleMinutes` to 10 080 (7 days) so that conversations are
  * preserved for a week unless the user has explicitly configured their own
  * value.  When `idleMinutes` is set without `session.reset` /
@@ -2646,7 +3112,7 @@ async function updateModelsJsonProviderEntriesForAgents(
   entry: AgentModelProviderEntry,
 ): Promise<void> {
   for (const agentId of agentIds) {
-    const modelsPath = join(homedir(), '.openclaw', 'agents', agentId, 'agent', 'models.json');
+    const modelsPath = join(getOpenClawConfigDir(), 'agents', agentId, 'agent', 'models.json');
     let data: Record<string, unknown> = {};
     try {
       data = (await readJsonFile<Record<string, unknown>>(modelsPath)) ?? {};
@@ -2721,7 +3187,7 @@ export async function updateSingleAgentModelProvider(
  * Removes known-invalid keys that cause OpenClaw's strict Zod validation
  * to reject the entire config on startup.  Uses a conservative **blocklist**
  * approach: only strips keys that are KNOWN to be misplaced by older
- * OpenClaw/ClawX versions or external tools.
+ * OpenClaw/DeepClaw versions or external tools.
  *
  * Why blocklist instead of allowlist?
  *   • Allowlist (e.g. `VALID_SKILLS_KEYS`) would strip any NEW valid keys
@@ -2738,7 +3204,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     // Skip sanitization if the config file does not exist yet.
     // Creating a skeleton config here would overwrite any data written
     // by the Gateway on its first run.
-    if (!(await fileExists(OPENCLAW_CONFIG_PATH))) {
+    if (!(await fileExists(openClawConfigPath()))) {
       console.log('[sanitize] openclaw.json does not exist yet, skipping sanitization');
       return;
     }
@@ -2747,7 +3213,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     // which coalesces null → {}.  We need to distinguish a genuinely empty
     // file (valid, proceed normally) from a corrupt/unreadable file (null,
     // bail out to avoid overwriting the user's data with a skeleton config).
-    const rawConfig = await readJsonFile<Record<string, unknown>>(OPENCLAW_CONFIG_PATH);
+    const rawConfig = await readJsonFile<Record<string, unknown>>(openClawConfigPath());
     if (rawConfig === null) {
       console.log('[sanitize] openclaw.json could not be parsed, skipping sanitization to preserve data');
       return;
@@ -2899,12 +3365,18 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     // ── tools.profile & sessions.visibility ───────────────────────
-    // OpenClaw 3.8+ requires tools.profile = 'full' and tools.sessions.visibility = 'all'
-    // for ClawX to properly integrate with its updated tool system.
+    // sessions.visibility must be 'all' for DeepClaw to integrate with its
+    // tool system. tools.profile, however, is user-tunable: the OpenClaw
+    // kernel accepts 'full' | 'standard' | 'minimal' | 'messaging' | 'none'
+    // and uses it to filter which tools load into the context (smaller
+    // profile = fewer tools = smaller prompt). We only enforce 'full' as a
+    // fallback when the value is missing or invalid, so users can pick a
+    // leaner profile to reduce latency without it being reverted.
+    const VALID_TOOL_PROFILES = ['full', 'standard', 'minimal', 'messaging', 'none'];
     const toolsConfig = (config.tools as Record<string, unknown> | undefined) || {};
     let toolsModified = false;
 
-    if (toolsConfig.profile !== 'full') {
+    if (typeof toolsConfig.profile !== 'string' || !VALID_TOOL_PROFILES.includes(toolsConfig.profile)) {
       toolsConfig.profile = 'full';
       toolsModified = true;
     }
@@ -2917,7 +3389,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     // ── tools.exec approvals (OpenClaw 3.28+) ──────────────────────
-    // ClawX is a local desktop app where the user is the trusted operator.
+    // DeepClaw is a local desktop app where the user is the trusted operator.
     // Exec approval prompts add unnecessary friction in this context, so we
     // set security="full" (allow all commands) and ask="off" (never prompt).
     // If a user has manually configured a stricter ~/.openclaw/exec-approvals.json,
@@ -2928,7 +3400,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       execConfig.ask = 'off';
       toolsConfig.exec = execConfig;
       toolsModified = true;
-      console.log('[sanitize] Set tools.exec.security="full" and tools.exec.ask="off" to disable exec approvals for ClawX desktop');
+      console.log('[sanitize] Set tools.exec.security="full" and tools.exec.ask="off" to disable exec approvals for DeepClaw desktop');
     }
 
     if (toolsModified) {
@@ -3172,7 +3644,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
 
       // ── Remove legacy built-in 'feishu' registration ───────────────
-      // ClawX bundles Feishu via the official @larksuite/openclaw-lark
+      // DeepClaw bundles Feishu via the official @larksuite/openclaw-lark
       // plugin and removes the old built-in dist/extensions/feishu tree.
       // Keeping plugins.entries.feishu={enabled:false} looks harmless, but
       // OpenClaw's channel startup planner treats it as an explicit blocker
@@ -3219,7 +3691,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
       // Discover all bundled extension IDs so we can clean stale bundled
       // allowlist entries from older OpenClaw versions. Re-add only the
-      // ClawX-critical bundled plugins, active provider plugins, and explicitly
+      // DeepClaw-critical bundled plugins, active provider plugins, and explicitly
       // enabled bundled plugins — not every enabledByDefault provider plugin.
       const bundled = discoverBundledPlugins();
       const installedExtensionIds = await discoverInstalledExtensionPluginIds();

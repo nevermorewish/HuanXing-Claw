@@ -1,12 +1,13 @@
 import { access, mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BRAND } from '@shared/brand';
 
 const { testHome, testUserData } = vi.hoisted(() => {
   const suffix = Math.random().toString(36).slice(2);
   return {
-    testHome: `/tmp/clawx-agent-config-${suffix}`,
-    testUserData: `/tmp/clawx-agent-config-user-data-${suffix}`,
+    testHome: `/tmp/deepclaw-agent-config-${suffix}`,
+    testUserData: `/tmp/deepclaw-agent-config-user-data-${suffix}`,
   };
 });
 
@@ -31,13 +32,13 @@ vi.mock('electron', () => ({
 }));
 
 async function writeOpenClawJson(config: unknown): Promise<void> {
-  const openclawDir = join(testHome, '.openclaw');
+  const openclawDir = join(testHome, BRAND.dataDirName);
   await mkdir(openclawDir, { recursive: true });
   await writeFile(join(openclawDir, 'openclaw.json'), JSON.stringify(config, null, 2), 'utf8');
 }
 
 async function readOpenClawJson(): Promise<Record<string, unknown>> {
-  const content = await readFile(join(testHome, '.openclaw', 'openclaw.json'), 'utf8');
+  const content = await readFile(join(testHome, BRAND.dataDirName, 'openclaw.json'), 'utf8');
   return JSON.parse(content) as Record<string, unknown>;
 }
 
@@ -257,20 +258,20 @@ describe('agent config lifecycle', () => {
             id: 'main',
             name: 'Main',
             default: true,
-            workspace: '~/.openclaw/workspace',
-            agentDir: '~/.openclaw/agents/main/agent',
+            workspace: `~/${BRAND.dataDirName}/workspace`,
+            agentDir: `~/${BRAND.dataDirName}/agents/main/agent`,
           },
           {
             id: 'test2',
             name: 'test2',
-            workspace: '~/.openclaw/workspace-test2',
-            agentDir: '~/.openclaw/agents/test2/agent',
+            workspace: `~/${BRAND.dataDirName}/workspace-test2`,
+            agentDir: `~/${BRAND.dataDirName}/agents/test2/agent`,
           },
           {
             id: 'test3',
             name: 'test3',
-            workspace: '~/.openclaw/workspace-test3',
-            agentDir: '~/.openclaw/agents/test3/agent',
+            workspace: `~/${BRAND.dataDirName}/workspace-test3`,
+            agentDir: `~/${BRAND.dataDirName}/agents/test3/agent`,
           },
         ],
       },
@@ -289,8 +290,8 @@ describe('agent config lifecycle', () => {
       ],
     });
 
-    const test2RuntimeDir = join(testHome, '.openclaw', 'agents', 'test2');
-    const test2WorkspaceDir = join(testHome, '.openclaw', 'workspace-test2');
+    const test2RuntimeDir = join(testHome, BRAND.dataDirName, 'agents', 'test2');
+    const test2WorkspaceDir = join(testHome, BRAND.dataDirName, 'workspace-test2');
     await mkdir(join(test2RuntimeDir, 'agent'), { recursive: true });
     await mkdir(join(test2RuntimeDir, 'sessions'), { recursive: true });
     await mkdir(join(test2WorkspaceDir, '.openclaw'), { recursive: true });
@@ -333,20 +334,20 @@ describe('agent config lifecycle', () => {
             id: 'main',
             name: 'Main',
             default: true,
-            workspace: '~/.openclaw/workspace',
-            agentDir: '~/.openclaw/agents/main/agent',
+            workspace: `~/${BRAND.dataDirName}/workspace`,
+            agentDir: `~/${BRAND.dataDirName}/agents/main/agent`,
           },
           {
             id: 'test2',
             name: 'test2',
             workspace: customWorkspaceDir,
-            agentDir: '~/.openclaw/agents/test2/agent',
+            agentDir: `~/${BRAND.dataDirName}/agents/test2/agent`,
           },
         ],
       },
     });
 
-    await mkdir(join(testHome, '.openclaw', 'agents', 'test2', 'agent'), { recursive: true });
+    await mkdir(join(testHome, BRAND.dataDirName, 'agents', 'test2', 'agent'), { recursive: true });
     await mkdir(customWorkspaceDir, { recursive: true });
     await writeFile(join(customWorkspaceDir, 'AGENTS.md'), '# custom', 'utf8');
 
@@ -556,7 +557,7 @@ describe('agent config lifecycle', () => {
     expect(agentIds).not.toContain('1');
   });
 
-  it('seeds a default ClawX IDENTITY.md for newly created agent workspaces', async () => {
+  it('seeds a default DeepClaw IDENTITY.md for newly created agent workspaces', async () => {
     await writeOpenClawJson({
       agents: {
         list: [{ id: 'main', name: 'Main', default: true }],
@@ -567,6 +568,8 @@ describe('agent config lifecycle', () => {
 
     await createAgent('Research');
 
-    await expect(readFile(join(testHome, '.openclaw', 'workspace-research', 'IDENTITY.md'), 'utf8')).resolves.toContain('ClawX');
+    // createAgent() sets the new agent's workspace to `~/<brand>/workspace-<id>`
+    // (see agent-config.ts), so the seeded IDENTITY.md lands under the brand dir.
+    await expect(readFile(join(testHome, BRAND.dataDirName, 'workspace-research', 'IDENTITY.md'), 'utf8')).resolves.toContain('DeepClaw');
   });
 });

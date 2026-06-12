@@ -2,6 +2,7 @@ import { app, utilityProcess } from 'electron';
 import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
+import { BRAND } from '@shared/brand';
 import { PORTS } from './config';
 import { prependPathEntry } from './env-path';
 import { logger } from './logger';
@@ -139,7 +140,7 @@ async function approveViaOpenClawCli(requestId: string, _port: number): Promise<
         ...baseEnv,
         ...uvEnv,
         OPENCLAW_NO_RESPAWN: '1',
-        OPENCLAW_EMBEDDED_IN: 'ClawX',
+        OPENCLAW_EMBEDDED_IN: BRAND.appName,
       } as NodeJS.ProcessEnv,
     });
 

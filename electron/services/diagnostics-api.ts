@@ -74,7 +74,7 @@ export function createDiagnosticsApi(ctx: DiagnosticsApiContext): CompleteHostSe
         platform: process.platform,
         gateway,
         channels,
-        clawxLogTail: await logger.readLogFile(DEFAULT_TAIL_LINES),
+        deepclawLogTail: await logger.readLogFile(DEFAULT_TAIL_LINES),
         gatewayLogTail: await readTail(join(openClawDir, 'logs', 'gateway.log')),
         gatewayErrLogTail: await readTail(join(openClawDir, 'logs', 'gateway.err.log')),
       };

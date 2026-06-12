@@ -31,7 +31,7 @@ test.describe('Channels binding regression', () => {
       };
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (globalThis as any).__clawxE2eBindingRegression = state;
+      (globalThis as any).__deepclawE2eBindingRegression = state;
 
       const originalHostInvoke = (ipcMain as unknown as {
         _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
@@ -46,7 +46,7 @@ test.describe('Channels binding regression', () => {
         payload?: Record<string, unknown>;
       }) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const current = (globalThis as any).__clawxE2eBindingRegression as typeof state;
+        const current = (globalThis as any).__deepclawE2eBindingRegression as typeof state;
 
         if (request?.module === 'channels' && request.action === 'accounts') {
           return respond(request.id, { success: true, channels: current.channels });
@@ -128,7 +128,7 @@ test.describe('Channels binding regression', () => {
 
     const counters = await electronApp.evaluate(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const state = (globalThis as any).__clawxE2eBindingRegression as { saveCount: number; bindingCount: number };
+      const state = (globalThis as any).__deepclawE2eBindingRegression as { saveCount: number; bindingCount: number };
       return { saveCount: state.saveCount, bindingCount: state.bindingCount };
     });
 

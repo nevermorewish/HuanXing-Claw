@@ -12,7 +12,7 @@ import { ClawHubService } from '../gateway/clawhub';
 import {
   type ProviderConfig,
 } from '../utils/secure-storage';
-import { getOpenClawStatus, getOpenClawSkillsDir, ensureDir, expandPath } from '../utils/paths';
+import { getOpenClawStatus, getOpenClawSkillsDir, ensureDir, expandPath, getDefaultOpenClawConfigDir, getOpenClawConfigDir } from '../utils/paths';
 import { getOpenClawCliCommand } from '../utils/openclaw-cli';
 import { getAllSettings, getSetting, resetSettings, setSetting, type AppSettings } from '../utils/store';
 import {
@@ -53,6 +53,7 @@ import { createUpdatesApi } from '../services/updates-api';
 import { createUvApi } from '../services/uv-api';
 import { createGatewayApi } from '../services/gateway-api';
 import { createLogsApi } from '../services/logs-api';
+import { createConfigApi } from '../services/config-api';
 import { createSettingsApi } from '../services/settings-api';
 import { createChannelsApi } from '../services/channels-api';
 import { createAgentsApi } from '../services/agents-api';
@@ -64,6 +65,8 @@ import { createProvidersApi } from '../services/providers-api';
 import { createSessionsApi } from '../services/sessions-api';
 import { createSkillsApi } from '../services/skills-api';
 import { createUsageApi } from '../services/usage-api';
+import { createAccountApi } from '../services/account-api';
+import { createModelProvidersApi } from '../services/model-providers-api';
 import {
   isLaunchAtStartupKey,
   isProxyKey,
@@ -144,6 +147,7 @@ function registerTypedHostHandlers(
     settings: createSettingsApi(gatewayManager),
     gateway: createGatewayApi(gatewayManager, gatewayRpcBackpressure),
     logs: createLogsApi(),
+    config: createConfigApi({ gatewayManager }),
     channels: createChannelsApi({ gatewayManager, mainWindow }),
     agents: createAgentsApi({ gatewayManager }),
     providers: createProvidersApi({ gatewayManager, mainWindow }),
@@ -154,6 +158,8 @@ function registerTypedHostHandlers(
     cron: createCronApi({ gatewayManager }),
     skills: createSkillsApi({ clawHubService, gatewayManager }),
     usage: createUsageApi(),
+    account: createAccountApi({ gatewayManager }),
+    modelProviders: createModelProvidersApi({ gatewayManager }),
   });
   registerHostInvokeHandler(hostApiRegistry);
 }
@@ -1042,7 +1048,7 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
         const resolvedBaseUrl = options?.baseUrl || provider?.baseUrl || registryBaseUrl;
         const resolvedProtocol = options?.apiProtocol || provider?.apiProtocol;
 
-        console.log(`[clawx-validate] validating provider type: ${providerType}`);
+        console.log(`[deepclaw-validate] validating provider type: ${providerType}`);
         return await validateApiKeyWithProvider(providerType, apiKey, {
           baseUrl: resolvedBaseUrl,
           apiProtocol: resolvedProtocol,
@@ -1286,7 +1292,7 @@ function getMimeType(ext: string): string {
   return EXT_MIME_MAP[ext.toLowerCase()] || 'application/octet-stream';
 }
 
-const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
+const OUTBOUND_DIR = join(getDefaultOpenClawConfigDir(), 'media', 'outbound');
 
 // ── File preview (sandboxed) ──────────────────────────────────────────
 //
@@ -1355,7 +1361,7 @@ function isPathInside(child: string, parent: string): boolean {
  */
 function getFilePreviewWriteRoots(): string[] {
   const roots: string[] = [];
-  const openclawDir = join(homedir(), '.openclaw');
+  const openclawDir = getOpenClawConfigDir();
   roots.push(resolve(openclawDir));
   try {
     roots.push(resolve(app.getPath('userData')));

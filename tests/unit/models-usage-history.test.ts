@@ -5,7 +5,7 @@ import {
   resolveStableUsageHistory,
   resolveVisibleUsageHistory,
   type UsageHistoryEntry,
-} from '@/pages/Models/usage-history';
+} from '@/pages/Usage/usage-history';
 
 function createEntry(day: number, totalTokens: number): UsageHistoryEntry {
   return {

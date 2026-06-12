@@ -15,7 +15,7 @@ let settingsStoreInstance: any = null;
  * Generate a random token for gateway authentication
  */
 function generateToken(): string {
-  return `clawx-${randomBytes(16).toString('hex')}`;
+  return `deepclaw-${randomBytes(16).toString('hex')}`;
 }
 
 /**
@@ -51,6 +51,12 @@ export interface AppSettings {
   // UI State
   sidebarCollapsed: boolean;
   devModeUnlocked: boolean;
+
+  // OpenClaw
+  // Custom OpenClaw config/state directory. Empty string => use the default
+  // (~/.openclaw). When set, it is resolved by getOpenClawConfigDir() and also
+  // passed to the spawned gateway via OPENCLAW_STATE_DIR.
+  openClawConfigDir: string;
 
   // Presets
   selectedBundles: string[];
@@ -102,6 +108,9 @@ function createDefaultSettings(): AppSettings {
     // UI State
     sidebarCollapsed: false,
     devModeUnlocked: false,
+
+    // OpenClaw
+    openClawConfigDir: '',
 
     // Presets
     selectedBundles: ['productivity', 'developer'],

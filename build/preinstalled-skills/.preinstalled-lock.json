@@ -1,0 +1,47 @@
+{
+  "generatedAt": "2026-06-08T22:43:03.597Z",
+  "skills": [
+    {
+      "slug": "pdf",
+      "version": "0.1.0",
+      "source": "skillhub",
+      "skillhubSlug": "pdf"
+    },
+    {
+      "slug": "find-skills",
+      "version": "0.1.0",
+      "source": "skillhub",
+      "skillhubSlug": "find-skills"
+    },
+    {
+      "slug": "tavily-search",
+      "version": "1.0.0",
+      "source": "skillhub",
+      "skillhubSlug": "tavily-search"
+    },
+    {
+      "slug": "self-improving-agent",
+      "version": "3.0.23",
+      "source": "skillhub",
+      "skillhubSlug": "self-improving-agent"
+    },
+    {
+      "slug": "xlsx",
+      "version": "1.0.1",
+      "source": "skillhub",
+      "skillhubSlug": "xlsx-cn"
+    },
+    {
+      "slug": "docx",
+      "version": "1.0.1",
+      "source": "skillhub",
+      "skillhubSlug": "docx-cn"
+    },
+    {
+      "slug": "pptx",
+      "version": "1.0.0",
+      "source": "skillhub",
+      "skillhubSlug": "powerpoint-pptx-cn"
+    }
+  ]
+}

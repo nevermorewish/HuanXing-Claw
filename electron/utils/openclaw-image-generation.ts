@@ -9,17 +9,18 @@ import {
   readOpenAiCompatibleImageRelayState,
   syncOpenAiCompatibleImageRelay,
 } from './openclaw-auth';
-import { ensureClawXOpenAiImagePluginInstalled } from './plugin-install';
+import { ensureDeepClawOpenAiImagePluginInstalled } from './plugin-install';
 import { listAgentsSnapshot, type AgentsSnapshot } from './agent-config';
 import { expandPath } from './paths';
+import { BRAND } from '@shared/brand';
 import {
   generateImageInProcess,
   listImageGenerationProvidersInProcess,
 } from './openclaw-image-generation-runtime';
 import { OPENAI_CODEX_RUNTIME_PROVIDER_KEY } from './provider-keys';
 import {
-  CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
-  CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
+  DEEPCLAW_OPENAI_IMAGE_DEFAULT_MODEL,
+  DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY,
 } from './openclaw-image-relay-constants';
 
 export interface ImageGenerationModelConfig {
@@ -227,9 +228,9 @@ export async function setImageGenerationConfig(
     } else {
       delete defaults.imageGenerationModel;
     }
-    // ClawX image generation is configured as one explicit custom endpoint.
+    // DeepClaw image generation is configured as one explicit custom endpoint.
     // Keep OpenClaw from appending other authenticated image providers such as
-    // minimax-portal/image-01 after the configured ClawX image provider.
+    // minimax-portal/image-01 after the configured DeepClaw image provider.
     defaults.mediaGenerationAutoProviderFallback = false;
 
     agents.defaults = defaults;
@@ -299,8 +300,8 @@ function resolveOpenAiImageRelayModelId(
     const slash = primary.indexOf('/');
     if (slash > 0 && slash < primary.length - 1) {
       const provider = primary.slice(0, slash).toLowerCase();
-      if (provider === CLAWX_OPENAI_IMAGE_PROVIDER_KEY || provider === 'openai') {
-        return primary.slice(slash + 1).trim() || CLAWX_OPENAI_IMAGE_DEFAULT_MODEL;
+      if (provider === DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY || provider === 'openai') {
+        return primary.slice(slash + 1).trim() || DEEPCLAW_OPENAI_IMAGE_DEFAULT_MODEL;
       }
     }
   }
@@ -310,9 +311,9 @@ function resolveOpenAiImageRelayModelId(
     ? (models as Record<string, unknown>).providers
     : null;
   const providerEntry = providers && typeof providers === 'object'
-    ? (providers as Record<string, unknown>)[CLAWX_OPENAI_IMAGE_PROVIDER_KEY]
+    ? (providers as Record<string, unknown>)[DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY]
     : null;
-  return extractModelIdFromProviderEntry(providerEntry) ?? CLAWX_OPENAI_IMAGE_DEFAULT_MODEL;
+  return extractModelIdFromProviderEntry(providerEntry) ?? DEEPCLAW_OPENAI_IMAGE_DEFAULT_MODEL;
 }
 
 export async function getImageGenerationSettingsSnapshot(): Promise<ImageGenerationSettingsSnapshot> {
@@ -324,7 +325,7 @@ export async function getImageGenerationSettingsSnapshot(): Promise<ImageGenerat
 
   const providerKey = config.primary ? parseProviderFromModelRef(config.primary) : null;
   const relayState = readOpenAiCompatibleImageRelayState(openclawConfig as Record<string, unknown>);
-  const relayAuthProvider = relayState.providerKey === 'openai' ? 'openai' : CLAWX_OPENAI_IMAGE_PROVIDER_KEY;
+  const relayAuthProvider = relayState.providerKey === 'openai' ? 'openai' : DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY;
   const relayKeyConfigured = await isImageProviderAuthenticated(relayAuthProvider, snapshot.defaultAgentId);
 
   return {
@@ -355,7 +356,7 @@ export async function applyOpenAiImageRelaySettings(params: {
     imageModelIds.push(slash > 0 ? explicitModel.slice(slash + 1).trim() : explicitModel);
   }
   if (imageModelIds.length === 0) {
-    imageModelIds.push(CLAWX_OPENAI_IMAGE_DEFAULT_MODEL);
+    imageModelIds.push(DEEPCLAW_OPENAI_IMAGE_DEFAULT_MODEL);
   }
 
   await syncOpenAiCompatibleImageRelay({
@@ -365,7 +366,7 @@ export async function applyOpenAiImageRelaySettings(params: {
     imageModelIds,
   });
   if (params.enabled) {
-    ensureClawXOpenAiImagePluginInstalled();
+    ensureDeepClawOpenAiImagePluginInstalled();
   }
 }
 
@@ -376,12 +377,12 @@ export async function listImageGenerationProvidersFromRuntime(): Promise<ImageGe
     config: cfg,
     isProviderConfigured: (providerId) => isImageProviderAuthenticated(providerId, snapshot.defaultAgentId),
   });
-  return rows.filter((row) => row.id === CLAWX_OPENAI_IMAGE_PROVIDER_KEY);
+  return rows.filter((row) => row.id === DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY);
 }
 
 function resolveAgentDirForTest(agentId: string, snapshot: AgentsSnapshot): string {
   const entry = snapshot.agents.find((agent) => agent.id === agentId);
-  const agentDir = entry?.agentDir || `~/.openclaw/agents/${agentId}/agent`;
+  const agentDir = entry?.agentDir || `~/${BRAND.dataDirName}/agents/${agentId}/agent`;
   return expandPath(agentDir);
 }
 

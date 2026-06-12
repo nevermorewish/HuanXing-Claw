@@ -32,7 +32,8 @@
     "enableSome": "Enable some skills",
     "more": "+{{count}} more",
     "recentTokenHistory": {
-        "title": "Recent Token Usage",
+        "title": "Usage",
+        "subtitle": "Track token consumption, API costs, and model usage stats.",
         "description": "Recent assistant responses and tool results with model/provider usage data.",
         "loading": "Loading token usage history...",
         "empty": "No token usage history yet",

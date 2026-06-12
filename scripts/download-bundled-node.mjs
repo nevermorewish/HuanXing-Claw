@@ -19,7 +19,9 @@ const TARGETS = {
 };
 
 const PLATFORM_GROUPS = {
-  win: ['win32-x64', 'win32-arm64'],
+  // electron-builder only targets win x64 (electron-builder.yml win.target.arch),
+  // so the win prep path skips arm64. Use --all for the full multi-arch set.
+  win: ['win32-x64'],
 };
 
 async function setupTarget(id) {

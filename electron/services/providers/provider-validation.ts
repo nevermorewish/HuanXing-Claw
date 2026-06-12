@@ -16,7 +16,7 @@ const AUTH_ERROR_PATTERN = /\b(unauthorized|forbidden|access denied|invalid api 
 const AUTH_ERROR_CODE_PATTERN = /\b(unauthorized|forbidden|access[_-]?denied|invalid[_-]?api[_-]?key|api[_-]?key[_-]?invalid|incorrect[_-]?api[_-]?key|api[_-]?key[_-]?incorrect|authentication[_-]?failed|auth[_-]?failed|invalid[_-]?credential|credential[_-]?invalid|invalid[_-]?signature|signature[_-]?invalid|invalid[_-]?access[_-]?token|access[_-]?token[_-]?invalid|invalid[_-]?bearer[_-]?token|bearer[_-]?token[_-]?invalid|access[_-]?token[_-]?expired|invalid[_-]?token|token[_-]?invalid|token[_-]?expired)\b/i;
 
 function logValidationStatus(provider: string, status: number): void {
-  console.log(`[clawx-validate] ${provider} HTTP ${status}`);
+  console.log(`[deepclaw-validate] ${provider} HTTP ${status}`);
 }
 
 function maskSecret(secret: string): string {
@@ -85,7 +85,7 @@ function logValidationRequest(
   headers: Record<string, string>,
 ): void {
   console.log(
-    `[clawx-validate] ${provider} request ${method} ${sanitizeValidationUrl(url)} headers=${JSON.stringify(sanitizeHeaders(headers))}`,
+    `[deepclaw-validate] ${provider} request ${method} ${sanitizeValidationUrl(url)} headers=${JSON.stringify(sanitizeHeaders(headers))}`,
   );
 }
 
@@ -208,7 +208,7 @@ async function validateOpenAiCompatibleKey(
 
   if (shouldFallbackFromModelsProbe(modelsResult)) {
     console.log(
-      `[clawx-validate] ${providerType} /models returned ${modelsResult.status}, falling back to ${apiProtocol} probe`,
+      `[deepclaw-validate] ${providerType} /models returned ${modelsResult.status}, falling back to ${apiProtocol} probe`,
     );
     if (apiProtocol === 'openai-responses') {
       return await performResponsesProbe(providerType, probeUrl, headers);
@@ -309,6 +309,198 @@ async function validateGoogleQueryKey(
   return await performProviderValidationRequest(providerType, url, {});
 }
 
+export type ModelTestResult = {
+  ok: boolean;
+  latencyMs?: number;
+  reply?: string;
+  error?: string;
+};
+
+/**
+ * Send a real chat completion against a specific model and measure latency.
+ *
+ * Unlike {@link validateApiKeyWithProvider} (which probes a hardcoded
+ * `validation-probe` model just to check the key), this exercises the EXACT
+ * model id the user configured, mirroring clawpanel's `api.testModel`. A 429
+ * (rate limited) is treated as a reachable success — the model exists and the
+ * key works, the account is merely throttled.
+ */
+export async function testProviderModel(
+  baseUrl: string,
+  apiKey: string,
+  modelId: string,
+  api: string = 'openai-completions',
+): Promise<ModelTestResult> {
+  const trimmedBaseUrl = baseUrl.trim();
+  if (!trimmedBaseUrl) {
+    return { ok: false, error: 'Base URL is required to test a model' };
+  }
+  if (!modelId.trim()) {
+    return { ok: false, error: 'Model id is required' };
+  }
+
+  const isAnthropic = api === 'anthropic-messages';
+  const url = isAnthropic
+    ? `${normalizeBaseUrl(trimmedBaseUrl)}/messages`
+    : `${normalizeBaseUrl(trimmedBaseUrl)}/chat/completions`;
+  const headers: Record<string, string> = isAnthropic
+    ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' }
+    : { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+  const body = JSON.stringify({
+    model: modelId,
+    messages: [{ role: 'user', content: 'Hi' }],
+    max_tokens: 16,
+  });
+
+  const start = Date.now();
+  try {
+    logValidationRequest(`testModel:${modelId}`, 'POST', url, headers);
+    const response = await proxyAwareFetch(url, { method: 'POST', headers, body });
+    const latencyMs = Date.now() - start;
+    logValidationStatus(`testModel:${modelId}`, response.status);
+    const data = await response.json().catch(() => ({}));
+
+    if (response.status === 429) {
+      return { ok: true, latencyMs, reply: '⚠ 429 限流（模型可达，账号被限流）' };
+    }
+    if (response.status >= 200 && response.status < 300) {
+      const reply = extractModelReply(data, isAnthropic);
+      return { ok: true, latencyMs, reply };
+    }
+
+    const obj = data as { error?: { message?: string }; message?: string } | null;
+    const msg = obj?.error?.message || obj?.message || `HTTP ${response.status}`;
+    return { ok: false, latencyMs, error: msg };
+  } catch (error) {
+    return {
+      ok: false,
+      error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+/** Pull a short text reply out of an OpenAI- or Anthropic-shaped response. */
+function extractModelReply(data: unknown, isAnthropic: boolean): string {
+  const obj = data as Record<string, unknown> | null;
+  if (!obj) return '';
+  try {
+    if (isAnthropic) {
+      const content = obj.content as Array<{ text?: string }> | undefined;
+      const text = content?.map((c) => c?.text ?? '').join('').trim();
+      return (text ?? '').slice(0, 120);
+    }
+    const choices = obj.choices as Array<{ message?: { content?: string } }> | undefined;
+    const text = choices?.[0]?.message?.content ?? '';
+    return String(text).trim().slice(0, 120);
+  } catch {
+    return '';
+  }
+}
+
+export type RemoteModelsResult =
+  | { ok: true; models: Array<{ id: string; name?: string }> }
+  | { ok: false; error: string; notSupported?: boolean };
+
+/** Extract model ids from the various shapes a `/models` endpoint may return. */
+function parseRemoteModelsBody(data: unknown): Array<{ id: string }> | null {
+  // OpenAI shape: { data: [{ id }] }
+  const obj = data as Record<string, unknown> | null;
+  const list =
+    obj && Array.isArray(obj.data) ? obj.data
+    : obj && Array.isArray(obj.models) ? obj.models   // some relays use { models: [...] }
+    : Array.isArray(data) ? data                       // bare array
+    : null;
+  if (!list) return null;
+  const ids: Array<{ id: string }> = [];
+  for (const item of list) {
+    if (typeof item === 'string') {
+      if (item.trim()) ids.push({ id: item });
+    } else if (item && typeof item === 'object') {
+      const rec = item as Record<string, unknown>;
+      const id = typeof rec.id === 'string' ? rec.id
+        : typeof rec.name === 'string' ? rec.name
+        : '';
+      if (id.trim()) ids.push({ id });
+    }
+  }
+  return ids;
+}
+
+/**
+ * Fetch the model list from a provider's `/models` endpoint (clawpanel-style).
+ * Uses protocol-appropriate auth: Bearer for OpenAI-compatible, x-api-key for
+ * Anthropic, `?key=` for Google. Returns `notSupported: true` when the endpoint
+ * doesn't implement model listing (404/501, or 400 without a parseable body) so
+ * the UI can guide the user to add models manually.
+ */
+export async function listRemoteModels(
+  baseUrl: string,
+  apiKey: string,
+  api: string = 'openai-completions',
+): Promise<RemoteModelsResult> {
+  const trimmedBaseUrl = baseUrl.trim();
+  if (!trimmedBaseUrl) {
+    return { ok: false, error: 'Base URL is required to fetch models' };
+  }
+
+  const base = normalizeBaseUrl(trimmedBaseUrl);
+  const isAnthropic = api === 'anthropic-messages';
+  const isGoogle = api === 'google-generative-ai';
+
+  let url: string;
+  const headers: Record<string, string> = {};
+  if (isAnthropic) {
+    url = `${base}/models?limit=1000`;
+    headers['x-api-key'] = apiKey;
+    headers['anthropic-version'] = '2023-06-01';
+  } else if (isGoogle) {
+    url = `${base}/models?pageSize=1000&key=${encodeURIComponent(apiKey)}`;
+  } else {
+    url = `${base}/models`;
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  try {
+    logValidationRequest('listRemoteModels', 'GET', url, headers);
+    const response = await proxyAwareFetch(url, { headers });
+    logValidationStatus('listRemoteModels', response.status);
+    const data = await response.json().catch(() => null);
+
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, error: 'Invalid API key' };
+    }
+    if (response.status === 404 || response.status === 501) {
+      return { ok: false, error: `HTTP ${response.status}`, notSupported: true };
+    }
+    if (response.status < 200 || response.status >= 300) {
+      const obj = data as { error?: { message?: string }; message?: string } | null;
+      const msg = obj?.error?.message || obj?.message || `HTTP ${response.status}`;
+      return { ok: false, error: msg };
+    }
+
+    const parsed = parseRemoteModelsBody(data);
+    if (!parsed) {
+      return { ok: false, error: 'Unrecognized /models response', notSupported: true };
+    }
+    // De-dupe and sort descending (newest-ish first), like clawpanel.
+    const seen = new Set<string>();
+    const models = parsed
+      .filter((m) => {
+        if (seen.has(m.id)) return false;
+        seen.add(m.id);
+        return true;
+      })
+      .map((m) => ({ id: m.id, name: m.id }))
+      .sort((a, b) => b.id.localeCompare(a.id));
+    return { ok: true, models };
+  } catch (error) {
+    return {
+      ok: false,
+      error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
 async function validateAnthropicHeaderKey(
   providerType: string,
   apiKey: string,
@@ -332,7 +524,7 @@ async function validateAnthropicHeaderKey(
     modelsResult.error?.includes('API error: 400')
   ) {
     console.log(
-      `[clawx-validate] ${providerType} /models returned error, falling back to /messages probe`,
+      `[deepclaw-validate] ${providerType} /models returned error, falling back to /messages probe`,
     );
     const messagesUrl = `${base}/messages`;
     return await performAnthropicMessagesProbe(providerType, messagesUrl, headers);

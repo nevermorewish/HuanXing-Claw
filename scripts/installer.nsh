@@ -1,4 +1,4 @@
-; ClawX Custom NSIS Installer/Uninstaller Script
+; DeepClaw Custom NSIS Installer/Uninstaller Script
 ;
 ; Install: enables long paths, adds resources\cli to user PATH for openclaw CLI.
 ; Uninstall: removes the PATH entry and optionally deletes user data.
@@ -9,7 +9,7 @@
   !include "nsProcess.nsh"
 !endif
 
-Var /GLOBAL clawxRollbackDir
+Var /GLOBAL deepclawRollbackDir
 
 !macro customHeader
   ; Show install details by default so users can see what stage is running.
@@ -18,18 +18,18 @@ Var /GLOBAL clawxRollbackDir
 !macroend
 
 !ifndef BUILD_UNINSTALLER
-Function ClawXMoveLegacyInstallDir
+Function DeepClawMoveLegacyInstallDir
   Exch $R6
 
   ${if} $R6 == ""
-    Goto _clawx_legacy_move_done
+    Goto _deepclaw_legacy_move_done
   ${endIf}
   ${if} $R6 == $INSTDIR
-    Goto _clawx_legacy_move_done
+    Goto _deepclaw_legacy_move_done
   ${endIf}
 
-  IfFileExists "$R6\" 0 _clawx_legacy_move_done
-    DetailPrint "Moving previous ClawX installation at $R6 out of the way..."
+  IfFileExists "$R6\" 0 _deepclaw_legacy_move_done
+    DetailPrint "Moving previous DeepClaw installation at $R6 out of the way..."
     SetOutPath $TEMP
     nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$R6', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
     Pop $0
@@ -37,15 +37,15 @@ Function ClawXMoveLegacyInstallDir
     Sleep 1000
     StrCpy $R8 0
 
-  _clawx_legacy_find_free_stale:
-    IfFileExists "$R6._stale_$R8\" 0 _clawx_legacy_found_free_stale
+  _deepclaw_legacy_find_free_stale:
+    IfFileExists "$R6._stale_$R8\" 0 _deepclaw_legacy_found_free_stale
     IntOp $R8 $R8 + 1
-    Goto _clawx_legacy_find_free_stale
+    Goto _deepclaw_legacy_find_free_stale
 
-  _clawx_legacy_found_free_stale:
+  _deepclaw_legacy_found_free_stale:
     ClearErrors
     Rename "$R6" "$R6._stale_$R8"
-    IfErrors 0 _clawx_legacy_stale_moved
+    IfErrors 0 _deepclaw_legacy_stale_moved
       DetailPrint "Waiting for file locks at $R6 to clear..."
       nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.ExecutablePath -and $$_.ExecutablePath.StartsWith('$R6', [System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"`
       Pop $0
@@ -53,24 +53,24 @@ Function ClawXMoveLegacyInstallDir
       Sleep 2000
       ClearErrors
       Rename "$R6" "$R6._stale_$R8"
-      IfErrors 0 _clawx_legacy_stale_moved
-      DetailPrint "Removing previous ClawX installation at $R6..."
+      IfErrors 0 _deepclaw_legacy_stale_moved
+      DetailPrint "Removing previous DeepClaw installation at $R6..."
       nsExec::ExecToStack 'cmd.exe /c rd /s /q "$R6"'
       Pop $0
       Pop $1
-      Goto _clawx_legacy_move_done
-  _clawx_legacy_stale_moved:
+      Goto _deepclaw_legacy_move_done
+  _deepclaw_legacy_stale_moved:
     ExecShell "" "cmd.exe" `/c ping -n 61 127.0.0.1 >nul & rd /s /q "$R6._stale_$R8"` SW_HIDE
 
-  _clawx_legacy_move_done:
+  _deepclaw_legacy_move_done:
     ClearErrors
     Pop $R6
 FunctionEnd
 
-!macro clawxMoveLegacyInstallDir ROOT_KEY
+!macro deepclawMoveLegacyInstallDir ROOT_KEY
   ReadRegStr $R6 ${ROOT_KEY} "${INSTALL_REGISTRY_KEY}" InstallLocation
   Push $R6
-  Call ClawXMoveLegacyInstallDir
+  Call DeepClawMoveLegacyInstallDir
 !macroend
 !endif
 
@@ -79,7 +79,7 @@ FunctionEnd
   ; Make stage logs visible on assisted installers (defaults to hidden).
   SetDetailsPrint both
   DetailPrint "Preparing installation..."
-  DetailPrint "Extracting ClawX runtime files. This can take a few minutes on slower disks or while antivirus scanning is active."
+  DetailPrint "Extracting DeepClaw runtime files. This can take a few minutes on slower disks or while antivirus scanning is active."
 
   ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
 
@@ -107,7 +107,7 @@ FunctionEnd
     DetailPrint `Closing running "${PRODUCT_NAME}"...`
 
     # Kill ALL processes whose executable lives inside $INSTDIR.
-    # This covers ClawX.exe (multiple Electron processes), openclaw-gateway.exe,
+    # This covers DeepClaw.exe (multiple Electron processes), openclaw-gateway.exe,
     # python.exe (skills runtime), uv.exe (package manager), and any other
     # child process that might hold file locks in the installation directory.
     #
@@ -140,7 +140,7 @@ FunctionEnd
       ${nsProcess::Unload}
   ${endIf}
 
-  ; Even if ClawX.exe was not detected as running, orphan child processes
+  ; Even if DeepClaw.exe was not detected as running, orphan child processes
   ; (python.exe, openclaw-gateway.exe, uv.exe, etc.) from a previous crash
   ; or unclean shutdown may still hold file locks inside $INSTDIR.
   ; Unconditionally kill any process whose executable lives in the install dir.
@@ -149,7 +149,7 @@ FunctionEnd
   Pop $1
 
   ; Always kill known process names as a belt-and-suspenders approach.
-  ; PowerShell path-based kill may miss processes if the old ClawX was installed
+  ; PowerShell path-based kill may miss processes if the old DeepClaw was installed
   ; in a different directory than $INSTDIR (e.g., per-machine -> per-user migration).
   ; taskkill is name-based and catches processes regardless of their install location.
   nsExec::ExecToStack 'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"'
@@ -168,11 +168,11 @@ FunctionEnd
   ; Do not continue while the old UI process is still alive. Continuing in that
   ; state can leave the running old process/window in place, making the user see
   ; the old version after an otherwise successful extract.  Use process-list
-  ; commands instead of nsProcess here: field diagnostics showed ClawX.exe can
+  ; commands instead of nsProcess here: field diagnostics showed DeepClaw.exe can
   ; remain alive while the old installer still reports success; this check must
   ; fail closed even when taskkill or the nsProcess plugin misses/elevates poorly.
   StrCpy $R7 0
-  _clawx_verify_closed:
+  _deepclaw_verify_closed:
     nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "if (Get-CimInstance -ClassName Win32_Process | Where-Object { $$_.Name -ieq '${APP_EXECUTABLE_FILENAME}' }) { exit 0 } else { exit 1 }"`
     Pop $R0
     Pop $R1
@@ -192,15 +192,15 @@ FunctionEnd
       Pop $1
       Sleep 2000
       ${if} $R7 < 5
-        Goto _clawx_verify_closed
+        Goto _deepclaw_verify_closed
       ${endIf}
-      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "ClawX is still running and cannot be replaced safely. Please close ClawX and retry installation." /SD IDCANCEL IDRETRY _clawx_verify_closed
+      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "DeepClaw is still running and cannot be replaced safely. Please close DeepClaw and retry installation." /SD IDCANCEL IDRETRY _deepclaw_verify_closed
       SetErrorLevel 2
       Quit
     ${endIf}
 
   !ifndef BUILD_UNINSTALLER
-    StrCpy $clawxRollbackDir ""
+    StrCpy $deepclawRollbackDir ""
 
     ; Release NSIS's CWD on $INSTDIR BEFORE the rename check.
     ; NSIS sets CWD to $INSTDIR in .onInit; Windows refuses to rename a directory
@@ -210,15 +210,15 @@ FunctionEnd
     ; Move legacy installs discovered in both registry hives before handling the
     ; current $INSTDIR.  This covers per-user <-> per-machine migrations and
     ; custom install directories where the new $INSTDIR is not the old location.
-    !insertmacro clawxMoveLegacyInstallDir HKCU
-    !insertmacro clawxMoveLegacyInstallDir HKLM
+    !insertmacro deepclawMoveLegacyInstallDir HKCU
+    !insertmacro deepclawMoveLegacyInstallDir HKLM
 
     ; Pre-emptively clear the old installation directory so that the 7z
   ; extraction `CopyFiles` step in extractAppPackage.nsh won't fail on
   ; locked files.  electron-builder's extractUsing7za macro extracts to a
   ; temp folder first, then uses `CopyFiles /SILENT` to copy into $INSTDIR.
   ; If ANY file in $INSTDIR is still locked, CopyFiles fails and triggers a
-  ; "Can't modify ClawX's files" retry loop -> "ClawX 无法关闭" dialog.
+  ; "Can't modify DeepClaw's files" retry loop -> "DeepClaw 无法关闭" dialog.
   ;
   ; Strategy: rename (move) the old $INSTDIR out of the way.  Rename works
   ; even when AV/indexer have files open for reading (they use
@@ -260,14 +260,14 @@ FunctionEnd
       RMDir "$INSTDIR"
       IfFileExists "$INSTDIR\" 0 _recreate_clean_instdir
         DetailPrint "Failed to remove previous installation directory; aborting to avoid leaving the old version installed."
-        MessageBox MB_OK|MB_ICONEXCLAMATION "Unable to replace the previous ClawX installation because files are still locked. Please close ClawX and retry installation." /SD IDOK
+        MessageBox MB_OK|MB_ICONEXCLAMATION "Unable to replace the previous DeepClaw installation because files are still locked. Please close DeepClaw and retry installation." /SD IDOK
         SetErrorLevel 2
         Quit
       _recreate_clean_instdir:
       CreateDirectory "$INSTDIR"
       Goto _instdir_clean
   _stale_moved:
-    StrCpy $clawxRollbackDir "$INSTDIR._stale_$R8"
+    StrCpy $deepclawRollbackDir "$INSTDIR._stale_$R8"
     CreateDirectory "$INSTDIR"
   _instdir_clean:
 
@@ -291,7 +291,7 @@ FunctionEnd
 !macroend
 
 ; Override electron-builder's handleUninstallResult to prevent the
-; "ClawX 无法关闭" retry dialog when the old uninstaller fails.
+; "DeepClaw 无法关闭" retry dialog when the old uninstaller fails.
 ;
 ; During upgrades, electron-builder copies the old uninstaller to a temp dir
 ; and runs it silently.  The old uninstaller uses atomicRMDir to rename every
@@ -326,7 +326,7 @@ FunctionEnd
   ; Now that the new files and current-hive registry entries have been written,
   ; remove stale entries from the opposite hive so Windows Apps & Features does
   ; not continue showing the old version after cross-hive upgrades.
-  DetailPrint "Clearing stale ClawX registry entries from the opposite install scope..."
+  DetailPrint "Clearing stale DeepClaw registry entries from the opposite install scope..."
   ${if} $installMode == "all"
     DeleteRegKey HKCU "${UNINSTALL_REGISTRY_KEY}"
     DeleteRegKey HKCU "${INSTALL_REGISTRY_KEY}"
@@ -343,7 +343,7 @@ FunctionEnd
   ClearErrors
 
   ; Async cleanup of old dirs left by the rename loop in customCheckAppRunning.
-  ; Wait 60s before starting deletion to avoid I/O contention with ClawX's
+  ; Wait 60s before starting deletion to avoid I/O contention with DeepClaw's
   ; first launch (Windows Defender scan, ASAR mapping, etc.).
   ; ExecShell SW_HIDE is completely detached from NSIS and avoids pipe blocking.
   IfFileExists "$INSTDIR._stale_0\" 0 _ci_stale_cleaned
@@ -416,11 +416,11 @@ FunctionEnd
 
   ; Ask user if they want to remove AppData (preserves .openclaw)
   MessageBox MB_YESNO|MB_ICONQUESTION \
-    "Do you want to remove ClawX application data?$\r$\n$\r$\nThis will delete:$\r$\n  • AppData\Local\clawx (local app data)$\r$\n  • AppData\Roaming\clawx (roaming app data)$\r$\n$\r$\nYour .openclaw folder (configuration & skills) will be preserved.$\r$\nSelect 'No' to keep all data for future reinstallation." \
+    "Do you want to remove DeepClaw application data?$\r$\n$\r$\nThis will delete:$\r$\n  • AppData\Local\${PRODUCT_NAME} (local app data)$\r$\n  • AppData\Roaming\${PRODUCT_NAME} (roaming app data)$\r$\n$\r$\nYour .openclaw folder (configuration & skills) will be preserved.$\r$\nSelect 'No' to keep all data for future reinstallation." \
     /SD IDNO IDYES _cu_removeData IDNO _cu_skipRemove
 
   _cu_removeData:
-    ; Kill any lingering ClawX processes (and their child process trees) to
+    ; Kill any lingering DeepClaw processes (and their child process trees) to
     ; release file locks on electron-store JSON files, Gateway sockets, etc.
     ${nsProcess::FindProcess} "${APP_EXECUTABLE_FILENAME}" $R0
     ${if} $R0 == 0
@@ -435,37 +435,37 @@ FunctionEnd
 
     ; --- Always remove current user's AppData first ---
     ; NOTE: .openclaw directory is intentionally preserved (user configuration & skills)
-    RMDir /r "$LOCALAPPDATA\clawx"
-    RMDir /r "$APPDATA\clawx"
+    RMDir /r "$LOCALAPPDATA\${PRODUCT_NAME}"
+    RMDir /r "$APPDATA\${PRODUCT_NAME}"
 
     ; --- Retry: if directories still exist (locked files), wait and try again ---
 
-    ; Check AppData\Local\clawx
-    IfFileExists "$LOCALAPPDATA\clawx\*.*" 0 _cu_localDone
+    ; Check AppData\Local\${PRODUCT_NAME}
+    IfFileExists "$LOCALAPPDATA\${PRODUCT_NAME}\*.*" 0 _cu_localDone
       Sleep 3000
-      RMDir /r "$LOCALAPPDATA\clawx"
-      IfFileExists "$LOCALAPPDATA\clawx\*.*" 0 _cu_localDone
-        nsExec::ExecToStack 'cmd.exe /c rd /s /q "$LOCALAPPDATA\clawx"'
+      RMDir /r "$LOCALAPPDATA\${PRODUCT_NAME}"
+      IfFileExists "$LOCALAPPDATA\${PRODUCT_NAME}\*.*" 0 _cu_localDone
+        nsExec::ExecToStack 'cmd.exe /c rd /s /q "$LOCALAPPDATA\${PRODUCT_NAME}"'
         Pop $0
         Pop $1
     _cu_localDone:
 
-    ; Check AppData\Roaming\clawx
-    IfFileExists "$APPDATA\clawx\*.*" 0 _cu_roamingDone
+    ; Check AppData\Roaming\${PRODUCT_NAME}
+    IfFileExists "$APPDATA\${PRODUCT_NAME}\*.*" 0 _cu_roamingDone
       Sleep 3000
-      RMDir /r "$APPDATA\clawx"
-      IfFileExists "$APPDATA\clawx\*.*" 0 _cu_roamingDone
-        nsExec::ExecToStack 'cmd.exe /c rd /s /q "$APPDATA\clawx"'
+      RMDir /r "$APPDATA\${PRODUCT_NAME}"
+      IfFileExists "$APPDATA\${PRODUCT_NAME}\*.*" 0 _cu_roamingDone
+        nsExec::ExecToStack 'cmd.exe /c rd /s /q "$APPDATA\${PRODUCT_NAME}"'
         Pop $0
         Pop $1
     _cu_roamingDone:
 
     ; --- Final check: warn user if any directories could not be removed ---
     StrCpy $R3 ""
-    IfFileExists "$LOCALAPPDATA\clawx\*.*" 0 +2
-      StrCpy $R3 "$R3$\r$\n  • $LOCALAPPDATA\clawx"
-    IfFileExists "$APPDATA\clawx\*.*" 0 +2
-      StrCpy $R3 "$R3$\r$\n  • $APPDATA\clawx"
+    IfFileExists "$LOCALAPPDATA\${PRODUCT_NAME}\*.*" 0 +2
+      StrCpy $R3 "$R3$\r$\n  • $LOCALAPPDATA\${PRODUCT_NAME}"
+    IfFileExists "$APPDATA\${PRODUCT_NAME}\*.*" 0 +2
+      StrCpy $R3 "$R3$\r$\n  • $APPDATA\${PRODUCT_NAME}"
     StrCmp $R3 "" _cu_cleanupOk
       MessageBox MB_OK|MB_ICONEXCLAMATION \
         "Some data directories could not be removed (files may be in use):$\r$\n$R3$\r$\n$\r$\nPlease delete them manually after restarting your computer."
@@ -486,8 +486,8 @@ FunctionEnd
     StrCmp $R3 $PROFILE _cu_enumNext
 
     ; NOTE: .openclaw directory is intentionally preserved for all users
-    RMDir /r "$R3\AppData\Local\clawx"
-    RMDir /r "$R3\AppData\Roaming\clawx"
+    RMDir /r "$R3\AppData\Local\${PRODUCT_NAME}"
+    RMDir /r "$R3\AppData\Roaming\${PRODUCT_NAME}"
 
   _cu_enumNext:
     IntOp $R0 $R0 + 1

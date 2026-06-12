@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { collectQuickAccessSkills, filterEnabledQuickAccessSkills, type QuickAccessSkill } from '@electron/utils/skill-quick-access';
 
-const testRoot = join(tmpdir(), 'clawx-tests', 'skill-quick-access');
+const testRoot = join(tmpdir(), 'deepclaw-tests', 'skill-quick-access');
 
 function writeSkill(baseDir: string, skillName: string, content: string): void {
   const skillDir = join(baseDir, skillName);

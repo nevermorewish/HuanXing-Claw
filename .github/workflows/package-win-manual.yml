@@ -7,13 +7,31 @@ on:
         description: 'Git ref to build (branch, tag, or SHA). Leave empty for current default ref.'
         required: false
         default: ''
+      remote_path:
+        description: 'Linux server web root mapped to http://ai.fengchiyun.com/. Leave empty to use vars.LINUX_DEPLOY_PATH.'
+        required: false
+        default: ''
 
 permissions:
   contents: read
 
+env:
+  SERVICE_URL: https://ai.fengchiyun.com
+  UPDATE_FEED_BASE_URL: https://ai.fengchiyun.com/downloads
+
 jobs:
   package-windows:
+    name: Package Windows (${{ matrix.brand }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        brand:
+          - huanxingclaw
+          - deepclaw
+          - fengchiclaw
+          - frogclaw
 
     steps:
       - name: Checkout code
@@ -43,6 +61,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
+      - name: Show runner disk space
+        shell: pwsh
+        run: |
+          Get-PSDrive -PSProvider FileSystem | Format-Table -AutoSize
+
       - name: Prefer HTTPS for public GitHub git dependencies
         run: |
           git config --global "url.https://github.com/.insteadOf" "git@github.com:"
@@ -57,41 +80,248 @@ jobs:
       - name: Download agent-browser binaries for Windows
         run: pnpm run agent-browser:download:win
 
+      - name: Download Node.js binaries for Windows
+        run: pnpm run node:download:win
+
+      - name: Configure brand domain for manual package
+        env:
+          BRAND: ${{ matrix.brand }}
+        shell: pwsh
+        run: |
+          $brandFile = "brands/$env:BRAND.json"
+          $brand = Get-Content $brandFile -Raw | ConvertFrom-Json
+          $serviceUrl = $env:SERVICE_URL.TrimEnd('/')
+          $updateFeedBaseUrl = $env:UPDATE_FEED_BASE_URL.TrimEnd('/')
+
+          # Runtime account URL and auto-update feed domain for this manual build.
+          $brand.serviceUrl = "$serviceUrl/"
+          $brand.updateFeedBaseUrl = "$updateFeedBaseUrl/$env:BRAND"
+
+          $brand | ConvertTo-Json -Depth 20 | Set-Content $brandFile -Encoding utf8
+          Write-Host "Configured $env:BRAND serviceUrl=$($brand.serviceUrl)"
+          Write-Host "Configured $env:BRAND updateFeedBaseUrl=$($brand.updateFeedBaseUrl)"
+
+      - name: Generate brand and extension bridge
+        env:
+          BRAND: ${{ matrix.brand }}
+        run: node scripts/generate-brand.mjs && node scripts/generate-ext-bridge.mjs
+
+      - name: Build Vite bundles
+        run: pnpm run build:vite
+
+      - name: Bundle OpenClaw runtime
+        run: pnpm exec zx scripts/bundle-openclaw.mjs
+
+      - name: Bundle OpenClaw plugins
+        run: pnpm exec zx scripts/bundle-openclaw-plugins.mjs
+
+      - name: Verify committed preinstalled skills
+        shell: pwsh
+        run: |
+          if (!(Test-Path build/preinstalled-skills/.preinstalled-lock.json)) {
+            throw "Missing committed build/preinstalled-skills/.preinstalled-lock.json. Run pnpm exec zx scripts/bundle-preinstalled-skills.mjs and commit build/preinstalled-skills."
+          }
+
+          $skills = Get-ChildItem build/preinstalled-skills -Directory
+          if ($skills.Count -eq 0) {
+            throw "No committed preinstalled skills found under build/preinstalled-skills."
+          }
+
+          $skills | Select-Object Name
+
       - name: Build Windows package (no publish)
         env:
+          BRAND: ${{ matrix.brand }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm run package:win
+        run: node scripts/run-electron-builder.mjs --win --publish never --config.directories.output=release/${{ matrix.brand }}
+
+      - name: Prepare Linux upload payload
+        id: upload_payload
+        env:
+          BRAND: ${{ matrix.brand }}
+        shell: pwsh
+        run: |
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $version = [string]$package.version
+          $channel = 'latest'
+          if ($version -match '-([A-Za-z]+)') {
+            $channel = $Matches[1]
+          }
+
+          $source = "release/$env:BRAND"
+          $channelOut = "release-upload/$env:BRAND/$channel"
+          $archiveOut = "release-upload/$env:BRAND/releases/v$version"
+
+          New-Item -ItemType Directory -Force -Path $channelOut, $archiveOut | Out-Null
+
+          Get-ChildItem $source -File |
+            Where-Object { $_.Name -ne 'builder-debug.yml' } |
+            ForEach-Object {
+              Copy-Item $_.FullName -Destination $channelOut -Force
+              Copy-Item $_.FullName -Destination $archiveOut -Force
+            }
+
+          # electron-updater requests <channel>.yml. Keep alpha/beta manual builds usable
+          # even if electron-builder emits latest.yml for a local no-publish package.
+          $expectedYml = if ($channel -eq 'latest') { 'latest.yml' } else { "$channel.yml" }
+          $expectedPath = Join-Path $channelOut $expectedYml
+          $latestPath = Join-Path $channelOut 'latest.yml'
+          if (!(Test-Path $expectedPath) -and (Test-Path $latestPath)) {
+            Copy-Item $latestPath -Destination $expectedPath -Force
+          }
+
+          Write-Host "version=$version"
+          Write-Host "channel=$channel"
+          Write-Host "upload_dir=$channelOut"
+          Get-ChildItem $channelOut | Select-Object Name, Length
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "channel=$channel" >> $env:GITHUB_OUTPUT
+          "channel_dir=$channelOut" >> $env:GITHUB_OUTPUT
+          "archive_dir=$archiveOut" >> $env:GITHUB_OUTPUT
+
+      - name: Configure SSH for Linux upload
+        env:
+          SECRET_LINUX_DEPLOY_HOST: ${{ secrets.LINUX_DEPLOY_HOST }}
+          SECRET_LINUX_DEPLOY_PORT: ${{ secrets.LINUX_DEPLOY_PORT }}
+          SECRET_LINUX_DEPLOY_USER: ${{ secrets.LINUX_DEPLOY_USER }}
+          VAR_LINUX_DEPLOY_HOST: ${{ vars.LINUX_DEPLOY_HOST }}
+          VAR_LINUX_DEPLOY_PORT: ${{ vars.LINUX_DEPLOY_PORT }}
+          VAR_LINUX_DEPLOY_USER: ${{ vars.LINUX_DEPLOY_USER }}
+          LINUX_DEPLOY_KEY: ${{ secrets.LINUX_DEPLOY_KEY }}
+          LINUX_DEPLOY_KNOWN_HOSTS: ${{ secrets.LINUX_DEPLOY_KNOWN_HOSTS }}
+          SECRET_LINUX_DEPLOY_PATH: ${{ secrets.LINUX_DEPLOY_PATH }}
+          VAR_LINUX_DEPLOY_PATH: ${{ vars.LINUX_DEPLOY_PATH }}
+          INPUT_REMOTE_PATH: ${{ inputs.remote_path }}
+        shell: pwsh
+        run: |
+          $deployHost = if ([string]::IsNullOrWhiteSpace($env:SECRET_LINUX_DEPLOY_HOST)) { $env:VAR_LINUX_DEPLOY_HOST } else { $env:SECRET_LINUX_DEPLOY_HOST }
+          $deployPort = if ([string]::IsNullOrWhiteSpace($env:SECRET_LINUX_DEPLOY_PORT)) { $env:VAR_LINUX_DEPLOY_PORT } else { $env:SECRET_LINUX_DEPLOY_PORT }
+          $deployUser = if ([string]::IsNullOrWhiteSpace($env:SECRET_LINUX_DEPLOY_USER)) { $env:VAR_LINUX_DEPLOY_USER } else { $env:SECRET_LINUX_DEPLOY_USER }
+          $configuredRemotePath = if ([string]::IsNullOrWhiteSpace($env:SECRET_LINUX_DEPLOY_PATH)) { $env:VAR_LINUX_DEPLOY_PATH } else { $env:SECRET_LINUX_DEPLOY_PATH }
+
+          if ([string]::IsNullOrWhiteSpace($deployHost)) { $deployHost = '43.224.248.112' }
+          if ([string]::IsNullOrWhiteSpace($deployUser)) { $deployUser = 'root' }
+
+          $missing = @()
+          if ([string]::IsNullOrWhiteSpace($env:LINUX_DEPLOY_KEY)) { $missing += 'secrets.LINUX_DEPLOY_KEY' }
+          if ([string]::IsNullOrWhiteSpace($env:INPUT_REMOTE_PATH) -and [string]::IsNullOrWhiteSpace($configuredRemotePath)) {
+            $missing += 'workflow input remote_path, secrets.LINUX_DEPLOY_PATH, or vars.LINUX_DEPLOY_PATH'
+          }
+          if ($missing.Count -gt 0) {
+            throw "Missing Linux upload configuration: $($missing -join ', ')"
+          }
+
+          $port = if ([string]::IsNullOrWhiteSpace($deployPort)) { '22' } else { $deployPort }
+          $remotePath = if ([string]::IsNullOrWhiteSpace($env:INPUT_REMOTE_PATH)) { $configuredRemotePath } else { $env:INPUT_REMOTE_PATH }
+          $remotePath = $remotePath.TrimEnd('/')
+
+          $sshDir = Join-Path $HOME '.ssh'
+          New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
+
+          $keyPath = Join-Path $sshDir 'linux_deploy_key'
+          ($env:LINUX_DEPLOY_KEY -replace "`r`n", "`n") | Set-Content -Path $keyPath -NoNewline -Encoding ascii
+          icacls $keyPath /inheritance:r | Out-Null
+          icacls $keyPath /grant:r "$($env:USERNAME):R" | Out-Null
+
+          $knownHostsPath = Join-Path $sshDir 'known_hosts'
+          if ([string]::IsNullOrWhiteSpace($env:LINUX_DEPLOY_KNOWN_HOSTS)) {
+            New-Item -ItemType File -Force -Path $knownHostsPath | Out-Null
+            $strictHostKeyChecking = 'accept-new'
+          } else {
+            ($env:LINUX_DEPLOY_KNOWN_HOSTS -replace "`r`n", "`n") | Set-Content -Path $knownHostsPath -NoNewline -Encoding ascii
+            $strictHostKeyChecking = 'yes'
+          }
+
+          "SSH_KEY_PATH=$keyPath" >> $env:GITHUB_ENV
+          "SSH_KNOWN_HOSTS_PATH=$knownHostsPath" >> $env:GITHUB_ENV
+          "SSH_STRICT_HOST_KEY_CHECKING=$strictHostKeyChecking" >> $env:GITHUB_ENV
+          "LINUX_DEPLOY_HOST=$deployHost" >> $env:GITHUB_ENV
+          "LINUX_DEPLOY_PORT=$port" >> $env:GITHUB_ENV
+          "LINUX_DEPLOY_USER=$deployUser" >> $env:GITHUB_ENV
+          "LINUX_DEPLOY_REMOTE_PATH=$remotePath" >> $env:GITHUB_ENV
+
+      - name: Upload package to Linux server
+        env:
+          BRAND: ${{ matrix.brand }}
+          CHANNEL: ${{ steps.upload_payload.outputs.channel }}
+          VERSION: ${{ steps.upload_payload.outputs.version }}
+          CHANNEL_DIR: ${{ steps.upload_payload.outputs.channel_dir }}
+          ARCHIVE_DIR: ${{ steps.upload_payload.outputs.archive_dir }}
+        shell: pwsh
+        run: |
+          function Quote-RemotePath([string]$value) {
+            return "'" + $value.Replace("'", "'\''") + "'"
+          }
+
+          $destinationRoot = "$env:LINUX_DEPLOY_REMOTE_PATH/downloads/$env:BRAND"
+          $channelDestination = "$destinationRoot/$env:CHANNEL"
+          $archiveDestination = "$destinationRoot/releases/v$env:VERSION"
+
+          $remoteChannel = Quote-RemotePath $channelDestination
+          $remoteArchive = Quote-RemotePath $archiveDestination
+          $remote = "$env:LINUX_DEPLOY_USER@$env:LINUX_DEPLOY_HOST"
+
+          ssh `
+            -i $env:SSH_KEY_PATH `
+            -p $env:LINUX_DEPLOY_PORT `
+            -o "UserKnownHostsFile=$env:SSH_KNOWN_HOSTS_PATH" `
+            -o "StrictHostKeyChecking=$env:SSH_STRICT_HOST_KEY_CHECKING" `
+            $remote "mkdir -p $remoteChannel $remoteArchive"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to create remote upload directories" }
+
+          $channelFiles = Get-ChildItem $env:CHANNEL_DIR -File | ForEach-Object { $_.FullName }
+          $archiveFiles = Get-ChildItem $env:ARCHIVE_DIR -File | ForEach-Object { $_.FullName }
+
+          scp `
+            -i $env:SSH_KEY_PATH `
+            -P $env:LINUX_DEPLOY_PORT `
+            -o "UserKnownHostsFile=$env:SSH_KNOWN_HOSTS_PATH" `
+            -o "StrictHostKeyChecking=$env:SSH_STRICT_HOST_KEY_CHECKING" `
+            $channelFiles "${remote}:$channelDestination/"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to upload channel files" }
+
+          scp `
+            -i $env:SSH_KEY_PATH `
+            -P $env:LINUX_DEPLOY_PORT `
+            -o "UserKnownHostsFile=$env:SSH_KNOWN_HOSTS_PATH" `
+            -o "StrictHostKeyChecking=$env:SSH_STRICT_HOST_KEY_CHECKING" `
+            $archiveFiles "${remote}:$archiveDestination/"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to upload archive files" }
+
+          Write-Host "Uploaded $env:BRAND channel files to https://ai.fengchiyun.com/downloads/$env:BRAND/$env:CHANNEL/"
+          Write-Host "Uploaded $env:BRAND archive files to https://ai.fengchiyun.com/downloads/$env:BRAND/releases/v$env:VERSION/"
 
       - name: Upload Windows Installer (x64)
         uses: actions/upload-artifact@v4
         with:
-          name: windows-installer-x64
-          path: release/*-win-x64.exe
+          name: windows-installer-${{ matrix.brand }}-x64
+          path: release/${{ matrix.brand }}/*-win-x64.exe
           if-no-files-found: error
           retention-days: 7
 
       - name: Upload Windows Installer (arm64)
         uses: actions/upload-artifact@v4
         with:
-          name: windows-installer-arm64
-          path: release/*-win-arm64.exe
+          name: windows-installer-${{ matrix.brand }}-arm64
+          path: release/${{ matrix.brand }}/*-win-arm64.exe
           if-no-files-found: warn
           retention-days: 7
 
       - name: Upload Windows Blockmap Files
         uses: actions/upload-artifact@v4
         with:
-          name: windows-blockmap
-          path: release/*.blockmap
+          name: windows-blockmap-${{ matrix.brand }}
+          path: release/${{ matrix.brand }}/*.blockmap
           if-no-files-found: warn
           retention-days: 7
 
       - name: Upload Windows Update Manifests
         uses: actions/upload-artifact@v4
         with:
-          name: windows-update-manifests
+          name: windows-update-manifests-${{ matrix.brand }}
           path: |
-            release/*.yml
-            !release/builder-debug.yml
+            release/${{ matrix.brand }}/*.yml
+            !release/${{ matrix.brand }}/builder-debug.yml
           if-no-files-found: warn
           retention-days: 7

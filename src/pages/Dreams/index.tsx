@@ -22,6 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { hostApi } from '@/lib/host-api';
 import { cn } from '@/lib/utils';
+import { BRAND } from '@shared/brand';
 import { useGatewayStore } from '@/stores/gateway';
 
 type DreamPhaseName = 'light' | 'rem' | 'deep';
@@ -345,7 +346,7 @@ export function Dreams() {
       await rpc<unknown>('config.patch', {
         raw: buildDreamingEnabledPatchRaw(enabled),
         baseHash: snapshot.hash,
-        note: enabled ? 'Enable memory dreaming from ClawX Dreams.' : 'Disable memory dreaming from ClawX Dreams.',
+        note: enabled ? `Enable memory dreaming from ${BRAND.appName} Dreams.` : `Disable memory dreaming from ${BRAND.appName} Dreams.`,
       }, 30_000);
       const message = enabled ? t('actions.enableSuccess') : t('actions.disableSuccess');
       setDreaming((current) => ({ ...(current ?? {}), enabled }));

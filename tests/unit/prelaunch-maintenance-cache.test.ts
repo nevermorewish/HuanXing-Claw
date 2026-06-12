@@ -12,7 +12,7 @@ describe('prelaunch maintenance cache', () => {
   let cachePath: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), 'clawx-prelaunch-cache-'));
+    tempDir = mkdtempSync(join(tmpdir(), 'deepclaw-prelaunch-cache-'));
     cachePath = join(tempDir, 'cache.json');
   });
 

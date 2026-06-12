@@ -3,9 +3,10 @@
  * Cross-platform path resolution helpers
  */
 import { createRequire } from 'node:module';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
+import { BRAND } from '@shared/brand';
 
 const require = createRequire(import.meta.url);
 
@@ -24,7 +25,7 @@ function getElectronApp() {
     return (require('electron') as typeof import('electron')).app;
   }
 
-  const fallbackUserData = process.env.CLAWX_USER_DATA_DIR?.trim() || join(homedir(), '.clawx');
+  const fallbackUserData = process.env.DEEPCLAW_USER_DATA_DIR?.trim() || join(homedir(), BRAND.dataDirName);
   const fallbackAppPath = process.cwd();
   const fallbackApp: ElectronAppLike = {
     isPackaged: false,
@@ -48,10 +49,64 @@ export function expandPath(path: string): string {
 }
 
 /**
- * Get OpenClaw config directory
+ * Default OpenClaw config/state directory.
+ *
+ * Each brand gets its own home directory (e.g. ~/.frogclaw, ~/.fengchiclaw)
+ * derived from BRAND.dataDirName, so white-label builds don't share the same
+ * ~/.openclaw state. The spawned gateway and the bundled CLI are pinned to this
+ * dir via OPENCLAW_STATE_DIR (see config-sync.ts and the CLI wrappers) — the
+ * engine's own default is ~/.openclaw, which we deliberately override.
+ */
+export function getDefaultOpenClawConfigDir(): string {
+  return join(homedir(), BRAND.dataDirName);
+}
+
+/**
+ * In-process override for the OpenClaw config/state directory.
+ *
+ * `getOpenClawConfigDir()` is called synchronously from many call sites, so the
+ * override is held in a module-level cache rather than read from the async
+ * settings store on each call. The main process seeds it at startup (after
+ * settings load) via `setOpenClawConfigDirOverride()`, and the config-management
+ * API refreshes it whenever the user changes the directory.
+ */
+let openClawConfigDirOverride: string | null = null;
+
+/**
+ * Normalize a user-supplied OpenClaw config directory.
+ * Ported from clawpanel `normalize_custom_openclaw_dir`:
+ *   trim -> expand leading ~ -> make absolute (relative to cwd).
+ * Returns '' when the input is empty after trimming (meaning "use default").
+ */
+export function normalizeOpenClawConfigDir(raw: string): string {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return '';
+  const expanded = expandPath(trimmed);
+  return resolve(expanded);
+}
+
+/**
+ * Set (or clear) the OpenClaw config directory override.
+ * An empty/whitespace string clears the override (falls back to ~/.openclaw).
+ */
+export function setOpenClawConfigDirOverride(dir: string | null | undefined): void {
+  const normalized = normalizeOpenClawConfigDir(dir ?? '');
+  openClawConfigDirOverride = normalized || null;
+}
+
+/**
+ * Get OpenClaw config directory.
+ * Honors a custom directory when one has been set, otherwise ~/.openclaw.
  */
 export function getOpenClawConfigDir(): string {
-  return join(homedir(), '.openclaw');
+  return openClawConfigDirOverride ?? getDefaultOpenClawConfigDir();
+}
+
+/**
+ * Whether a custom (non-default) OpenClaw config directory is currently active.
+ */
+export function isOpenClawConfigDirCustom(): boolean {
+  return openClawConfigDirOverride !== null;
 }
 
 /**
@@ -62,21 +117,21 @@ export function getOpenClawSkillsDir(): string {
 }
 
 /**
- * Get ClawX config directory
+ * Get the brand's config directory (e.g. ~/.deepclaw)
  */
-export function getClawXConfigDir(): string {
-  return join(homedir(), '.clawx');
+export function getBrandConfigDir(): string {
+  return join(homedir(), BRAND.dataDirName);
 }
 
 /**
- * Get ClawX logs directory
+ * Get brand logs directory
  */
 export function getLogsDir(): string {
   return join(getElectronApp().getPath('userData'), 'logs');
 }
 
 /**
- * Get ClawX data directory
+ * Get brand data directory
  */
 export function getDataDir(): string {
   return getElectronApp().getPath('userData');

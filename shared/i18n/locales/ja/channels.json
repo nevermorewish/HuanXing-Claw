@@ -19,6 +19,7 @@
     "deleteConfirm": "このチャンネルを削除してもよろしいですか？",
     "showAll": "すべて表示",
     "pluginBadge": "プラグイン",
+    "recommendedBadge": "おすすめ",
     "toast": {
         "whatsappConnected": "WhatsApp が正常に接続されました",
         "whatsappFailed": "WhatsApp 接続に失敗しました: {{error}}",
@@ -98,7 +99,16 @@
         "generateQRCode": "QRコードを生成",
         "updateAndReconnect": "更新して再接続",
         "saveAndConnect": "保存して接続",
-        "envVar": "環境変数: {{var}}"
+        "envVar": "環境変数: {{var}}",
+        "feishuScanTab": "QRで取得",
+        "feishuManualTab": "手動入力",
+        "feishuGenerateQr": "QRコードを生成",
+        "feishuScanHint": "Feishuモバイルアプリでスキャンし、認可を承認してください",
+        "feishuRegenerate": "再生成",
+        "feishuExpired": "QRコードの有効期限が切れました。再生成してください",
+        "feishuDenied": "認可がキャンセルまたは拒否されました",
+        "feishuConfirmed": "アプリ認証情報を取得しました。確認して保存してください",
+        "feishuUserCode": "認証コード: {{code}}"
     },
     "health": {
         "state": {
@@ -189,7 +199,7 @@
             "description": "Tencent 公式の OpenClaw プラグインを使い、QRコードをスキャンして個人 WeChat に接続します",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GHYZwuPCriF0gWkXwkFcJ9zon3b",
             "instructions": [
-                "QRコードを生成すると、ClawX が OpenClaw に公式 WeChat プラグインをインストールして有効化します",
+                "QRコードを生成すると、$t(brand:appName) が OpenClaw に公式 WeChat プラグインをインストールして有効化します",
                 "以下の QR コードを WeChat でスキャンし、スマートフォン側で接続を確認します",
                 "接続が完了すると、WeChat に新しい「WeChat ClawBot」チャットが自動で表示されます",
                 "後から同じ QR フローを使って、別の WeChat アカウントを追加したり既存アカウントを再接続したりできます"

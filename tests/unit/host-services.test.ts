@@ -53,7 +53,7 @@ const {
   getChannelFormValuesMock: vi.fn(),
   getSettingMock: vi.fn(),
   listLogFilesMock: vi.fn(),
-  logDir: '/tmp/clawx-host-services-test-logs',
+  logDir: '/tmp/deepclaw-host-services-test-logs',
   listAgentsSnapshotFromConfigMock: vi.fn(),
   listAgentsSnapshotMock: vi.fn(),
   listConfiguredChannelAccountsFromConfigMock: vi.fn(),
@@ -104,7 +104,7 @@ const {
   syncSavedProviderToRuntimeMock: vi.fn(),
   syncLaunchAtStartupSettingFromStoreMock: vi.fn(),
   syncProxyConfigToOpenClawMock: vi.fn(),
-  testOpenClawConfigDir: '/tmp/clawx-host-services-openclaw',
+  testOpenClawConfigDir: '/tmp/deepclaw-host-services-openclaw',
   updateAgentNameMock: vi.fn(),
   validateApiKeyWithProviderMock: vi.fn(),
 }));
@@ -135,7 +135,7 @@ vi.mock('@electron/utils/logger', async (importOriginal) => {
       info: vi.fn(),
       warn: vi.fn(),
       getLogDir: () => logDir,
-      getLogFilePath: () => join(logDir, 'clawx-current.log'),
+      getLogFilePath: () => join(logDir, 'deepclaw-current.log'),
       getRecentLogs: vi.fn(),
       listLogFiles: (...args: unknown[]) => listLogFilesMock(...args),
       readLogFile: (...args: unknown[]) => readLogFileMock(...args),
@@ -186,7 +186,7 @@ vi.mock('@electron/utils/plugin-install', () => ({
 }));
 
 vi.mock('@electron/utils/openclaw-workspace', () => ({
-  ensureClawXContext: vi.fn(),
+  ensureDeepClawContext: vi.fn(),
 }));
 
 vi.mock('@electron/services/providers/provider-runtime-sync', () => ({
@@ -805,7 +805,7 @@ describe('host services', () => {
 
   it('returns diagnostics snapshot with channel view and log tails', async () => {
     writeFileSync(join(testOpenClawConfigDir, 'logs', 'gateway.log'), 'gateway-one\ngateway-two\n');
-    readLogFileMock.mockResolvedValue('clawx-log-tail');
+    readLogFileMock.mockResolvedValue('deepclaw-log-tail');
     readOpenClawConfigMock.mockResolvedValue({
       channels: {
         feishu: {
@@ -857,7 +857,7 @@ describe('host services', () => {
           accounts: [expect.objectContaining({ accountId: 'default', agentId: 'main' })],
         }),
       ],
-      clawxLogTail: 'clawx-log-tail',
+      deepclawLogTail: 'deepclaw-log-tail',
       gateway: expect.objectContaining({
         state: 'healthy',
         capabilities: { rpc: true },
@@ -868,9 +868,9 @@ describe('host services', () => {
   });
 
   it('reads only selected log files from the log directory', async () => {
-    const selectedLog = join(logDir, 'clawx-selected.log');
+    const selectedLog = join(logDir, 'deepclaw-selected.log');
     writeFileSync(selectedLog, 'one\ntwo\nthree\n');
-    listLogFilesMock.mockResolvedValue([{ name: 'clawx-selected.log', path: selectedLog, size: 14, modified: 'now' }]);
+    listLogFilesMock.mockResolvedValue([{ name: 'deepclaw-selected.log', path: selectedLog, size: 14, modified: 'now' }]);
     const { createLogsApi } = await import('@electron/services/logs-api');
 
     await expect(createLogsApi().readFile({ path: selectedLog, tailLines: 2 })).resolves.toEqual({
@@ -882,7 +882,7 @@ describe('host services', () => {
   });
 
   it('sends staged media through the typed chat service with gateway attachments', async () => {
-    const mediaPath = join(tmpdir(), `clawx-host-services-media-${Date.now()}.png`);
+    const mediaPath = join(tmpdir(), `deepclaw-host-services-media-${Date.now()}.png`);
     writeFileSync(mediaPath, 'fake-image-bytes');
     const gatewayManager = {
       rpc: vi.fn().mockResolvedValue({ runId: 'run-123' }),

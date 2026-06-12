@@ -19,7 +19,8 @@ import { useChatStore } from '@/stores/chat';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import { useProviderStore } from '@/stores/providers';
-import { buildConfiguredModelOptions, formatModelRefLabel, isConfiguredModelRefAvailable, resolveConfiguredModelRef } from '@/lib/model-options';
+import { useModelProvidersStore } from '@/stores/modelProviders';
+import { buildConfiguredModelOptions, formatModelRefLabel, isConfiguredModelRefAvailable, resolveConfiguredModelRef, type ConfiguredModelOption } from '@/lib/model-options';
 import type { AgentSummary } from '@/types/agent';
 import type { QuickAccessSkill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
@@ -220,6 +221,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const providerDefaultAccountId = useProviderStore((s) => s.defaultAccountId);
   const providerVendors = useProviderStore((s) => s.vendors);
   const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
+  const modelProviders = useModelProvidersStore((s) => s.providers);
+  const loadModelProviders = useModelProvidersStore((s) => s.load);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
@@ -229,15 +232,35 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     () => currentAgent?.name ?? currentAgentId,
     [currentAgent, currentAgentId],
   );
-  const modelOptions = useMemo(
-    () => buildConfiguredModelOptions(
+  const modelOptions = useMemo(() => {
+    const accountOptions = buildConfiguredModelOptions(
       providerAccounts,
       providerStatuses,
       providerVendors,
       providerDefaultAccountId,
-    ),
-    [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors],
-  );
+    );
+    // Merge every provider's nested models from openclaw.json (the
+    // clawpanel-style config). These live outside the account store, so
+    // buildConfiguredModelOptions can't surface them. Map each to a
+    // "<provider>/<id>" modelRef and de-dupe against the account options.
+    const providerOptions: ConfiguredModelOption[] = modelProviders.flatMap((provider) =>
+      provider.models.map((model) => ({
+        modelRef: `${provider.key}/${model.id}`,
+        label: model.id,
+        runtimeProviderKey: provider.key,
+        accountId: provider.key,
+      })),
+    );
+    const seen = new Set(accountOptions.map((o) => o.modelRef));
+    const merged = [...accountOptions];
+    for (const option of providerOptions) {
+      if (!seen.has(option.modelRef)) {
+        seen.add(option.modelRef);
+        merged.push(option);
+      }
+    }
+    return merged;
+  }, [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors, modelProviders]);
   const configuredModelRef = useMemo(
     () => resolveConfiguredModelRef(currentAgent?.modelRef, defaultModelRef, modelOptions),
     [currentAgent?.modelRef, defaultModelRef, modelOptions],
@@ -277,6 +300,10 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   }, [refreshProviderSnapshot]);
 
   useEffect(() => {
+    void loadModelProviders();
+  }, [loadModelProviders]);
+
+  useEffect(() => {
     if (gatewayStatus.state === 'running') return;
     let cancelled = false;
     hostApi.gateway.status()
@@ -284,13 +311,14 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
         if (cancelled) return;
         if (status.state === 'running') {
           void refreshProviderSnapshot();
+          void loadModelProviders();
         }
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [gatewayStatus.state, refreshProviderSnapshot]);
+  }, [gatewayStatus.state, refreshProviderSnapshot, loadModelProviders]);
 
   useEffect(() => {
     setOptimisticModelRef(null);

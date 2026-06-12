@@ -240,42 +240,42 @@
     @apply text-sm font-normal leading-4;
   }
 
-  .clawx-dialog-overlay {
+  .deepclaw-dialog-overlay {
     @apply fixed inset-0 z-50 bg-black/30 dark:bg-black/60;
   }
 
-  .clawx-dialog-content {
-    @apply fixed left-1/2 top-1/2 z-50 w-full outline-none;
+  .deepclaw-dialog-content {
+    @apply fixed left-1/2 top-1/2 z-50 w-full outline-none rounded-2xl border border-border bg-background text-foreground shadow-2xl;
     transform: translate(-50%, -50%);
     transform-origin: center;
     will-change: opacity, transform;
   }
 
-  .clawx-dialog-overlay[data-state='open'] {
-    animation: clawx-dialog-overlay-in 100ms ease-out both;
+  .deepclaw-dialog-overlay[data-state='open'] {
+    animation: deepclaw-dialog-overlay-in 100ms ease-out both;
   }
 
-  .clawx-dialog-overlay[data-state='closed'] {
-    animation: clawx-dialog-overlay-out 80ms ease-in both;
+  .deepclaw-dialog-overlay[data-state='closed'] {
+    animation: deepclaw-dialog-overlay-out 80ms ease-in both;
   }
 
-  .clawx-dialog-content[data-state='open'] {
-    animation: clawx-dialog-content-in 100ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  .deepclaw-dialog-content[data-state='open'] {
+    animation: deepclaw-dialog-content-in 100ms cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
-  .clawx-dialog-content[data-state='closed'] {
-    animation: clawx-dialog-content-out 80ms ease-in both;
+  .deepclaw-dialog-content[data-state='closed'] {
+    animation: deepclaw-dialog-content-out 80ms ease-in both;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .clawx-dialog-overlay[data-state],
-    .clawx-dialog-content[data-state] {
+    .deepclaw-dialog-overlay[data-state],
+    .deepclaw-dialog-content[data-state] {
       animation: none;
     }
   }
 }
 
-@keyframes clawx-dialog-overlay-in {
+@keyframes deepclaw-dialog-overlay-in {
   from {
     opacity: 0;
   }
@@ -285,7 +285,7 @@
   }
 }
 
-@keyframes clawx-dialog-overlay-out {
+@keyframes deepclaw-dialog-overlay-out {
   from {
     opacity: 1;
   }
@@ -295,7 +295,7 @@
   }
 }
 
-@keyframes clawx-dialog-content-in {
+@keyframes deepclaw-dialog-content-in {
   from {
     opacity: 0;
     transform: translate(-50%, -50%) scale(0.985);
@@ -307,7 +307,7 @@
   }
 }
 
-@keyframes clawx-dialog-content-out {
+@keyframes deepclaw-dialog-content-out {
   from {
     opacity: 1;
     transform: translate(-50%, -50%) scale(1);
@@ -351,12 +351,12 @@
 }
 
 /* Monaco's default light diff theme is pure white; keep it aligned with ClawX's cream app background. */
-:root:not(.dark) .clawx-diff-editor .monaco-diff-editor,
-:root:not(.dark) .clawx-diff-editor .monaco-editor,
-:root:not(.dark) .clawx-diff-editor .monaco-editor-background,
-:root:not(.dark) .clawx-diff-editor .monaco-editor .margin,
-:root:not(.dark) .clawx-diff-editor .monaco-editor .gutter,
-:root:not(.dark) .clawx-diff-editor .diffOverview {
+:root:not(.dark) .deepclaw-diff-editor .monaco-diff-editor,
+:root:not(.dark) .deepclaw-diff-editor .monaco-editor,
+:root:not(.dark) .deepclaw-diff-editor .monaco-editor-background,
+:root:not(.dark) .deepclaw-diff-editor .monaco-editor .margin,
+:root:not(.dark) .deepclaw-diff-editor .monaco-editor .gutter,
+:root:not(.dark) .deepclaw-diff-editor .diffOverview {
   background-color: hsl(var(--background)) !important;
 }
 

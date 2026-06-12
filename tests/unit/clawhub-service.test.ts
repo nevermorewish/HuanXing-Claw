@@ -21,7 +21,7 @@ describe('ClawHubService marketplace compatibility', () => {
   });
 
   it('reports local-only capability when no marketplace provider is registered', async () => {
-    const homeDir = mkdtempSync(join(tmpdir(), 'clawx-clawhub-home-'));
+    const homeDir = mkdtempSync(join(tmpdir(), 'deepclaw-clawhub-home-'));
     const ClawHubService = await loadServiceForHome(homeDir);
     const service = new ClawHubService();
 
@@ -34,7 +34,7 @@ describe('ClawHubService marketplace compatibility', () => {
   });
 
   it('delegates search and install to a registered marketplace provider', async () => {
-    const homeDir = mkdtempSync(join(tmpdir(), 'clawx-clawhub-home-'));
+    const homeDir = mkdtempSync(join(tmpdir(), 'deepclaw-clawhub-home-'));
     const ClawHubService = await loadServiceForHome(homeDir);
     const service = new ClawHubService();
     const provider = {
@@ -54,7 +54,7 @@ describe('ClawHubService marketplace compatibility', () => {
   });
 
   it('lists installed managed skills from the filesystem without the clawhub CLI', async () => {
-    const homeDir = mkdtempSync(join(tmpdir(), 'clawx-clawhub-home-'));
+    const homeDir = mkdtempSync(join(tmpdir(), 'deepclaw-clawhub-home-'));
     const openclawDir = join(homeDir, '.openclaw');
     const skillDir = join(openclawDir, 'skills', 'pdf');
     mkdirSync(join(skillDir, '.clawhub'), { recursive: true });

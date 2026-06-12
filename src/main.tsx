@@ -10,6 +10,8 @@ import './i18n';
 import './styles/globals.css';
 import 'katex/dist/katex.min.css';
 
+// Static index.html ships a neutral title; set the real brand title at runtime
+// so the window/tab reflects the active white-label brand.
 document.title = BRAND.appName;
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Generates extension bridge files based on clawx-extensions.json and
+ * Generates extension bridge files based on deepclaw-extensions.json and
  * which packages are actually installed in node_modules.
  *
  * Outputs:
@@ -19,7 +19,7 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 
-const MANIFEST_PATH = resolve(ROOT, 'clawx-extensions.json');
+const MANIFEST_PATH = resolve(ROOT, 'deepclaw-extensions.json');
 const MAIN_OUT = resolve(ROOT, 'electron/extensions/_ext-bridge.generated.ts');
 const RENDERER_OUT = resolve(ROOT, 'src/extensions/_ext-bridge.generated.ts');
 
@@ -57,7 +57,7 @@ function generateMainBridge(manifest) {
   if (installedExts.length === 0) {
     return [
       '// Auto-generated — no external main-process extensions installed.',
-      '// To add extensions, configure clawx-extensions.json and link the package.',
+      '// To add extensions, configure deepclaw-extensions.json and link the package.',
       'export function loadExternalMainExtensions(): void { /* no-op */ }',
       '',
     ].join('\n');
@@ -96,7 +96,7 @@ function generateRendererBridge(manifest) {
   if (installedExts.length === 0) {
     return [
       '// Auto-generated — no external renderer extensions installed.',
-      '// To add extensions, configure clawx-extensions.json and link the package.',
+      '// To add extensions, configure deepclaw-extensions.json and link the package.',
       'export function loadExternalRendererExtensions(): void { /* no-op */ }',
       '',
     ].join('\n');

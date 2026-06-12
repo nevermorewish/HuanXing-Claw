@@ -1,7 +1,12 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { BrowserWindow } from 'electron';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import type {
+  FeishuOnboardingBeginResult,
+  FeishuOnboardingPollResult,
+} from '@shared/host-api/contract';
 import { extractSessionRecords } from '../utils/session-util';
 import {
   cleanupDanglingWeChatPluginState,
@@ -52,6 +57,7 @@ import {
 import { getOpenClawConfigDir } from '../utils/paths';
 import {
   cancelWeChatLoginSession,
+  renderQrPngDataUrl,
   saveWeChatAccountState,
   startWeChatLoginSession,
   waitForWeChatLoginSession,
@@ -77,6 +83,18 @@ import { isRecord } from './payload-utils';
 
 const WECHAT_QR_TIMEOUT_MS = 8 * 60 * 1000;
 const activeQrLogins = new Map<string, string>();
+
+const FEISHU_ACCOUNTS_BASE = 'https://accounts.feishu.cn';
+const FEISHU_REGISTRATION_PATH = '/oauth/v1/app/registration';
+
+type FeishuOnboardingFlow = {
+  deviceCode: string;
+  domain: string;
+  intervalSeconds: number;
+  expiresAtMs: number;
+  credential?: { appId: string; appSecret: string };
+};
+const feishuOnboardingFlows = new Map<string, FeishuOnboardingFlow>();
 
 async function listWhatsAppDirectoryGroupsFromConfig(_params: unknown): Promise<unknown[]> { return []; }
 async function listWhatsAppDirectoryPeersFromConfig(_params: unknown): Promise<unknown[]> { return []; }
@@ -1107,6 +1125,131 @@ async function ensureChannelPluginInstalled(storedChannelType: string): Promise<
   }
 }
 
+async function feishuRegistrationPost(body: Record<string, string>): Promise<JsonRecord> {
+  const params = new URLSearchParams(body);
+  const response = await proxyAwareFetch(`${FEISHU_ACCOUNTS_BASE}${FEISHU_REGISTRATION_PATH}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as JsonRecord;
+  } catch (error) {
+    throw new Error(`Invalid Feishu registration response: ${String(error)}`, { cause: error });
+  }
+}
+
+async function beginFeishuOnboarding(): Promise<FeishuOnboardingBeginResult> {
+  const init = await feishuRegistrationPost({ action: 'init' });
+  const supported = Array.isArray(init.supported_auth_methods)
+    && init.supported_auth_methods.some((item) => item === 'client_secret');
+  if (!supported) {
+    throw new Error('飞书注册接口不支持 client_secret 授权方式');
+  }
+
+  const begin = await feishuRegistrationPost({
+    action: 'begin',
+    archetype: 'PersonalAgent',
+    auth_method: 'client_secret',
+    request_user_info: 'open_id',
+  });
+  const deviceCode = typeof begin.device_code === 'string' ? begin.device_code.trim() : '';
+  if (!deviceCode) {
+    throw new Error('飞书注册接口未返回 device_code');
+  }
+
+  let verificationUrl = typeof begin.verification_uri_complete === 'string'
+    ? begin.verification_uri_complete
+    : '';
+  if (verificationUrl) {
+    verificationUrl += verificationUrl.includes('?') ? '&from=hermes&tp=hermes' : '?from=hermes&tp=hermes';
+  }
+
+  const intervalSeconds = Math.max(1, typeof begin.interval === 'number' ? begin.interval : 5);
+  const expireIn = Math.min(600, typeof begin.expire_in === 'number' ? begin.expire_in : 600);
+  const expiresAtMs = Date.now() + expireIn * 1000;
+  const userCode = typeof begin.user_code === 'string' ? begin.user_code : undefined;
+
+  const flowId = `feishu-${randomUUID()}`;
+  feishuOnboardingFlows.set(flowId, {
+    deviceCode,
+    domain: 'feishu',
+    intervalSeconds,
+    expiresAtMs,
+  });
+
+  const qr = verificationUrl ? await renderQrPngDataUrl(verificationUrl) : undefined;
+  return {
+    success: true,
+    flowId,
+    status: 'pending',
+    qr,
+    qrUrl: verificationUrl || undefined,
+    userCode,
+    intervalSeconds,
+    expiresAtMs,
+    message: '请使用飞书手机端扫码并确认授权。',
+  };
+}
+
+async function pollFeishuOnboarding(flowId: string): Promise<FeishuOnboardingPollResult> {
+  const flow = feishuOnboardingFlows.get(flowId);
+  if (!flow) {
+    throw new Error(`未知的飞书扫码流程: ${flowId}`);
+  }
+
+  const base = {
+    success: true as const,
+    flowId,
+    intervalSeconds: flow.intervalSeconds,
+    expiresAtMs: flow.expiresAtMs,
+  };
+
+  if (flow.credential) {
+    return {
+      ...base,
+      status: 'confirmed',
+      appId: flow.credential.appId,
+      appSecret: flow.credential.appSecret,
+      message: '飞书应用凭据已确认。',
+    };
+  }
+
+  if (Date.now() > flow.expiresAtMs) {
+    return { ...base, status: 'expired', message: '飞书扫码授权已过期，请重新生成二维码。' };
+  }
+
+  const res = await feishuRegistrationPost({
+    action: 'poll',
+    device_code: flow.deviceCode,
+    tp: 'ob_app',
+  });
+
+  const appId = typeof res.client_id === 'string' ? res.client_id : '';
+  const appSecret = typeof res.client_secret === 'string' ? res.client_secret : '';
+  if (appId && appSecret) {
+    flow.credential = { appId, appSecret };
+    feishuOnboardingFlows.set(flowId, flow);
+    return {
+      ...base,
+      status: 'confirmed',
+      appId,
+      appSecret,
+      message: '飞书应用凭据已确认。',
+    };
+  }
+
+  const error = typeof res.error === 'string' ? res.error : '';
+  if (error === 'access_denied') {
+    return { ...base, status: 'denied', message: '用户取消或拒绝了飞书授权。' };
+  }
+  if (error === 'expired_token') {
+    return { ...base, status: 'expired', message: '飞书扫码授权已过期，请重新生成二维码。' };
+  }
+  return { ...base, status: 'pending', message: '等待飞书扫码确认。' };
+}
+
 export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceRegistry['channels'] {
   return {
     configured: async () => {
@@ -1263,5 +1406,7 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       }
       return { success: true };
     },
+    feishuOnboardingBegin: async () => beginFeishuOnboarding(),
+    feishuOnboardingPoll: async (payload) => pollFeishuOnboarding(requireString(payload, 'flowId')),
   };
 }

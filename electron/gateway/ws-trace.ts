@@ -11,7 +11,7 @@ const SECRET_KEYS = new Set([
 ]);
 
 export function isGatewayWsTraceEnabled(): boolean {
-  return process.env.CLAWX_GATEWAY_WS_TRACE === '1';
+  return process.env.DEEPCLAW_GATEWAY_WS_TRACE === '1';
 }
 
 export function redactGatewayFrameForTrace(value: unknown): unknown {

@@ -1,4 +1,4 @@
-# ClawX Application Icons
+# DeepClaw Application Icons
 
 This directory contains the application icons for all supported platforms.
 
@@ -6,7 +6,7 @@ This directory contains the application icons for all supported platforms.
 
 | File | Platform | Description |
 |------|----------|-------------|
-| `icon.svg` | Source | Vector source for all icons |
+| `/favicon.svg` | Source | Default vector source for all generated app icons |
 | `icon.icns` | macOS | Apple Icon Image format |
 | `icon.ico` | Windows | Windows ICO format |
 | `icon.png` | All | 512x512 PNG fallback |
@@ -47,7 +47,7 @@ If you prefer to generate icons manually:
 
 1. **macOS (.icns)**
    - Create a `.iconset` folder with properly named PNGs
-   - Run: `iconutil -c icns -o icon.icns ClawX.iconset`
+   - Run: `iconutil -c icns -o icon.icns DeepClaw.iconset`
 
 2. **Windows (.ico)**
    - Use ImageMagick: `convert icon_16.png icon_32.png icon_64.png icon_128.png icon_256.png icon.ico`
@@ -66,7 +66,7 @@ If you prefer to generate icons manually:
 - **Format**: Single-color (black) on transparent background
 - **Size**: 22x22 pixels (system automatically handles @2x retina)
 - **Naming**: Must end with "Template.png" for automatic template mode
-- **Design**: Simplified monochrome version of main icon (ClawX logo)
+- **Design**: Simplified monochrome version of main icon (DeepClaw logo)
 - **Source**: Use `tray-icon-template.svg` as the source
 - **Important**: Must be pure black (#000000) on transparent background - no gradients or colors
 
@@ -74,6 +74,6 @@ If you prefer to generate icons manually:
 
 1. Edit `icon.svg` with your vector editor (Figma, Illustrator, Inkscape)
 2. For macOS tray icon, edit `tray-icon-template.svg` (must be single-color black on transparent)
-3. Run `node scripts/generate-icons.mjs`
+3. Run `pnpm run icons`
 4. Verify generated icons look correct
 5. Commit all generated files

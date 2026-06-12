@@ -1,7 +1,6 @@
 import { app } from 'electron';
 import path from 'path';
 import { existsSync, readFileSync, mkdirSync, readdirSync, rmSync, symlinkSync } from 'fs';
-import { homedir } from 'os';
 import { join } from 'path';
 
 function fsPath(filePath: string): string {
@@ -34,7 +33,7 @@ import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
 import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources } from '../utils/plugin-install';
-import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
+import { DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
 import { stripSystemdSupervisorEnv } from './config-sync-env';
 import { cleanupAgentsSymlinkedSkills, cleanupStalePluginRuntimeDeps } from './skills-symlink-cleanup';
 import {
@@ -77,12 +76,12 @@ const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string }> =
   whatsapp: { dirName: 'whatsapp', npmName: '@openclaw/whatsapp' },
 
   'openclaw-weixin': { dirName: 'openclaw-weixin', npmName: '@tencent-weixin/openclaw-weixin' },
-  [CLAWX_OPENAI_IMAGE_PROVIDER_KEY]: { dirName: CLAWX_OPENAI_IMAGE_PROVIDER_KEY, npmName: 'clawx-openai-image-plugin' },
+  [DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY]: { dirName: DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY, npmName: 'deepclaw-openai-image-plugin' },
 };
 
 /**
  * OpenClaw 3.22+ ships Discord, Telegram, and other channels as built-in
- * extensions.  If a previous ClawX version copied one of these into
+ * extensions.  If a previous DeepClaw version copied one of these into
  * ~/.openclaw/extensions/, the broken copy overrides the working built-in
  * plugin and must be removed.
  */
@@ -90,7 +89,7 @@ const BUILTIN_CHANNEL_EXTENSIONS = ['discord', 'telegram', 'qqbot'];
 
 function cleanupStaleBuiltInExtensions(): void {
   for (const ext of BUILTIN_CHANNEL_EXTENSIONS) {
-    const extDir = join(homedir(), '.openclaw', 'extensions', ext);
+    const extDir = join(getOpenClawConfigDir(), 'extensions', ext);
     if (existsSync(fsPath(extDir))) {
       logger.info(`[plugin] Removing stale built-in extension copy: ${ext}`);
       try {
@@ -150,7 +149,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
     if (!pluginInfo) continue;
     const { dirName, npmName } = pluginInfo;
 
-    const targetDir = join(homedir(), '.openclaw', 'extensions', dirName);
+    const targetDir = join(getOpenClawConfigDir(), 'extensions', dirName);
     const targetManifest = join(targetDir, 'openclaw.plugin.json');
     const isInstalled = existsSync(fsPath(targetManifest));
     const installedVersion = isInstalled ? readPluginVersion(join(targetDir, 'package.json')) : null;
@@ -165,7 +164,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
       if (!isInstalled || (sourceVersion && installedVersion && sourceVersion !== installedVersion)) {
         logger.info(`[plugin] ${isInstalled ? 'Auto-upgrading' : 'Installing'} ${channelType} plugin${isInstalled ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (bundled)`);
         try {
-          mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
+          mkdirSync(fsPath(join(getOpenClawConfigDir(), 'extensions')), { recursive: true });
           rmSync(fsPath(targetDir), { recursive: true, force: true });
           cpSyncSafe(bundledDir, targetDir);
           fixupPluginManifest(targetDir);
@@ -196,7 +195,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
       logger.info(`[plugin] ${isInstalled ? 'Auto-upgrading' : 'Installing'} ${channelType} plugin${isInstalled ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (dev/node_modules)`);
 
       try {
-        mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
+        mkdirSync(fsPath(join(getOpenClawConfigDir(), 'extensions')), { recursive: true });
         copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
         fixupPluginManifest(targetDir);
       } catch (err) {
@@ -222,7 +221,7 @@ function cleanupUnconfiguredChannelPlugins(configuredChannels: string[]): boolea
     if (configuredSet.has(channelType)) continue;
 
     const { dirName } = pluginInfo;
-    const targetDir = join(homedir(), '.openclaw', 'extensions', dirName);
+    const targetDir = join(getOpenClawConfigDir(), 'extensions', dirName);
     if (!existsSync(fsPath(targetDir))) continue;
 
     logger.info(`[plugin] Removing unconfigured channel plugin: ${channelType} (${dirName})`);
@@ -255,8 +254,8 @@ function withConfiguredImageGenerationPlugins(configuredChannels: string[], rawC
   const next = [...configuredChannels];
   const primary = resolveImageGenerationPrimary(rawConfig);
   const provider = primary?.includes('/') ? primary.slice(0, primary.indexOf('/')).trim() : primary;
-  if (provider === CLAWX_OPENAI_IMAGE_PROVIDER_KEY && !next.includes(CLAWX_OPENAI_IMAGE_PROVIDER_KEY)) {
-    next.push(CLAWX_OPENAI_IMAGE_PROVIDER_KEY);
+  if (provider === DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY && !next.includes(DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY)) {
+    next.push(DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY);
   }
   return next;
 }
@@ -288,7 +287,7 @@ function buildPluginMaintenanceCacheKey(openclawDir: string, configuredChannels:
     openclawDir,
     cwd: process.cwd(),
     configuredChannels: [...configuredChannels].sort(),
-    extensionsDir: directoryChildrenSignature(join(homedir(), '.openclaw', 'extensions')),
+    extensionsDir: directoryChildrenSignature(join(getOpenClawConfigDir(), 'extensions')),
     sourceSignatures: buildPluginSourceSignatures(configuredChannels),
   });
 }
@@ -638,6 +637,11 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     OPENCLAW_SKIP_CHANNELS: skipChannels ? '1' : '',
     CLAWDBOT_SKIP_CHANNELS: skipChannels ? '1' : '',
     OPENCLAW_NO_RESPAWN: '1',
+    // Pin the spawned gateway to the same config/state dir the app uses. The
+    // app defaults to the brand dir (~/.frogclaw, …); OpenClaw's own default is
+    // ~/.openclaw, so we must always set this — otherwise the gateway would read
+    // /write a different dir than the in-app config editor manages.
+    OPENCLAW_STATE_DIR: getOpenClawConfigDir(),
   };
 
   // Ensure extension-specific packages (e.g. grammy from the telegram

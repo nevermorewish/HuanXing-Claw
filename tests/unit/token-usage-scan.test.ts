@@ -1,12 +1,13 @@
 import { mkdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BRAND } from '@shared/brand';
 
 const { testHome, testUserData } = vi.hoisted(() => {
   const suffix = Math.random().toString(36).slice(2);
   return {
-    testHome: `/tmp/clawx-token-usage-${suffix}`,
-    testUserData: `/tmp/clawx-token-usage-user-data-${suffix}`,
+    testHome: `/tmp/deepclaw-token-usage-${suffix}`,
+    testUserData: `/tmp/deepclaw-token-usage-user-data-${suffix}`,
   };
 });
 
@@ -39,7 +40,7 @@ describe('token usage session scan', () => {
   });
 
   it('includes transcripts from agent directories that exist on disk but are not configured', async () => {
-    const openclawDir = join(testHome, '.openclaw');
+    const openclawDir = join(testHome, BRAND.dataDirName);
     await mkdir(openclawDir, { recursive: true });
     await writeFile(join(openclawDir, 'openclaw.json'), JSON.stringify({
       agents: {

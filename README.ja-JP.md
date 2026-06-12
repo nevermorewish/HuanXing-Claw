@@ -1,9 +1,9 @@
 
 <p align="center">
-  <img src="src/assets/logo.svg" width="128" height="128" alt="ClawX Logo" />
+  <img src="src/assets/logo.svg" width="128" height="128" alt="DeepClaw Logo" />
 </p>
 
-<h1 align="center">ClawX</h1>
+<h1 align="center">DeepClaw</h1>
 
 <p align="center">
   <strong>OpenClaw AIエージェントのためのデスクトップインターフェース</strong>
@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="#機能">機能</a> •
-  <a href="#なぜclawxなのか">なぜClawXなのか</a> •
+  <a href="#なぜdeepclawなのか">なぜDeepClawなのか</a> •
   <a href="#はじめに">はじめに</a> •
   <a href="#アーキテクチャ">アーキテクチャ</a> •
   <a href="#開発">開発</a> •
@@ -25,7 +25,7 @@
   <a href="https://discord.com/invite/84Kex3GGAh" target="_blank">
   <img src="https://img.shields.io/discord/1399603591471435907?logo=discord&labelColor=%20%235462eb&logoColor=%20%23f5f5f5&color=%20%235462eb" alt="chat on Discord" />
   </a>
-  <img src="https://img.shields.io/github/downloads/ValueCell-ai/ClawX/total?color=%23027DEB" alt="Downloads" />
+  <img src="https://img.shields.io/github/downloads/ValueCell-ai/DeepClaw/total?color=%23027DEB" alt="Downloads" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
 </p>
 
@@ -37,11 +37,11 @@
 
 ## 概要
 
-**ClawX**は、強力なAIエージェントと日常のユーザーとの間のギャップを埋めます。[OpenClaw](https://github.com/OpenClaw)をベースに構築されており、コマンドラインによるAIオーケストレーションを、アクセスしやすく美しいデスクトップ体験に変換します。ターミナルは不要です。
+**DeepClaw**は、強力なAIエージェントと日常のユーザーとの間のギャップを埋めます。[OpenClaw](https://github.com/OpenClaw)をベースに構築されており、コマンドラインによるAIオーケストレーションを、アクセスしやすく美しいデスクトップ体験に変換します。ターミナルは不要です。
 
-ワークフローの自動化、AI搭載チャネルの管理、インテリジェントなタスクのスケジューリングなど、ClawXはAIエージェントを効果的に活用するために必要なインターフェースを提供します。
+ワークフローの自動化、AI搭載チャネルの管理、インテリジェントなタスクのスケジューリングなど、DeepClawはAIエージェントを効果的に活用するために必要なインターフェースを提供します。
 
-ClawXはベストプラクティスのモデルプロバイダーが事前設定されており、Windowsおよび多言語設定をネイティブにサポートしています。もちろん、**設定 → 詳細設定 → 開発者モード**から高度な設定を微調整することもできます。
+DeepClawはベストプラクティスのモデルプロバイダーが事前設定されており、Windowsおよび多言語設定をネイティブにサポートしています。もちろん、**設定 → 詳細設定 → 開発者モード**から高度な設定を微調整することもできます。
 
 <p align="center"><strong style="font-size:1.1em; text-decoration: underline;">完全なエンタープライズ版、専用のサービスサポート、または御社のビジネスシナリオに合わせた導入支援が必要な場合は、<a href="mailto:public@valuecell.ai">public@valuecell.ai</a> までお問い合わせください。</strong></p>
 
@@ -74,11 +74,11 @@ ClawXはベストプラクティスのモデルプロバイダーが事前設定
 
 ---
 
-## なぜClawXなのか
+## なぜDeepClawなのか
 
-AIエージェントの構築にコマンドラインの習得は不要であるべきです。ClawXはシンプルな哲学のもとに設計されました：**強力な技術には、あなたの時間を尊重するインターフェースがふさわしい。**
+AIエージェントの構築にコマンドラインの習得は不要であるべきです。DeepClawはシンプルな哲学のもとに設計されました：**強力な技術には、あなたの時間を尊重するインターフェースがふさわしい。**
 
-| 課題 | ClawXのソリューション |
+| 課題 | DeepClawのソリューション |
 |------|----------------------|
 | 複雑なCLIセットアップ | ワンクリックインストールとガイド付きセットアップウィザード |
 | 設定ファイル | リアルタイムバリデーション付きのビジュアル設定 |
@@ -89,11 +89,11 @@ AIエージェントの構築にコマンドラインの習得は不要である
 
 ### OpenClaw内蔵
 
-ClawXは公式の**OpenClaw**コアを直接ベースに構築されています。別途インストールを必要とせず、アプリケーション内にランタイムを組み込むことで、シームレスな「バッテリー同梱」体験を提供します。
+DeepClawは公式の**OpenClaw**コアを直接ベースに構築されています。別途インストールを必要とせず、アプリケーション内にランタイムを組み込むことで、シームレスな「バッテリー同梱」体験を提供します。
 
 私たちはアップストリームのOpenClawプロジェクトとの厳密な整合性を維持することにコミットしており、公式リリースが提供する最新の機能、安定性の改善、エコシステムの互換性に常にアクセスできることを保証します。
 
-開発者モードを有効にすると、サイドバーにはネイティブの Dreams ページも表示され、ClawX 内で OpenClaw の記憶レビュー、夢日記、基本メンテナンス操作を扱えます。詳細な診断が必要な場合は、そのページから完全版の OpenClaw Dreams UI も開けます。
+開発者モードを有効にすると、サイドバーにはネイティブの Dreams ページも表示され、DeepClaw 内で OpenClaw の記憶レビュー、夢日記、基本メンテナンス操作を扱えます。詳細な診断が必要な場合は、そのページから完全版の OpenClaw Dreams UI も開けます。
 
 ---
 
@@ -105,14 +105,14 @@ ClawXは公式の**OpenClaw**コアを直接ベースに構築されています
 ### 💬 インテリジェントチャットインターフェース
 モダンなチャット体験を通じてAIエージェントとコミュニケーションできます。複数の会話コンテキスト、メッセージ履歴、Markdownによるリッチコンテンツレンダリング（GitHub 風テーブルや KaTeX による LaTeX 数式 `$インライン$`、`$$ブロック$$`、`\(インライン\)`、`\[ブロック\]` を含む）に加え、マルチエージェント構成ではメイン入力欄の `@agent` から対象エージェントへ直接ルーティングできます。
 コンポーザーから挿入した Skill は `/skill-name` 形式のチップとして表示され、チップをクリックすると右側のプレビュー側欄でその Skill の `SKILL.md` を開けます。
-`@agent` で別のエージェントを選ぶと、ClawX はデフォルトエージェントを経由せず、そのエージェント自身の会話コンテキストへ直接切り替えます。各エージェントのワークスペースは既定で分離されていますが、より強い実行時分離は OpenClaw の sandbox 設定に依存します。
+`@agent` で別のエージェントを選ぶと、DeepClaw はデフォルトエージェントを経由せず、そのエージェント自身の会話コンテキストへ直接切り替えます。各エージェントのワークスペースは既定で分離されていますが、より強い実行時分離は OpenClaw の sandbox 設定に依存します。
 各 Agent は `provider/model` の実行時設定を個別に上書きできます。上書きしていない Agent は引き続きグローバルの既定モデルを継承します。
 
 ### 📡 マルチチャネル管理
 複数のAIチャネルを同時に設定・監視できます。各チャネルは独立して動作するため、異なるタスクに特化したエージェントを実行できます。
 現在は各チャンネルで複数アカウントを扱え、Channels ページでアカウントの Agent 紐付けやデフォルトアカウント切替を直接管理できます。
 カスタムのチャンネルアカウント ID には、ルーティング不一致を防ぐため OpenClaw 互換の正規形式（`[a-z0-9_-]`、英小文字、最大 64 文字、先頭は英小文字または数字）を必須にしています。
-ClawX には Tencent 公式の個人 WeChat チャンネルプラグインも同梱されており、Channels ページからアプリ内 QR フローで直接 WeChat を連携できます。
+DeepClaw には Tencent 公式の個人 WeChat チャンネルプラグインも同梱されており、Channels ページからアプリ内 QR フローで直接 WeChat を連携できます。
 
 ### ⏰ Cronベースの自動化
 AIタスクを自動的に実行するようスケジュール設定できます。トリガーを定義し、間隔を設定することで、手動介入なしにAIエージェントを24時間稼働させることができます。
@@ -121,7 +121,7 @@ AIタスクを自動的に実行するようスケジュール設定できます
 
 ### 🧩 拡張可能なスキルシステム
 事前構築されたスキルでAIエージェントを拡張できます。統合 Skills ページはローカル優先で、管理ディレクトリや workspace のスキルをスキャンし、Gateway に依存せず有効/無効を切り替えられます。エンタープライズ拡張がある場合は、その拡張が提供する marketplace も表示できます。
-ClawX はドキュメント処理スキル（`pdf`、`xlsx`、`docx`、`pptx`）もフル内容で同梱し、起動時に管理スキルディレクトリ（既定 `~/.openclaw/skills`）へ自動配備し、初回インストール時に既定で有効化します。追加の同梱スキル（`find-skills`、`self-improving-agent`、`tavily-search`）も既定で有効化されますが、必要な API キーが未設定の場合は OpenClaw が実行時に設定エラーを表示します。  
+DeepClaw はドキュメント処理スキル（`pdf`、`xlsx`、`docx`、`pptx`）もフル内容で同梱し、起動時に管理スキルディレクトリ（既定 `~/.openclaw/skills`）へ自動配備し、初回インストール時に既定で有効化します。追加の同梱スキル（`find-skills`、`self-improving-agent`、`tavily-search`）も既定で有効化されますが、必要な API キーが未設定の場合は OpenClaw が実行時に設定エラーを表示します。  
 Skills ページでは OpenClaw の複数ソース（管理ディレクトリ、workspace、追加スキルディレクトリ）から検出されたスキルを表示でき、各スキルの実際のパスを確認して実フォルダを直接開けます。OpenClaw 同梱の bundled skill については、コミュニティ版ではパッケージにも表示にも `skill-creator` のみを残し、dev 起動時と packaged 起動時の両方で他の bundled skill を物理的に削除します。さらに、削除済み bundled skill の古い `openclaw.json` エントリも一緒に掃除します。
 
 主な検索スキルで必要な環境変数:
@@ -131,17 +131,17 @@ Skills ページでは OpenClaw の複数ソース（管理ディレクトリ、
 複数のAIプロバイダー（OpenAI、Anthropicなど）に接続でき、資格情報はシステムのネイティブキーチェーンに安全に保存されます。OpenAI は API キーとブラウザ OAuth（Codex サブスクリプション）の両方に対応しています。
 開発者モードでは、専用の Image Generation ページで、独立した OpenAI 互換の画像生成エンドポイント（Base URL、API キー、`gpt-image-2` などのモデル名）を設定でき、画像生成だけ専用の `/v1/images/generations` サービスを使い、チャットは通常の OpenAI Provider のまま継続できます。
 OpenAI-compatible ゲートウェイを **Custom プロバイダー** で使う場合、**設定 → AI Providers → Provider 編集** でカスタム `User-Agent` を設定でき、互換性が必要なエンドポイントで有効です。
-プロバイダーの編集や切り替え時、ClawX は `input: ["text", "image"]` など既存のモデル単位の能力メタデータを保持します。新しく選択した Custom プロバイダーのモデルには OpenClaw onboarding と同等の画像入力推論を適用し、不明なモデルはテキスト専用として扱います。
-互換ゲートウェイで `/models` が認証以外の理由で使えない場合、ClawX は API キー検証時に軽量な `/chat/completions` または `/responses` プローブへ自動フォールバックします。
+プロバイダーの編集や切り替え時、DeepClaw は `input: ["text", "image"]` など既存のモデル単位の能力メタデータを保持します。新しく選択した Custom プロバイダーのモデルには OpenClaw onboarding と同等の画像入力推論を適用し、不明なモデルはテキスト専用として扱います。
+互換ゲートウェイで `/models` が認証以外の理由で使えない場合、DeepClaw は API キー検証時に軽量な `/chat/completions` または `/responses` プローブへ自動フォールバックします。
 
 ### 🌙 アダプティブテーマ
-ライトモード、ダークモード、またはシステム同期テーマ。ClawXはあなたの好みに自動的に適応します。
+ライトモード、ダークモード、またはシステム同期テーマ。DeepClawはあなたの好みに自動的に適応します。
 
 ### 🚀 自動起動設定
-**設定 → 通用** から **システム起動時に自動起動** を有効化すると、ログイン後に ClawX が自動的に起動します。
+**設定 → 通用** から **システム起動時に自動起動** を有効化すると、ログイン後に DeepClaw が自動的に起動します。
 
 ### 🔔 更新通知
-ClawX は起動時に新しいバージョンを自動確認できます。更新が見つかるとアプリ内通知を表示し、ダウンロードやインストールはユーザーが選択した後にのみ実行されます。
+DeepClaw は起動時に新しいバージョンを自動確認できます。更新が見つかるとアプリ内通知を表示し、ダウンロードやインストールはユーザーが選択した後にのみ実行されます。
 
 ---
 
@@ -157,14 +157,14 @@ ClawX は起動時に新しいバージョンを自動確認できます。更�
 
 #### ビルド済みリリース（推奨）
 
-[Releases](https://github.com/ValueCell-ai/ClawX/releases)ページから、お使いのプラットフォーム向けの最新リリースをダウンロードしてください。
+[Releases](https://github.com/ValueCell-ai/DeepClaw/releases)ページから、お使いのプラットフォーム向けの最新リリースをダウンロードしてください。
 
 #### ソースからビルド
 
 ```bash
 # リポジトリをクローン
-git clone https://github.com/ValueCell-ai/ClawX.git
-cd ClawX
+git clone https://github.com/ValueCell-ai/DeepClaw.git
+cd DeepClaw
 
 # プロジェクトの初期化
 pnpm run init
@@ -174,7 +174,7 @@ pnpm dev
 ```
 ### 初回起動
 
-ClawXを初めて起動すると、**セットアップウィザード**が以下の手順をガイドします：
+DeepClawを初めて起動すると、**セットアップウィザード**が以下の手順をガイドします：
 
 1. **言語と地域** – 使用する言語・地域の設定
 2. **AIプロバイダー** – APIキーまたは OAuth（ブラウザ/デバイスログイン対応プロバイダー）で追加
@@ -185,7 +185,7 @@ ClawXを初めて起動すると、**セットアップウィザード**が以�
 
 ### プロキシ設定
 
-ClawXには、Electron、OpenClaw Gateway、またはTelegramなどのチャネルがローカルプロキシクライアントを介してインターネットにアクセスする必要がある環境向けに、組み込みのプロキシ設定が含まれています。
+DeepClawには、Electron、OpenClaw Gateway、またはTelegramなどのチャネルがローカルプロキシクライアントを介してインターネットにアクセスする必要がある環境向けに、組み込みのプロキシ設定が含まれています。
 
 **設定 → ゲートウェイ → プロキシ**を開いて以下を設定します：
 
@@ -204,10 +204,10 @@ ClawXには、Electron、OpenClaw Gateway、またはTelegramなどのチャネ�
 注意事項：
 
 - `host:port`のみの値はHTTPとして扱われます。
-- 高度なプロキシフィールドが空の場合、ClawXは`プロキシサーバー`にフォールバックします。
+- 高度なプロキシフィールドが空の場合、DeepClawは`プロキシサーバー`にフォールバックします。
 - プロキシ設定を保存すると、Electronのネットワーク設定が即座に再適用され、ゲートウェイが自動的に再起動されます。
-- ClawXはTelegramが有効な場合、プロキシをOpenClawのTelegramチャネル設定にも同期します。
-- ClawXのプロキシが無効な状態では、Gatewayの通常再起動時に既存のTelegramチャネルプロキシ設定を保持します。
+- DeepClawはTelegramが有効な場合、プロキシをOpenClawのTelegramチャネル設定にも同期します。
+- DeepClawのプロキシが無効な状態では、Gatewayの通常再起動時に既存のTelegramチャネルプロキシ設定を保持します。
 - OpenClaw設定のTelegramプロキシを明示的に消したい場合は、プロキシ無効の状態で一度「保存」を実行してください。
 - **設定 → 詳細 → 開発者** では **OpenClaw Doctor** を実行でき、`openclaw doctor --json` の診断出力をアプリ内で確認できます。
 - Windows のパッケージ版では、同梱された `openclaw` CLI/TUI は端末入力を安定させるため、同梱の `node.exe` エントリーポイント経由で実行されます。
@@ -216,11 +216,11 @@ ClawXには、Electron、OpenClaw Gateway、またはTelegramなどのチャネ�
 
 ## アーキテクチャ
 
-ClawXは、**デュアルプロセス + Host API 統一アクセス**構成を採用しています。Renderer は単一クライアント抽象を呼び出し、プロトコル選択とライフサイクルは Main が管理します：
+DeepClawは、**デュアルプロセス + Host API 統一アクセス**構成を採用しています。Renderer は単一クライアント抽象を呼び出し、プロトコル選択とライフサイクルは Main が管理します：
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│                        ClawX デスクトップアプリ                       │
+│                        DeepClaw デスクトップアプリ                       │
 │                                                                    │
 │  ┌──────────────────────────────────────────────────────────────┐  │
 │  │              Electron メインプロセス                            │  │
@@ -274,7 +274,7 @@ ClawXは、**デュアルプロセス + Host API 統一アクセス**構成を�
 
 ### プロセスモデルと Gateway トラブルシューティング
 
-- ClawX は Electron アプリのため、**1つのアプリインスタンスでも複数プロセス（main/renderer/zygote/utility）が表示される**のが正常です。
+- DeepClaw は Electron アプリのため、**1つのアプリインスタンスでも複数プロセス（main/renderer/zygote/utility）が表示される**のが正常です。
 - 単一起動保護は Electron のロックに加え、ローカルのプロセスロックファイルも併用し、デスクトップ IPC / セッションバスが不安定な環境でも重複起動を防ぎます。
 - ローリングアップグレード中に旧版/新版が混在すると、単一起動保護の挙動が非対称になる場合があります。安定運用のため、デスクトップクライアントは可能な限り同一バージョンへ揃えてください。
 - ただし OpenClaw Gateway の待受は常に**単一**であるべきです。`127.0.0.1:18789` を Listen しているプロセスは1つだけです。
@@ -282,7 +282,7 @@ ClawXは、**デュアルプロセス + Host API 統一アクセス**構成を�
 - Listen プロセスの確認例:
   - macOS/Linux: `lsof -nP -iTCP:18789 -sTCP:LISTEN`
   - Windows (PowerShell): `Get-NetTCPConnection -LocalPort 18789 -State Listen`
-- ウィンドウの閉じるボタン（`X`）は既定でトレイへ最小化する動作で、完全終了ではありません。完全終了する場合はトレイメニューの **Quit ClawX** を使用してください。
+- ウィンドウの閉じるボタン（`X`）は既定でトレイへ最小化する動作で、完全終了ではありません。完全終了する場合はトレイメニューの **Quit DeepClaw** を使用してください。
 
 ---
 
@@ -316,7 +316,7 @@ AI を開発ワークフローに統合できます。エージェントを使�
 
 ### プロジェクト構成
 
-```ClawX/
+```DeepClaw/
 ├── electron/                 # Electron メインプロセス
 │   ├── services/            # 型付き Host API、Provider/Secrets/ランタイムサービス
 │   │   ├── providers/       # provider/account モデル同期ロジック
@@ -397,7 +397,7 @@ CI の `comms-regression` が必須シナリオと閾値を検証します。
 
 ## コントリビューション
 
-コミュニティからのコントリビューションを歓迎します！バグ修正、新機能、ドキュメントの改善、翻訳など、あらゆる貢献がClawXをより良くするのに役立ちます。
+コミュニティからのコントリビューションを歓迎します！バグ修正、新機能、ドキュメントの改善、翻訳など、あらゆる貢献がDeepClawをより良くするのに役立ちます。
 
 ### コントリビューション方法
 
@@ -418,7 +418,7 @@ CI の `comms-regression` が必須シナリオと閾値を検証します。
 
 ## 謝辞
 
-ClawXは優れたオープンソースプロジェクトの上に構築されています：
+DeepClawは優れたオープンソースプロジェクトの上に構築されています：
 
 - [OpenClaw](https://github.com/OpenClaw) – AIエージェントランタイム
 - [Electron](https://www.electronjs.org/) – クロスプラットフォームデスクトップフレームワーク
@@ -436,11 +436,11 @@ ClawXは優れたオープンソースプロジェクトの上に構築されて
 | :---: | :---: | :---: |
 | <img src="src/assets/community/wecom-qr.png" width="150" alt="WeChat QRコード" /> | <img src="src/assets/community/feishu-qr.png" width="150" alt="Feishu QRコード" /> | <img src="src/assets/community/20260212-185822.png" width="150" alt="Discord QRコード" /> |
 
-### ClawX パートナープログラム 🚀
+### DeepClaw パートナープログラム 🚀
 
-ClawX パートナープログラムを開始します。特に、カスタム AI エージェントや自動化ニーズを持つより多くの顧客に ClawX を紹介してくださるパートナーを募集しています。
+DeepClaw パートナープログラムを開始します。特に、カスタム AI エージェントや自動化ニーズを持つより多くの顧客に DeepClaw を紹介してくださるパートナーを募集しています。
 
-パートナーの皆さまには、見込みユーザーや案件との接点づくりを担っていただき、ClawX チームは技術サポート、カスタマイズ、統合を全面的に提供します。
+パートナーの皆さまには、見込みユーザーや案件との接点づくりを担っていただき、DeepClaw チームは技術サポート、カスタマイズ、統合を全面的に提供します。
 
 AI ツールや自動化に関心のある顧客とお仕事をされている方は、ぜひご一緒できればうれしいです。
 
@@ -451,14 +451,14 @@ AI ツールや自動化に関心のある顧客とお仕事をされている�
 ## スター履歴
 
 <p align="center">
-  <img src="https://api.star-history.com/svg?repos=ValueCell-ai/ClawX&type=Date" alt="スター履歴チャート" />
+  <img src="https://api.star-history.com/svg?repos=ValueCell-ai/DeepClaw&type=Date" alt="スター履歴チャート" />
 </p>
 
 ---
 
 ## ライセンス
 
-ClawXは[MITライセンス](LICENSE)の下でリリースされています。本ソフトウェアの使用、変更、配布は自由に行えます。
+DeepClawは[MITライセンス](LICENSE)の下でリリースされています。本ソフトウェアの使用、変更、配布は自由に行えます。
 
 ---
 

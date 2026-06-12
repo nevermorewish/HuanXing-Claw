@@ -70,16 +70,16 @@ export class AppUpdater extends EventEmitter {
       debug: (msg: string) => logger.debug('[Updater]', msg),
     };
 
-    // Override feed URL for prerelease channels so that
-    // alpha -> /alpha/alpha-mac.yml, beta -> /beta/beta-mac.yml, etc.
+    // Override feed URL per brand/channel. electron-updater still requests the
+    // standard yml names; brand separation is done by directory.
     const version = app.getVersion();
     const channel = detectChannel(version);
     const feedUrl = `${UPDATE_FEED_BASE_URL}/${channel}`;
 
-    logger.info(`[Updater] Version: ${version}, channel: ${channel}, feedUrl: ${feedUrl}`);
+    logger.info(`[Updater] Brand: ${BRAND.id}, version: ${version}, channel: ${channel}, feedUrl: ${feedUrl}`);
 
     // Set channel so electron-updater requests the correct yml filename.
-    // e.g. channel "alpha" → requests alpha-mac.yml, channel "latest" → requests latest-mac.yml
+    // e.g. channel "alpha" requests alpha.yml, channel "latest" requests latest.yml on Windows.
     autoUpdater.channel = channel;
 
     autoUpdater.setFeedURL({
@@ -269,7 +269,7 @@ export class AppUpdater extends EventEmitter {
   /**
    * Set auto-download preference.
    *
-   * ClawX uses a prompt-first update flow: finding an update shows a UI prompt,
+   * DeepClaw uses a prompt-first update flow: finding an update shows a UI prompt,
    * and downloads/installations only start after the user chooses an action.
    * Keep this legacy IPC method as a no-op-compatible setter so stale renderer
    * settings cannot re-enable electron-updater's implicit auto-download path.

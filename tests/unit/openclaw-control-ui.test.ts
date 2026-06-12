@@ -4,8 +4,8 @@ import { buildOpenClawControlUiUrl } from '@electron/utils/openclaw-control-ui';
 
 describe('buildOpenClawControlUiUrl', () => {
   it('uses the URL fragment for one-time token bootstrap', () => {
-    expect(buildOpenClawControlUiUrl(18789, 'clawx-test-token')).toBe(
-      'http://127.0.0.1:18789/#token=clawx-test-token',
+    expect(buildOpenClawControlUiUrl(18789, 'deepclaw-test-token')).toBe(
+      'http://127.0.0.1:18789/#token=deepclaw-test-token',
     );
   });
 
@@ -14,8 +14,8 @@ describe('buildOpenClawControlUiUrl', () => {
   });
 
   it('opens the Dreams view without moving the token out of the fragment', () => {
-    expect(buildOpenClawControlUiUrl(18789, 'clawx-test-token', { view: 'dreams' })).toBe(
-      'http://127.0.0.1:18789/dreaming#token=clawx-test-token',
+    expect(buildOpenClawControlUiUrl(18789, 'deepclaw-test-token', { view: 'dreams' })).toBe(
+      'http://127.0.0.1:18789/dreaming#token=deepclaw-test-token',
     );
   });
 

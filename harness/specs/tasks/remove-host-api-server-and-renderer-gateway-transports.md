@@ -40,7 +40,7 @@ expectedUserBehavior:
   - Renderer no longer starts or contacts a local Host API HTTP server.
   - Renderer no longer opens a direct WebSocket or HTTP proxy transport to OpenClaw Gateway.
   - Gateway RPC and Gateway events continue through the Main-owned Gateway manager connection.
-  - Gateway WebSocket frame diagnostics are available from Main-process logs when CLAWX_GATEWAY_WS_TRACE=1 is set.
+  - Gateway WebSocket frame diagnostics are available from Main-process logs when DEEPCLAW_GATEWAY_WS_TRACE=1 is set.
 requiredProfiles:
   - fast
   - comms

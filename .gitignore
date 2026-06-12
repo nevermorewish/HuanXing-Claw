@@ -25,7 +25,7 @@ release/
 .env.*.local
 
 # Logs
-logs
+/logs/
 *.log
 npm-debug.log*
 pnpm-debug.log*
@@ -65,6 +65,11 @@ resources/bin
 *.key
 
 build/
+!build/
+build/*
+!build/preinstalled-skills/
+!build/preinstalled-skills/**
+build/.tmp-preinstalled-skills/
 artifacts/
 .delivery/
 docs/pr-session-notes-*.md

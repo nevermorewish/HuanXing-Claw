@@ -66,7 +66,7 @@ test.describe('Channels health diagnostics', () => {
       };
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (globalThis as any).__clawxE2eChannelHealth = state;
+      (globalThis as any).__deepclawE2eChannelHealth = state;
 
       const originalHostInvoke = (ipcMain as unknown as {
         _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
@@ -76,7 +76,7 @@ test.describe('Channels health diagnostics', () => {
       ipcMain.removeHandler('host:invoke');
       ipcMain.handle('host:invoke', async (event, request: { id?: string; module?: string; action?: string }) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const current = (globalThis as any).__clawxE2eChannelHealth as typeof state;
+        const current = (globalThis as any).__deepclawE2eChannelHealth as typeof state;
 
         if (request?.module === 'channels' && request.action === 'accounts') {
           return respond(request.id, {
@@ -131,7 +131,7 @@ test.describe('Channels health diagnostics', () => {
               consecutiveHeartbeatMisses: 1,
               },
             channels: [],
-            clawxLogTail: 'clawx-log',
+            deepclawLogTail: 'deepclaw-log',
             gatewayLogTail: 'gateway-log',
             gatewayErrLogTail: '',
           });
@@ -170,7 +170,7 @@ test.describe('Channels health diagnostics', () => {
 
     const result = await electronApp.evaluate(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const state = (globalThis as any).__clawxE2eChannelHealth as { restartCount: number; diagnosticsCount: number };
+      const state = (globalThis as any).__deepclawE2eChannelHealth as { restartCount: number; diagnosticsCount: number };
       return {
         restartCount: state.restartCount,
         diagnosticsCount: state.diagnosticsCount,

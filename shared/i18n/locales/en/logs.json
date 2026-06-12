@@ -1,0 +1,19 @@
+{
+  "title": "Logs",
+  "subtitle": "View gateway runtime logs and errors",
+  "tabGateway": "Gateway Logs",
+  "tabError": "Gateway Errors",
+  "searchPlaceholder": "Search logs...",
+  "refresh": "Refresh",
+  "autoRefresh": "Auto refresh",
+  "lines": "Lines",
+  "copy": "Copy",
+  "copied": "Copied to clipboard",
+  "copyFailed": "Copy failed",
+  "empty": "No logs",
+  "noResults": "No matching results",
+  "loadFailed": "Failed to load logs",
+  "loading": "Loading...",
+  "entries": "entries",
+  "matched": "matched"
+}

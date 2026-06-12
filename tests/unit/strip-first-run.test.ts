@@ -3,7 +3,7 @@ import { join } from 'path';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 const { testHome } = vi.hoisted(() => ({
-  testHome: `/tmp/clawx-openclaw-workspace-${Math.random().toString(36).slice(2)}`,
+  testHome: `/tmp/deepclaw-openclaw-workspace-${Math.random().toString(36).slice(2)}`,
 }));
 
 vi.mock('os', async () => {
@@ -19,12 +19,13 @@ vi.mock('os', async () => {
 });
 
 import {
-  ensureClawXContext,
-  ensureClawXDefaultIdentity,
-  ensureClawXIdentityFile,
-  mergeClawXSection,
+  ensureDeepClawContext,
+  ensureDeepClawDefaultIdentity,
+  ensureDeepClawIdentityFile,
+  mergeDeepClawSection,
   stripFirstRunSection,
 } from '../../electron/utils/openclaw-workspace';
+import { BRAND } from '@shared/brand';
 
 beforeEach(async () => {
   await rm(testHome, { recursive: true, force: true });
@@ -133,9 +134,9 @@ describe('stripFirstRunSection', () => {
 
   it('still changes AGENTS content when only First Run is removed', () => {
     const section = [
-      '## ClawX Environment',
+      '## DeepClaw Environment',
       '',
-      'You are ClawX.',
+      'You are DeepClaw.',
     ].join('\n');
     const original = [
       '# AGENTS.md',
@@ -148,33 +149,33 @@ describe('stripFirstRunSection', () => {
       '',
       'Read SOUL.md first.',
       '',
-      '<!-- clawx:begin -->',
-      '## ClawX Environment',
+      '<!-- deepclaw:begin -->',
+      '## DeepClaw Environment',
       '',
-      'You are ClawX.',
-      '<!-- clawx:end -->',
+      'You are DeepClaw.',
+      '<!-- deepclaw:end -->',
       '',
     ].join('\n');
 
     const stripped = stripFirstRunSection(original);
-    const merged = mergeClawXSection(stripped, section);
+    const merged = mergeDeepClawSection(stripped, section);
 
     expect(merged).not.toBe(original);
     expect(merged).not.toContain('## First Run');
     expect(merged).toContain('## Session Startup');
-    expect(merged).toContain('<!-- clawx:begin -->');
-    expect(merged).toContain('<!-- clawx:end -->');
+    expect(merged).toContain('<!-- deepclaw:begin -->');
+    expect(merged).toContain('<!-- deepclaw:end -->');
   });
 });
 
-describe('ensureClawXIdentityFile', () => {
-  it('writes a default ClawX identity when the workspace has none', async () => {
+describe('ensureDeepClawIdentityFile', () => {
+  it('writes a default DeepClaw identity when the workspace has none', async () => {
     const workspaceDir = join(testHome, '.openclaw', 'workspace');
     await mkdir(workspaceDir, { recursive: true });
 
-    await ensureClawXIdentityFile(workspaceDir);
+    await ensureDeepClawIdentityFile(workspaceDir);
 
-    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain('ClawX');
+    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain('DeepClaw');
   });
 
   it('replaces the untouched OpenClaw identity template but preserves custom identities', async () => {
@@ -200,12 +201,12 @@ describe('ensureClawXIdentityFile', () => {
       'utf-8',
     );
 
-    await ensureClawXIdentityFile(workspaceDir);
-    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain('ClawX');
+    await ensureDeepClawIdentityFile(workspaceDir);
+    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain('DeepClaw');
     await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.not.toContain('pick something you like');
 
     await writeFile(join(workspaceDir, 'IDENTITY.md'), '# IDENTITY.md\n\n- **Name:** Paisley\n', 'utf-8');
-    await ensureClawXIdentityFile(workspaceDir);
+    await ensureDeepClawIdentityFile(workspaceDir);
     await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toBe('# IDENTITY.md\n\n- **Name:** Paisley\n');
   });
 
@@ -214,24 +215,24 @@ describe('ensureClawXIdentityFile', () => {
     await mkdir(workspaceDir, { recursive: true });
     await writeFile(join(workspaceDir, 'BOOTSTRAP.md'), 'chat-first bootstrap', 'utf-8');
 
-    await ensureClawXIdentityFile(workspaceDir);
+    await ensureDeepClawIdentityFile(workspaceDir);
 
     await expect(access(join(workspaceDir, 'BOOTSTRAP.md'))).rejects.toThrow();
-    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain('ClawX');
+    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain('DeepClaw');
   });
 });
 
-describe('ensureClawXDefaultIdentity', () => {
+describe('ensureDeepClawDefaultIdentity', () => {
   it('creates the default workspace and seeds IDENTITY.md for startup-owned workspaces', async () => {
-    await ensureClawXDefaultIdentity();
+    await ensureDeepClawDefaultIdentity();
 
-    await expect(readFile(join(testHome, '.openclaw', 'workspace', 'IDENTITY.md'), 'utf-8')).resolves.toContain('ClawX');
+    await expect(readFile(join(testHome, BRAND.dataDirName, 'workspace', 'IDENTITY.md'), 'utf-8')).resolves.toContain('DeepClaw');
   });
 });
 
-describe('ensureClawXContext', () => {
+describe('ensureDeepClawContext', () => {
   it('does not wait for missing files in non-default agent workspaces', async () => {
-    const openclawDir = join(testHome, '.openclaw');
+    const openclawDir = join(testHome, BRAND.dataDirName);
     const defaultWorkspace = join(openclawDir, 'workspace-main');
     const agentWorkspace = join(openclawDir, 'workspace-agent');
     await mkdir(defaultWorkspace, { recursive: true });
@@ -250,19 +251,19 @@ describe('ensureClawXContext', () => {
     );
 
     const result = await Promise.race([
-      ensureClawXContext().then(() => 'done'),
+      ensureDeepClawContext().then(() => 'done'),
       new Promise((resolve) => setTimeout(() => resolve('timeout'), 200)),
     ]);
 
     expect(result).toBe('done');
-    await expect(readFile(join(defaultWorkspace, 'AGENTS.md'), 'utf-8')).resolves.toContain('## ClawX Environment');
-    await expect(readFile(join(defaultWorkspace, 'TOOLS.md'), 'utf-8')).resolves.toContain('## ClawX Tool Notes');
+    await expect(readFile(join(defaultWorkspace, 'AGENTS.md'), 'utf-8')).resolves.toContain('## DeepClaw Environment');
+    await expect(readFile(join(defaultWorkspace, 'TOOLS.md'), 'utf-8')).resolves.toContain('## DeepClaw Tool Notes');
     await expect(access(join(agentWorkspace, 'AGENTS.md'))).rejects.toThrow();
     await expect(access(join(agentWorkspace, 'TOOLS.md'))).rejects.toThrow();
   });
 
   it('does not wait for missing external default workspaces', async () => {
-    const openclawDir = join(testHome, '.openclaw');
+    const openclawDir = join(testHome, BRAND.dataDirName);
     const externalWorkspace = join(testHome, '..', `external-missing-${Date.now()}`);
     await mkdir(openclawDir, { recursive: true });
     await writeFile(
@@ -276,7 +277,7 @@ describe('ensureClawXContext', () => {
     );
 
     const result = await Promise.race([
-      ensureClawXContext().then(() => 'done'),
+      ensureDeepClawContext().then(() => 'done'),
       new Promise((resolve) => setTimeout(() => resolve('timeout'), 200)),
     ]);
 

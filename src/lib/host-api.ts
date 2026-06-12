@@ -144,6 +144,18 @@ export const hostApi = {
       invokeHost('logs', 'readFile', { path, tailLines })
     ),
   },
+  config: {
+    read: () => invokeHost('config', 'read'),
+    write: (content: string) => invokeHost('config', 'write', { content }),
+    validate: () => invokeHost('config', 'validate'),
+    calibrate: (mode: 'inherit' | 'reset') => invokeHost('config', 'calibrate', { mode }),
+    listBackups: () => invokeHost('config', 'listBackups'),
+    createBackup: () => invokeHost('config', 'createBackup'),
+    restoreBackup: (name: string) => invokeHost('config', 'restoreBackup', { name }),
+    deleteBackup: (name: string) => invokeHost('config', 'deleteBackup', { name }),
+    getConfigDir: () => invokeHost('config', 'getConfigDir'),
+    setConfigDir: (dir: string) => invokeHost('config', 'setConfigDir', { dir }),
+  },
   channels: {
     accounts: (options?: ChannelAccountsPayload) => (
       invokeHost('channels', 'accounts', options)
@@ -173,6 +185,10 @@ export const hostApi = {
     ),
     cancelLogin: (channelType: string, input?: { accountId?: string }) => (
       invokeHost('channels', 'cancelLogin', { channelType, ...input })
+    ),
+    feishuOnboardingBegin: () => invokeHost('channels', 'feishuOnboardingBegin'),
+    feishuOnboardingPoll: (flowId: string) => (
+      invokeHost('channels', 'feishuOnboardingPoll', { flowId })
     ),
   },
   agents: {
@@ -332,6 +348,50 @@ export const hostApi = {
     recentTokenHistory: (limit?: number) => (
       invokeHost('usage', 'recentTokenHistory', { limit })
     ),
+  },
+  account: {
+    login: (input: { baseUrl: string; username: string; password: string }) => (
+      invokeHost('account', 'login', input)
+    ),
+    fetchSetup: () => invokeHost('account', 'fetchSetup'),
+    savedCredentials: () => invokeHost('account', 'savedCredentials'),
+    getBalance: () => invokeHost('account', 'getBalance'),
+    listTokens: () => invokeHost('account', 'listTokens'),
+    logout: () => invokeHost('account', 'logout'),
+    getModelConfig: () => invokeHost('account', 'getModelConfig'),
+    saveModelConfig: (input: {
+      models: Array<{ id: string; name: string; contextWindow?: number; reasoning?: boolean }>;
+      primaryModelId?: string | null;
+      tokenId?: number | null;
+    }) => invokeHost('account', 'saveModelConfig', input),
+    setPrimaryModel: (input: { modelId: string }) => invokeHost('account', 'setPrimaryModel', input),
+    deleteModel: (input: { modelId: string }) => invokeHost('account', 'deleteModel', input),
+    testModel: (input: { modelId: string }) => invokeHost('account', 'testModel', input),
+  },
+  modelProviders: {
+    list: () => invokeHost('modelProviders', 'list'),
+    saveProvider: (input: {
+      key: string;
+      baseUrl: string;
+      api: string;
+      apiKey?: string;
+      models: Array<{ id: string; name: string; contextWindow?: number; reasoning?: boolean }>;
+      primaryModelId?: string | null;
+    }) => invokeHost('modelProviders', 'saveProvider', input),
+    deleteProvider: (input: { key: string }) => invokeHost('modelProviders', 'deleteProvider', input),
+    setPrimary: (input: { modelRef: string }) => invokeHost('modelProviders', 'setPrimary', input),
+    addModels: (input: {
+      key: string;
+      models: Array<{ id: string; name: string; contextWindow?: number; reasoning?: boolean }>;
+    }) => invokeHost('modelProviders', 'addModels', input),
+    deleteModel: (input: { key: string; modelId: string }) => invokeHost('modelProviders', 'deleteModel', input),
+    editModel: (input: {
+      key: string;
+      modelId: string;
+      model: { id: string; name: string; contextWindow?: number; reasoning?: boolean };
+    }) => invokeHost('modelProviders', 'editModel', input),
+    testModel: (input: { key: string; modelId: string }) => invokeHost('modelProviders', 'testModel', input),
+    fetchRemoteModels: (input: { key: string }) => invokeHost('modelProviders', 'fetchRemoteModels', input),
   },
 };
 

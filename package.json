@@ -1,5 +1,5 @@
 {
-    "name": "clawx",
+    "name": "deepclaw",
     "version": "0.4.13",
     "pnpm": {
         "onlyBuiltDependencies": [
@@ -25,9 +25,9 @@
             ]
         }
     },
-    "description": "ClawX - Graphical AI Assistant based on OpenClaw",
+    "description": "DeepClaw - Graphical AI Assistant based on OpenClaw",
     "main": "dist-electron/main/index.js",
-    "author": "ClawX Team",
+    "author": "DeepClaw Team",
     "license": "MIT",
     "private": true,
     "scripts": {
@@ -48,7 +48,7 @@
         "test": "vitest run",
         "test:e2e": "pnpm run build:vite && playwright test",
         "test:e2e:headed": "pnpm run build:vite && playwright test --headed",
-        "harness": "pnpm --filter @clawx/harness start --",
+        "harness": "pnpm --filter @deepclaw/harness start --",
         "harness:ci": "pnpm harness list && pnpm harness validate --spec harness/specs/scenarios/gateway-backend-communication.md && pnpm harness validate --spec harness/specs/tasks/fix-chat-history-gateway-timeout.example.md --no-diff && pnpm harness run --spec harness/specs/scenarios/gateway-backend-communication.md --dry-run && pnpm exec vitest run tests/unit/harness-specs.test.ts tests/unit/harness-git.test.ts",
         "comms:replay": "node scripts/comms/replay.mjs",
         "comms:baseline": "node scripts/comms/baseline.mjs",

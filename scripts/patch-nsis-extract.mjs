@@ -27,23 +27,23 @@ export const EXTRACT_APP_PACKAGE_NSH = join(
   'extractAppPackage.nsh',
 );
 
-const PATCH_MARKER = 'ClawX-patched-v2: extract directly to $INSTDIR and fail closed';
-const LEGACY_PATCH_MARKER = 'ClawX-patched: extract directly to $INSTDIR';
+const PATCH_MARKER = 'DeepClaw-patched-v2: extract directly to $INSTDIR and fail closed';
+const LEGACY_PATCH_MARKER = 'DeepClaw-patched: extract directly to $INSTDIR';
 const LEGACY_CONTINUE_ON_EXTRACT_FAILURE = 'continuing overwrite install anyway';
-const FATAL_EXTRACT_FAILURE_DETAIL = 'Failed to extract ClawX files after multiple attempts.';
-const ROLLBACK_EXTRACT_FAILURE_DETAIL = 'Restoring previous ClawX installation after failed update';
+const FATAL_EXTRACT_FAILURE_DETAIL = 'Failed to extract DeepClaw files after multiple attempts.';
+const ROLLBACK_EXTRACT_FAILURE_DETAIL = 'Restoring previous DeepClaw installation after failed update';
 
 const PATCHED_EXTRACT_MACRO = [
   '!macro extractUsing7za FILE',
   `  ; ${PATCH_MARKER}.`,
   '  StrCpy $R9 0',
-  '  clawx_extract_attempt:',
+  '  deepclaw_extract_attempt:',
   '    IntOp $R9 $R9 + 1',
-  '    DetailPrint "Extracting ClawX application files (attempt $R9, please wait)..."',
+  '    DetailPrint "Extracting DeepClaw application files (attempt $R9, please wait)..."',
   '    SetOutPath $INSTDIR',
   '    ClearErrors',
   '    Nsis7z::Extract "${FILE}"',
-  '    IfErrors 0 clawx_extract_done',
+  '    IfErrors 0 deepclaw_extract_done',
   '    ${if} $R9 < 5',
   '      DetailPrint "Releasing file locks before retry..."',
   '      nsExec::ExecToStack \'taskkill /F /T /IM "${APP_EXECUTABLE_FILENAME}"\'',
@@ -53,21 +53,21 @@ const PATCHED_EXTRACT_MACRO = [
   '      Pop $0',
   '      Pop $1',
   '      Sleep 3000',
-  '      Goto clawx_extract_attempt',
+  '      Goto deepclaw_extract_attempt',
   '    ${endIf}',
-  '    DetailPrint "Failed to extract ClawX files after multiple attempts."',
-  '    ${if} $clawxRollbackDir != ""',
-  '      IfFileExists "$clawxRollbackDir\\" 0 clawx_extract_show_error',
-  '      DetailPrint "Restoring previous ClawX installation after failed update..."',
+  '    DetailPrint "Failed to extract DeepClaw files after multiple attempts."',
+  '    ${if} $deepclawRollbackDir != ""',
+  '      IfFileExists "$deepclawRollbackDir\\" 0 deepclaw_extract_show_error',
+  '      DetailPrint "Restoring previous DeepClaw installation after failed update..."',
   '      SetOutPath $TEMP',
   '      RMDir /r "$INSTDIR"',
-  '      Rename "$clawxRollbackDir" "$INSTDIR"',
+  '      Rename "$deepclawRollbackDir" "$INSTDIR"',
   '    ${endIf}',
-  '  clawx_extract_show_error:',
+  '  deepclaw_extract_show_error:',
   '    MessageBox MB_OK|MB_ICONEXCLAMATION "$(decompressionFailed)" /SD IDOK',
   '    SetErrorLevel 2',
   '    Quit',
-  '  clawx_extract_done:',
+  '  deepclaw_extract_done:',
   '!macroend',
 ].join('\n');
 
@@ -155,7 +155,7 @@ export function patchNsisExtractTemplate(targetPath = EXTRACT_APP_PACKAGE_NSH) {
   }
 
   if (hasStaleExtractPatch(original)) {
-    console.warn('[patch-nsis-extract] Stale ClawX extract patch detected; replacing with fail-closed patch.');
+    console.warn('[patch-nsis-extract] Stale DeepClaw extract patch detected; replacing with fail-closed patch.');
   } else if (!original.includes('CopyFiles')) {
     console.warn('[patch-nsis-extract] CopyFiles not found — NSIS template may have changed.');
     return false;

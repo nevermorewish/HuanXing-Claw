@@ -2,12 +2,13 @@ import { existsSync } from 'fs';
 import { mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { BRAND } from '@shared/brand';
 
 const { testHome, testUserData, mockLoggerWarn, mockLoggerInfo, mockLoggerError } = vi.hoisted(() => {
   const suffix = Math.random().toString(36).slice(2);
   return {
-    testHome: `/tmp/clawx-channel-config-${suffix}`,
-    testUserData: `/tmp/clawx-channel-config-user-data-${suffix}`,
+    testHome: `/tmp/deepclaw-channel-config-${suffix}`,
+    testUserData: `/tmp/deepclaw-channel-config-user-data-${suffix}`,
     mockLoggerWarn: vi.fn(),
     mockLoggerInfo: vi.fn(),
     mockLoggerError: vi.fn(),
@@ -42,7 +43,7 @@ vi.mock('@electron/utils/logger', () => ({
 }));
 
 async function readOpenClawJson(): Promise<Record<string, unknown>> {
-  const content = await readFile(join(testHome, '.openclaw', 'openclaw.json'), 'utf8');
+  const content = await readFile(join(testHome, BRAND.dataDirName, 'openclaw.json'), 'utf8');
   return JSON.parse(content) as Record<string, unknown>;
 }
 
@@ -338,17 +339,17 @@ describe('WeChat dangling plugin cleanup', () => {
       },
     });
 
-    const staleStateDir = join(testHome, '.openclaw', 'openclaw-weixin', 'accounts');
+    const staleStateDir = join(testHome, BRAND.dataDirName, 'openclaw-weixin', 'accounts');
     await mkdir(staleStateDir, { recursive: true });
     await writeFile(join(staleStateDir, 'bot-im-bot.json'), JSON.stringify({ token: 'stale-token' }), 'utf8');
-    await writeFile(join(testHome, '.openclaw', 'openclaw-weixin', 'accounts.json'), JSON.stringify(['bot-im-bot']), 'utf8');
+    await writeFile(join(testHome, BRAND.dataDirName, 'openclaw-weixin', 'accounts.json'), JSON.stringify(['bot-im-bot']), 'utf8');
 
     const result = await cleanupDanglingWeChatPluginState();
     expect(result.cleanedDanglingState).toBe(true);
 
     const config = await readOpenClawJson();
     expect(config.plugins).toBeUndefined();
-    expect(existsSync(join(testHome, '.openclaw', 'openclaw-weixin'))).toBe(false);
+    expect(existsSync(join(testHome, BRAND.dataDirName, 'openclaw-weixin'))).toBe(false);
   });
 });
 

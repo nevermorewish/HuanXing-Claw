@@ -151,6 +151,34 @@ export type LogFileEntry = {
 };
 export type LogFilesResult = { files: LogFileEntry[] };
 
+// ── Config management ─────────────────────────────────────────────
+export type ConfigReadResult = { content: string; exists: boolean; path: string };
+export type ConfigWritePayload = { content: string };
+export type ConfigValidateResult = {
+  valid: boolean;
+  error?: string;
+  backupExists?: boolean;
+  warnings: string[];
+  uiFields: string[];
+};
+export type ConfigCalibrateMode = 'inherit' | 'reset';
+export type ConfigCalibratePayload = { mode: ConfigCalibrateMode };
+export type ConfigCalibrateResult = {
+  mode: ConfigCalibrateMode;
+  source: string;
+  backup: string | null;
+  inheritedKeys: string[];
+  warnings: string[];
+  message: string;
+  success: boolean;
+};
+export type ConfigBackupEntry = { name: string; size: number; createdAt: number };
+export type ConfigBackupsResult = { backups: ConfigBackupEntry[] };
+export type ConfigCreateBackupResult = HostSuccess & { name?: string; size?: number };
+export type ConfigBackupNamePayload = { name: string };
+export type ConfigDirResult = { dir: string; defaultDir: string; isCustom: boolean };
+export type ConfigSetDirPayload = { dir: string };
+
 export type GatewayHealthSummary = {
   state: 'healthy' | 'degraded' | 'unresponsive';
   reasons: string[];
@@ -236,6 +264,28 @@ export type ChannelSaveConfigResult = HostSuccess & {
   warning?: string;
 };
 export type ChannelConfiguredResult = HostSuccess & { channels?: Array<string | JsonRecord> };
+
+export type FeishuOnboardingStatus = 'pending' | 'confirmed' | 'expired' | 'denied';
+export type FeishuOnboardingBeginResult = HostSuccess & {
+  flowId: string;
+  status: FeishuOnboardingStatus;
+  qr?: string;
+  qrUrl?: string;
+  userCode?: string;
+  intervalSeconds: number;
+  expiresAtMs: number;
+  message?: string;
+};
+export type FeishuOnboardingPollPayload = { flowId: string };
+export type FeishuOnboardingPollResult = HostSuccess & {
+  flowId: string;
+  status: FeishuOnboardingStatus;
+  appId?: string;
+  appSecret?: string;
+  intervalSeconds: number;
+  expiresAtMs: number;
+  message?: string;
+};
 
 export type AgentSnapshotResult = AgentsSnapshot & OptionalHostSuccess;
 export type AgentCreatePayload = { name: string; inheritWorkspace?: boolean };
@@ -667,6 +717,119 @@ export type DeliveryChannelGroup = {
 };
 export type DeliveryTargetsResult = HostSuccess & { targets: DeliveryChannelGroup[] };
 
+export type AccountUser = {
+  id: number;
+  username: string;
+  displayName: string;
+  role: number;
+  status: number;
+  group: string;
+};
+export type AccountLoginPayload = {
+  baseUrl: string;
+  username: string;
+  password: string;
+};
+export type AccountCredentials = {
+  baseUrl: string;
+  username: string;
+  password: string;
+};
+export type AccountCredentialsResult = HostSuccess & {
+  credentials?: AccountCredentials | null;
+};
+export type AccountBalance = {
+  /** Raw New-API quota units. */
+  quota: number;
+  /** Quota already consumed, in the same units. */
+  usedQuota: number;
+  /** Divisor to convert quota units → a currency amount. */
+  quotaPerUnit: number;
+  /** Whether the server prefers showing a currency amount over raw quota. */
+  displayInCurrency: boolean;
+  /** Resolved absolute URL of the server's top-up / recharge page. */
+  topUpUrl: string;
+};
+export type AccountBalanceResult = HostSuccess & { balance?: AccountBalance };
+export type AccountLoginResult = HostSuccess & { user?: AccountUser };
+export type AccountSetupResult = HostSuccess & {
+  user?: AccountUser;
+  baseUrl?: string;
+  models?: string[];
+  apiKey?: string;
+};
+export type AccountModelEntry = {
+  id: string;
+  name: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+};
+export type AccountModelConfig = {
+  baseUrl: string;
+  models: AccountModelEntry[];
+  primary: string | null;
+};
+export type AccountModelConfigResult = HostSuccess & { config?: AccountModelConfig };
+export type AccountToken = {
+  id: number;
+  name: string;
+  /** Token-level group override; empty string means it inherits the user group. */
+  group: string;
+  /** New-API token status (1 = enabled). */
+  status: number;
+};
+export type AccountTokensResult = HostSuccess & { tokens?: AccountToken[] };
+export type AccountSaveModelConfigPayload = {
+  models: AccountModelEntry[];
+  primaryModelId?: string | null;
+  /** Selected token id whose `sk-` key backs the provider. Omit to auto-pick. */
+  tokenId?: number | null;
+};
+export type AccountModelIdPayload = { modelId: string };
+export type AccountTestModelResult = HostSuccess & { latencyMs?: number; reply?: string };
+
+// ── Generic model-provider config (clawpanel-style, all providers) ──
+export type ModelProviderEntry = {
+  id: string;
+  name: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+};
+export type ModelProviderDTO = {
+  key: string;
+  baseUrl: string;
+  api: string;
+  hasKey: boolean;
+  maskedKey: string | null;
+  models: ModelProviderEntry[];
+  /** This provider's `provider/modelId` ref if it owns the global primary. */
+  primary: string | null;
+};
+export type ListModelProvidersResult = HostSuccess & {
+  providers?: ModelProviderDTO[];
+  /** Global default model ref (`provider/modelId`). */
+  primary?: string | null;
+  fallbacks?: string[];
+};
+export type SaveModelProviderPayload = {
+  key: string;
+  baseUrl: string;
+  api: string;
+  /** Omit / empty to preserve an existing inline key. */
+  apiKey?: string;
+  models: ModelProviderEntry[];
+  primaryModelId?: string | null;
+};
+export type ModelProviderKeyPayload = { key: string };
+export type ModelProviderModelsPayload = { key: string; models: ModelProviderEntry[] };
+export type ModelProviderModelPayload = { key: string; modelId: string };
+export type ModelProviderEditModelPayload = { key: string; modelId: string; model: ModelProviderEntry };
+export type SetPrimaryModelRefPayload = { modelRef: string };
+export type FetchRemoteModelsResult = HostSuccess & {
+  models?: ModelProviderEntry[];
+  notSupported?: boolean;
+};
+
 export type HostApiContract = {
   app: {
     openClawDoctor: (payload: OpenClawDoctorPayload) => Omit<OpenClawDoctorResult, 'mode'>;
@@ -729,6 +892,18 @@ export type HostApiContract = {
     listFiles: () => LogFilesResult;
     readFile: (payload: LogReadFilePayload) => LogContentResult;
   };
+  config: {
+    read: () => ConfigReadResult;
+    write: (payload: ConfigWritePayload) => HostSuccess;
+    validate: () => ConfigValidateResult;
+    calibrate: (payload: ConfigCalibratePayload) => ConfigCalibrateResult;
+    listBackups: () => ConfigBackupsResult;
+    createBackup: () => ConfigCreateBackupResult;
+    restoreBackup: (payload: ConfigBackupNamePayload) => HostSuccess;
+    deleteBackup: (payload: ConfigBackupNamePayload) => HostSuccess;
+    getConfigDir: () => ConfigDirResult;
+    setConfigDir: (payload: ConfigSetDirPayload) => HostSuccess;
+  };
   channels: {
     configured: () => ChannelConfiguredResult;
     accounts: (payload?: ChannelAccountsPayload) => ChannelAccountsResult;
@@ -744,6 +919,8 @@ export type HostApiContract = {
     deleteConfig: (payload: ChannelAccountPayload) => HostSuccess;
     startLogin: (payload: ChannelAccountPayload) => HostSuccess;
     cancelLogin: (payload: ChannelAccountPayload) => HostSuccess;
+    feishuOnboardingBegin: () => FeishuOnboardingBeginResult;
+    feishuOnboardingPoll: (payload: FeishuOnboardingPollPayload) => FeishuOnboardingPollResult;
   };
   agents: {
     list: () => AgentSnapshotResult;
@@ -843,6 +1020,30 @@ export type HostApiContract = {
   };
   usage: {
     recentTokenHistory: (payload?: UsageHistoryPayload) => UsageHistoryEntry[];
+  };
+  account: {
+    login: (payload: AccountLoginPayload) => AccountLoginResult;
+    fetchSetup: () => AccountSetupResult;
+    savedCredentials: () => AccountCredentialsResult;
+    getBalance: () => AccountBalanceResult;
+    listTokens: () => AccountTokensResult;
+    logout: () => HostSuccess;
+    getModelConfig: () => AccountModelConfigResult;
+    saveModelConfig: (payload: AccountSaveModelConfigPayload) => AccountModelConfigResult;
+    setPrimaryModel: (payload: AccountModelIdPayload) => AccountModelConfigResult;
+    deleteModel: (payload: AccountModelIdPayload) => AccountModelConfigResult;
+    testModel: (payload: AccountModelIdPayload) => AccountTestModelResult;
+  };
+  modelProviders: {
+    list: () => ListModelProvidersResult;
+    saveProvider: (payload: SaveModelProviderPayload) => ListModelProvidersResult;
+    deleteProvider: (payload: ModelProviderKeyPayload) => ListModelProvidersResult;
+    setPrimary: (payload: SetPrimaryModelRefPayload) => ListModelProvidersResult;
+    addModels: (payload: ModelProviderModelsPayload) => ListModelProvidersResult;
+    deleteModel: (payload: ModelProviderModelPayload) => ListModelProvidersResult;
+    editModel: (payload: ModelProviderEditModelPayload) => ListModelProvidersResult;
+    testModel: (payload: ModelProviderModelPayload) => AccountTestModelResult;
+    fetchRemoteModels: (payload: ModelProviderKeyPayload) => FetchRemoteModelsResult;
   };
 };
 

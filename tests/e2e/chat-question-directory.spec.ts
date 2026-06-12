@@ -85,7 +85,7 @@ async function installQuestionDirectoryMocks(
   });
 }
 
-test.describe('ClawX chat question directory', () => {
+test.describe('DeepClaw chat question directory', () => {
   test('shows a toolbar button that opens a clickable in-conversation question directory', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 

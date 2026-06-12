@@ -1,4 +1,6 @@
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { BRAND } from '@shared/brand';
 
 const {
   mockExistsSync,
@@ -131,8 +133,8 @@ describe('plugin installer diagnostics', () => {
     setPlatform('win32');
     mockHomedir.mockReturnValue('C:\\Users\\test');
 
-    const sourceDir = 'C:\\Program Files\\ClawX\\resources\\openclaw-plugins\\wecom';
-    const sourceManifestSuffix = 'Program Files\\ClawX\\resources\\openclaw-plugins\\wecom\\openclaw.plugin.json';
+    const sourceDir = 'C:\\Program Files\\DeepClaw\\resources\\openclaw-plugins\\wecom';
+    const sourceManifestSuffix = 'Program Files\\DeepClaw\\resources\\openclaw-plugins\\wecom\\openclaw.plugin.json';
 
     mockExistsSync.mockImplementation((input: string) => String(input).includes(sourceManifestSuffix));
     // On win32, cpSyncSafe uses _copyDirSyncRecursive (readdirSync) instead of cpSync.
@@ -184,8 +186,8 @@ describe('plugin installer diagnostics', () => {
     setPlatform('win32');
     mockHomedir.mockReturnValue('C:\\Users\\test');
 
-    const sourceDir = 'C:\\Program Files\\ClawX\\resources\\openclaw-plugins\\wecom';
-    const sourceManifestSuffix = 'Program Files\\ClawX\\resources\\openclaw-plugins\\wecom\\openclaw.plugin.json';
+    const sourceDir = 'C:\\Program Files\\DeepClaw\\resources\\openclaw-plugins\\wecom';
+    const sourceManifestSuffix = 'Program Files\\DeepClaw\\resources\\openclaw-plugins\\wecom\\openclaw.plugin.json';
 
     mockExistsSync.mockImplementation((input: string) => String(input).includes(sourceManifestSuffix));
     // On win32, cpSyncSafe uses _copyDirSyncRecursive (readdirSync) instead of cpSync.
@@ -208,7 +210,7 @@ describe('plugin installer diagnostics', () => {
       '[plugin] Bundled mirror install failed for WeCom',
       expect.objectContaining({
         sourceDir,
-        targetDir: expect.stringContaining('.openclaw/extensions/wecom'),
+        targetDir: expect.stringContaining(path.join(BRAND.dataDirName, 'extensions', 'wecom')),
         platform: 'win32',
         attempts: [
           expect.objectContaining({ attempt: 1, code: 'EPERM' }),
