@@ -262,7 +262,7 @@ function buildCalibrationBaseline(): JsonObject {
     plugins: {},
     session: { dmScope: 'per-channel-peer' },
     skills: { entries: {} },
-    tools: { profile: 'full', sessions: { visibility: 'all' } },
+    tools: { profile: 'minimal', sessions: { visibility: 'all' } },
     gateway: {
       mode: 'local',
       bind: 'loopback',
@@ -335,7 +335,7 @@ function normalizeCalibratedConfig(config: JsonValue): JsonObject {
 
   if (!isRecord(root.tools)) root.tools = {};
   const tools = root.tools as JsonObject;
-  if (typeof tools.profile !== 'string' || !tools.profile.trim()) tools.profile = 'full';
+  if (typeof tools.profile !== 'string' || !tools.profile.trim()) tools.profile = 'minimal';
   if (!isRecord(tools.sessions)) tools.sessions = {};
   const sessions = tools.sessions as JsonObject;
   if (typeof sessions.visibility !== 'string' || !sessions.visibility.trim()) sessions.visibility = 'all';

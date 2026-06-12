@@ -3369,15 +3369,15 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     // tool system. tools.profile, however, is user-tunable: the OpenClaw
     // kernel accepts 'full' | 'standard' | 'minimal' | 'messaging' | 'none'
     // and uses it to filter which tools load into the context (smaller
-    // profile = fewer tools = smaller prompt). We only enforce 'full' as a
+    // profile = fewer tools = smaller prompt). We only enforce 'minimal' as a
     // fallback when the value is missing or invalid, so users can pick a
-    // leaner profile to reduce latency without it being reverted.
+    // different profile without it being reverted.
     const VALID_TOOL_PROFILES = ['full', 'standard', 'minimal', 'messaging', 'none'];
     const toolsConfig = (config.tools as Record<string, unknown> | undefined) || {};
     let toolsModified = false;
 
     if (typeof toolsConfig.profile !== 'string' || !VALID_TOOL_PROFILES.includes(toolsConfig.profile)) {
-      toolsConfig.profile = 'full';
+      toolsConfig.profile = 'minimal';
       toolsModified = true;
     }
 

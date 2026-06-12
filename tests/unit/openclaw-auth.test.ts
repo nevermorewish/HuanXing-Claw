@@ -385,7 +385,7 @@ describe('sanitizeOpenClawConfig', () => {
     const result = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>;
     // Fresh install should get tools settings enforced
     const tools = result.tools as Record<string, unknown>;
-    expect(tools.profile).toBe('full');
+    expect(tools.profile).toBe('minimal');
 
     logSpy.mockRestore();
   });
@@ -413,7 +413,7 @@ describe('sanitizeOpenClawConfig', () => {
     });
     // tools settings should now be enforced
     const tools = result.tools as Record<string, unknown>;
-    expect(tools.profile).toBe('full');
+    expect(tools.profile).toBe('minimal');
 
     logSpy.mockRestore();
   });
