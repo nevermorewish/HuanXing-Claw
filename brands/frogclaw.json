@@ -1,0 +1,19 @@
+{
+  "id": "frogclaw",
+  "appName": "FrogClaw",
+  "productName": "FrogClaw",
+  "executableName": "frogclaw",
+  "appId": "app.frogclaw.desktop",
+  "dataDirName": ".frogclaw",
+  "instanceLockName": "frogclaw",
+  "providerKey": "frogclaw",
+  "serviceUrl": "https://frogclaw.com/",
+  "rechargeUrl": "https://frogclaw.com/topup",
+  "updateFeedBaseUrl": "https://ai.fengchiyun.com/downloads/frogclaw",
+  "copyright": "Copyright © 2026 FrogClaw",
+  "vendor": "FrogClaw",
+  "maintainer": "FrogClaw Team <support@frogclaw.ai>",
+  "linuxWMClass": "frogclaw",
+  "tagline": "AI Assistant",
+  "assetsDir": "resources/brands/frogclaw"
+}

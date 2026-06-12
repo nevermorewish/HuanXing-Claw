@@ -84,3 +84,7 @@ playground/
 # ClawX-biz bridge workspace artifacts
 resources/enterprise-skills/
 resources/openclaw-plugins/skillshub/
+
+# Generated brand/build files
+electron-builder.generated.yml
+src/assets/brand-logo.generated.svg

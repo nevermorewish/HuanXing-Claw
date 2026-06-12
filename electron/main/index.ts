@@ -51,8 +51,9 @@ import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { syncAllProviderAuthToRuntime } from '../services/providers/provider-runtime-sync';
+import { BRAND } from '@shared/brand';
 
-const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
+const WINDOWS_APP_USER_MODEL_ID = BRAND.appId;
 const isE2EMode = process.env.CLAWX_E2E === '1';
 const requestedUserDataDir = process.env.CLAWX_USER_DATA_DIR?.trim();
 const requestedRemoteDebuggingPort = process.env.CLAWX_REMOTE_DEBUGGING_PORT?.trim();
@@ -82,12 +83,12 @@ if (isE2EMode && requestedUserDataDir) {
 app.disableHardwareAcceleration();
 
 // On Linux, set CHROME_DESKTOP so Chromium can find the correct .desktop file.
-// On Wayland this maps the running window to clawx.desktop (→ icon + app grouping);
-// on X11 it supplements the StartupWMClass matching.
+// On Wayland this maps the running window to the brand-specific .desktop file
+// (→ icon + app grouping); on X11 it supplements the StartupWMClass matching.
 // Must be called before app.whenReady() / before any window is created.
 if (process.platform === 'linux') {
   const linuxApp = app as typeof app & { setDesktopName?: (desktopName: string) => void };
-  linuxApp.setDesktopName?.('clawx.desktop');
+  linuxApp.setDesktopName?.(`${BRAND.linuxWMClass}.desktop`);
 }
 
 // Prevent multiple instances of the app from running simultaneously.
@@ -106,7 +107,7 @@ if (gotElectronLock && !isE2EMode) {
   try {
     const fileLock = acquireProcessInstanceFileLock({
       userDataDir: app.getPath('userData'),
-      lockName: 'clawx',
+      lockName: BRAND.instanceLockName,
       force: true, // Electron lock already guarantees exclusivity; force-clean orphan/recycled-PID locks
     });
     gotFileLock = fileLock.acquired;
