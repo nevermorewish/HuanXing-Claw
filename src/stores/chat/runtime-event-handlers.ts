@@ -17,9 +17,12 @@ import {
   isToolResultRole,
   makeAttachedFile,
   normalizeStreamingMessage,
+  rememberRunDuration,
   scheduleRecoverableRuntimeError,
+  setRunStartedAt,
   snapshotStreamingAssistantMessage,
   upsertToolStatuses,
+  getRunStartedAt,
 } from './helpers';
 import type { AttachedFileMeta, RawMessage } from './types';
 import type { ChatGet, ChatSet } from './store-api';
@@ -31,6 +34,13 @@ export function handleRuntimeEventState(
   resolvedState: string,
   runId: string,
 ): void {
+  const eventPhase = typeof event.phase === 'string' ? event.phase : '';
+  const eventStartedAt = typeof event.startedAt === 'number' && Number.isFinite(event.startedAt)
+    ? event.startedAt
+    : Date.now();
+  if (runId && (resolvedState === 'started' || eventPhase === 'start')) {
+    setRunStartedAt(runId, eventStartedAt);
+  }
       switch (resolvedState) {
         case 'started': {
           // Run just started (e.g. from console); show loading immediately.
@@ -207,21 +217,35 @@ export function handleRuntimeEventState(
                 if (file.filePath) attachedPaths.add(file.filePath);
                 attachedFiles.push(file);
               }
+              const durationMs = hasOutput && !toolOnly
+                ? (() => {
+                  const startedAt = getRunStartedAt(runId);
+                  if (!startedAt) return undefined;
+                  const elapsed = Date.now() - startedAt;
+                  return Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : undefined;
+                })()
+                : undefined;
+              if (durationMs !== undefined && normalizedFinalMessage.responseId) {
+                rememberRunDuration(normalizedFinalMessage.responseId, durationMs);
+              }
+              const messageWithDuration: RawMessage = durationMs !== undefined
+                ? { ...normalizedFinalMessage, _durationMs: durationMs }
+                : normalizedFinalMessage;
               const msgWithImages: RawMessage = pendingImgs.length > 0
                 ? {
-                  ...normalizedFinalMessage,
-                  role: (normalizedFinalMessage.role || 'assistant') as RawMessage['role'],
+                  ...messageWithDuration,
+                  role: (messageWithDuration.role || 'assistant') as RawMessage['role'],
                   id: msgId,
-                  _attachedFiles: [...(normalizedFinalMessage._attachedFiles || []), ...attachedFiles],
+                  _attachedFiles: [...(messageWithDuration._attachedFiles || []), ...attachedFiles],
                 }
                 : attachedFiles.length > 0
                   ? {
-                    ...normalizedFinalMessage,
-                    role: (normalizedFinalMessage.role || 'assistant') as RawMessage['role'],
+                    ...messageWithDuration,
+                    role: (messageWithDuration.role || 'assistant') as RawMessage['role'],
                     id: msgId,
-                    _attachedFiles: [...(normalizedFinalMessage._attachedFiles || []), ...attachedFiles],
+                    _attachedFiles: [...(messageWithDuration._attachedFiles || []), ...attachedFiles],
                   }
-                  : { ...normalizedFinalMessage, role: (normalizedFinalMessage.role || 'assistant') as RawMessage['role'], id: msgId };
+                  : { ...messageWithDuration, role: (messageWithDuration.role || 'assistant') as RawMessage['role'], id: msgId };
               const clearPendingImages = { pendingToolImages: [] as AttachedFileMeta[] };
 
               // Check if message already exists (prevent duplicates)

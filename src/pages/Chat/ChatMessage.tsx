@@ -20,6 +20,9 @@ import { hostApi } from '@/lib/host-api';
 import type { RawMessage, AttachedFileMeta } from '@/stores/chat';
 import { extractText, extractImages, extractToolUse, formatTimestamp, isUnresolvableImageUrl } from './message-utils';
 import { copyImageToClipboard, type ImageCopyTarget } from './copy-image';
+import { buildAssistantStats, formatTokensK, formatCtxK, type AssistantStats } from './message-stats';
+import { useModelProvidersStore } from '@/stores/modelProviders';
+import { useAccountStore } from '@/stores/account';
 
 interface ChatMessageProps {
   message: RawMessage;
@@ -332,6 +335,15 @@ export const ChatMessage = memo(function ChatMessage({
   const showAssistantHoverBar = !isUser && (hasText || imageCopyTarget != null);
   const [lightboxImg, setLightboxImg] = useState<{ src: string; fileName: string; filePath?: string; base64?: string; mimeType?: string } | null>(null);
 
+  // Per-message stats footer (ctx / model / duration). Token + model come
+  // verbatim from the transcript on history-loaded assistant messages; the
+  // context window is resolved against the configured providers / account.
+  const modelProviders = useModelProvidersStore((s) => s.providers);
+  const accountModels = useAccountStore((s) => s.modelConfig?.models);
+  const assistantStats = !isUser
+    ? buildAssistantStats(message, modelProviders, accountModels ?? [])
+    : null;
+
   // Never render tool result messages in chat UI
   if (isToolResult) return null;
 
@@ -480,6 +492,9 @@ export const ChatMessage = memo(function ChatMessage({
           </span>
         )}
 
+        {/* Stats footer for assistant messages — ctx / model / duration */}
+        {assistantStats && <AssistantStatsFooter stats={assistantStats} />}
+
         {/* Hover row for assistant messages */}
         {showAssistantHoverBar && (
           <AssistantHoverBar text={text} timestamp={message.timestamp} imageCopyTarget={imageCopyTarget} />
@@ -620,6 +635,34 @@ function AssistantHoverBar({
         {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
       </Button>
     </div>
+  );
+}
+
+// ── Assistant stats footer (ctx / model / duration, always visible) ─
+
+function AssistantStatsFooter({ stats }: { stats: AssistantStats }) {
+  const parts: string[] = [];
+
+  if (stats.tokens !== undefined) {
+    const tokensK = formatTokensK(stats.tokens);
+    if (stats.contextWindow && stats.pct !== undefined) {
+      parts.push(`ctx: ${tokensK}/${formatCtxK(stats.contextWindow)} (${stats.pct}%)`);
+    } else {
+      parts.push(`ctx: ${tokensK}`);
+    }
+  }
+  if (stats.model) parts.push(stats.model);
+  if (stats.durationMs !== undefined) {
+    const duration = formatDuration(stats.durationMs);
+    if (duration) parts.push(duration);
+  }
+
+  if (parts.length === 0) return null;
+
+  return (
+    <span className="text-tiny text-muted-foreground select-none px-1 font-mono">
+      {parts.join(' | ')}
+    </span>
   );
 }
 

@@ -7,6 +7,7 @@ import {
   enrichWithCachedImages,
   enrichWithToolResultFiles,
   getLatestOptimisticUserMessage,
+  getRememberedRunDuration,
   getMessageErrorMessage,
   getMessageStopReason,
   getMessageText,
@@ -167,8 +168,13 @@ export function createHistoryActions(
         const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
         const messagesWithToolAttachments = enrichWithToolCallAttachments(messagesWithToolImages);
         const filteredMessages = messagesWithToolAttachments.filter((msg) => !shouldDropMessageFromHistory(msg));
+        const messagesWithDurations = filteredMessages.map((msg) => {
+          if (msg._durationMs !== undefined) return msg;
+          const durationMs = getRememberedRunDuration(msg.responseId);
+          return durationMs !== undefined ? { ...msg, _durationMs: durationMs } : msg;
+        });
         // Restore file attachments for user/assistant messages (from cache + text patterns)
-        const enrichedMessages = enrichWithCachedImages(filteredMessages);
+        const enrichedMessages = enrichWithCachedImages(messagesWithDurations);
 
         // Preserve optimistic user messages independently from sending state.
         // Gateway phase=end can clear sending before chat.history has persisted

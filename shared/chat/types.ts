@@ -21,6 +21,16 @@ export interface AttachedFileMeta {
   gatewayUrl?: string;
 }
 
+/** Token usage emitted on assistant transcript lines by the OpenClaw runtime. */
+export interface MessageUsage {
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  totalTokens?: number;
+  cost?: { total?: number };
+}
+
 /** Raw message from OpenClaw chat.history */
 export interface RawMessage {
   role: 'user' | 'assistant' | 'system' | 'toolresult';
@@ -35,6 +45,21 @@ export interface RawMessage {
   stop_reason?: string;
   errorMessage?: string;
   error_message?: string;
+  /**
+   * Per-message stats carried verbatim on assistant lines from the session
+   * transcript. Present on history-loaded messages; absent on optimistic /
+   * streaming-synthesized messages. Surfaced as a stats footer in the chat UI.
+   */
+  usage?: MessageUsage;
+  model?: string;
+  provider?: string;
+  responseId?: string;
+  /**
+   * Local-only: wall-clock duration of the run that produced this assistant
+   * reply. Not present in the transcript — captured during the live run and
+   * re-applied across history reloads by `responseId`.
+   */
+  _durationMs?: number;
   /** Local-only: file metadata for user-uploaded attachments (not sent to/from Gateway) */
   _attachedFiles?: AttachedFileMeta[];
 }

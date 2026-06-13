@@ -1863,6 +1863,44 @@ function getLastAbortedRunId(): string | null {
   return _lastAbortedRunId;
 }
 
+// ── Run duration tracking ─────────────────────────────────────────
+// The transcript carries token usage + model on each assistant message but
+// NOT how long the run took. We capture the run's start time live, compute the
+// elapsed duration when the final reply lands, and remember it keyed by the
+// message's stable `responseId` so it survives the quiet history reload that
+// rebuilds message objects (dropping the local-only `_durationMs`).
+const _runStartedAt = new Map<string, number>();
+const _durationByResponseId = new Map<string, number>();
+const RUN_TIMING_MAX = 200;
+
+function setRunStartedAt(runId: string, startedAt: number): void {
+  if (!runId) return;
+  // Only record the first start for a run; ignore repeats (e.g. model fallback).
+  if (_runStartedAt.has(runId)) return;
+  if (_runStartedAt.size > RUN_TIMING_MAX) {
+    const oldest = _runStartedAt.keys().next().value;
+    if (oldest !== undefined) _runStartedAt.delete(oldest);
+  }
+  _runStartedAt.set(runId, startedAt);
+}
+
+function getRunStartedAt(runId: string): number | undefined {
+  return runId ? _runStartedAt.get(runId) : undefined;
+}
+
+function rememberRunDuration(responseId: string, durationMs: number): void {
+  if (!responseId || !Number.isFinite(durationMs) || durationMs < 0) return;
+  if (_durationByResponseId.size > RUN_TIMING_MAX) {
+    const oldest = _durationByResponseId.keys().next().value;
+    if (oldest !== undefined) _durationByResponseId.delete(oldest);
+  }
+  _durationByResponseId.set(responseId, durationMs);
+}
+
+function getRememberedRunDuration(responseId: string | undefined): number | undefined {
+  return responseId ? _durationByResponseId.get(responseId) : undefined;
+}
+
 function queueBlockedRunEvent(runId: string, event: Record<string, unknown>): void {
   const events = _blockedRunEvents.get(runId) ?? [];
   events.push({ ...event });
@@ -1954,6 +1992,10 @@ export {
   getLastChatEventAt,
   setLastAbortedRunId,
   getLastAbortedRunId,
+  setRunStartedAt,
+  getRunStartedAt,
+  rememberRunDuration,
+  getRememberedRunDuration,
   queueBlockedRunEvent,
   takeBlockedRunEvents,
 };
