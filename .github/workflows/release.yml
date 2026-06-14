@@ -52,7 +52,6 @@ jobs:
       matrix:
         brand:
           - huanxingclaw
-          - deepclaw
           - fengchiclaw
           - frogclaw
 
@@ -408,7 +407,6 @@ jobs:
       matrix:
         brand:
           - huanxingclaw
-          - deepclaw
           - fengchiclaw
           - frogclaw
 
