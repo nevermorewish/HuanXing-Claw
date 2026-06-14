@@ -472,11 +472,12 @@ jobs:
           has_signing_identity=true
           if [[ -z "${CSC_LINK}" && -z "${CSC_NAME}" ]]; then
             has_signing_identity=false
+            unset CSC_LINK CSC_NAME CSC_KEY_PASSWORD
             export CSC_IDENTITY_AUTO_DISCOVERY=false
-            echo "macOS signing identity is not configured; electron-builder will skip code signing."
+            echo "macOS signing identity is not configured; building unsigned."
           elif [[ -z "${CSC_KEY_PASSWORD}" ]]; then
             has_signing_identity=false
-            unset CSC_LINK CSC_NAME
+            unset CSC_LINK CSC_NAME CSC_KEY_PASSWORD
             export CSC_IDENTITY_AUTO_DISCOVERY=false
             echo "macOS signing identity is incomplete (missing CSC_KEY_PASSWORD); building unsigned."
           fi
@@ -494,6 +495,10 @@ jobs:
           has_notary_config=false
           if [[ "${has_apple_password_notary}" == "true" || "${has_apple_api_notary}" == "true" ]]; then
             has_notary_config=true
+          fi
+
+          if [[ "${has_signing_identity}" != "true" ]]; then
+            build_args+=(--config.mac.identity=null)
           fi
 
           if [[ "${has_signing_identity}" != "true" || "${has_notary_config}" != "true" ]]; then
