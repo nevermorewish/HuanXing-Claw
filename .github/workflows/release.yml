@@ -318,56 +318,7 @@ jobs:
           CHANNEL_DIR: ${{ steps.upload_payload.outputs.channel_dir }}
           ARCHIVE_DIR: ${{ steps.upload_payload.outputs.archive_dir }}
         shell: pwsh
-        run: |
-          function Quote-RemotePath([string]$value) {
-            return "'" + $value.Replace("'", "'\''") + "'"
-          }
-
-          $remoteRoot = $env:LINUX_DEPLOY_REMOTE_PATH.TrimEnd('/', '\')
-          $feedPath = ([Uri]$env:UPDATE_FEED_BASE_URL).AbsolutePath.Trim('/')
-          $feedDir = if ($feedPath) { ($feedPath -split '/')[-1] } else { '' }
-          $remoteLeaf = Split-Path -Path $remoteRoot -Leaf
-          if ($feedDir -and $remoteLeaf -ne $feedDir) {
-            $remoteRoot = "$remoteRoot/$feedDir"
-          }
-
-          $destinationRoot = "$remoteRoot/$env:BRAND"
-          $channelDestination = "$destinationRoot/$env:CHANNEL"
-          $archiveDestination = "$destinationRoot/releases/v$env:VERSION"
-
-          $remoteChannel = Quote-RemotePath $channelDestination
-          $remoteArchive = Quote-RemotePath $archiveDestination
-          $remote = "$env:LINUX_DEPLOY_USER@$env:LINUX_DEPLOY_HOST"
-
-          ssh `
-            -i $env:SSH_KEY_PATH `
-            -p $env:LINUX_DEPLOY_PORT `
-            -o "UserKnownHostsFile=$env:SSH_KNOWN_HOSTS_PATH" `
-            -o "StrictHostKeyChecking=$env:SSH_STRICT_HOST_KEY_CHECKING" `
-            $remote "mkdir -p $remoteChannel $remoteArchive"
-          if ($LASTEXITCODE -ne 0) { throw "Failed to create remote upload directories" }
-
-          $channelFiles = Get-ChildItem $env:CHANNEL_DIR -File | ForEach-Object { $_.FullName }
-          $archiveFiles = Get-ChildItem $env:ARCHIVE_DIR -File | ForEach-Object { $_.FullName }
-
-          scp `
-            -i $env:SSH_KEY_PATH `
-            -P $env:LINUX_DEPLOY_PORT `
-            -o "UserKnownHostsFile=$env:SSH_KNOWN_HOSTS_PATH" `
-            -o "StrictHostKeyChecking=$env:SSH_STRICT_HOST_KEY_CHECKING" `
-            $channelFiles "${remote}:$channelDestination/"
-          if ($LASTEXITCODE -ne 0) { throw "Failed to upload channel files" }
-
-          scp `
-            -i $env:SSH_KEY_PATH `
-            -P $env:LINUX_DEPLOY_PORT `
-            -o "UserKnownHostsFile=$env:SSH_KNOWN_HOSTS_PATH" `
-            -o "StrictHostKeyChecking=$env:SSH_STRICT_HOST_KEY_CHECKING" `
-            $archiveFiles "${remote}:$archiveDestination/"
-          if ($LASTEXITCODE -ne 0) { throw "Failed to upload archive files" }
-
-          Write-Host "Uploaded $env:BRAND channel files to https://ai.fengchiyun.com/downloads/$env:BRAND/$env:CHANNEL/"
-          Write-Host "Uploaded $env:BRAND archive files to https://ai.fengchiyun.com/downloads/$env:BRAND/releases/v$env:VERSION/"
+        run: ./.github/scripts/upload-release-to-linux.ps1
 
       - name: Upload Windows Installer
         uses: actions/upload-artifact@v4
@@ -714,56 +665,7 @@ jobs:
           CHANNEL_DIR: ${{ steps.upload_payload.outputs.channel_dir }}
           ARCHIVE_DIR: ${{ steps.upload_payload.outputs.archive_dir }}
         shell: pwsh
-        run: |
-          function Quote-RemotePath([string]$value) {
-            return "'" + $value.Replace("'", "'\''") + "'"
-          }
-
-          $remoteRoot = $env:LINUX_DEPLOY_REMOTE_PATH.TrimEnd('/', '\')
-          $feedPath = ([Uri]$env:UPDATE_FEED_BASE_URL).AbsolutePath.Trim('/')
-          $feedDir = if ($feedPath) { ($feedPath -split '/')[-1] } else { '' }
-          $remoteLeaf = Split-Path -Path $remoteRoot -Leaf
-          if ($feedDir -and $remoteLeaf -ne $feedDir) {
-            $remoteRoot = "$remoteRoot/$feedDir"
-          }
-
-          $destinationRoot = "$remoteRoot/$env:BRAND"
-          $channelDestination = "$destinationRoot/$env:CHANNEL"
-          $archiveDestination = "$destinationRoot/releases/v$env:VERSION"
-
-          $remoteChannel = Quote-RemotePath $channelDestination
-          $remoteArchive = Quote-RemotePath $archiveDestination
-          $remote = "$env:LINUX_DEPLOY_USER@$env:LINUX_DEPLOY_HOST"
-
-          ssh `
-            -i $env:SSH_KEY_PATH `
-            -p $env:LINUX_DEPLOY_PORT `
-            -o "UserKnownHostsFile=$env:SSH_KNOWN_HOSTS_PATH" `
-            -o "StrictHostKeyChecking=$env:SSH_STRICT_HOST_KEY_CHECKING" `
-            $remote "mkdir -p $remoteChannel $remoteArchive"
-          if ($LASTEXITCODE -ne 0) { throw "Failed to create remote upload directories" }
-
-          $channelFiles = Get-ChildItem $env:CHANNEL_DIR -File | ForEach-Object { $_.FullName }
-          $archiveFiles = Get-ChildItem $env:ARCHIVE_DIR -File | ForEach-Object { $_.FullName }
-
-          scp `
-            -i $env:SSH_KEY_PATH `
-            -P $env:LINUX_DEPLOY_PORT `
-            -o "UserKnownHostsFile=$env:SSH_KNOWN_HOSTS_PATH" `
-            -o "StrictHostKeyChecking=$env:SSH_STRICT_HOST_KEY_CHECKING" `
-            $channelFiles "${remote}:$channelDestination/"
-          if ($LASTEXITCODE -ne 0) { throw "Failed to upload channel files" }
-
-          scp `
-            -i $env:SSH_KEY_PATH `
-            -P $env:LINUX_DEPLOY_PORT `
-            -o "UserKnownHostsFile=$env:SSH_KNOWN_HOSTS_PATH" `
-            -o "StrictHostKeyChecking=$env:SSH_STRICT_HOST_KEY_CHECKING" `
-            $archiveFiles "${remote}:$archiveDestination/"
-          if ($LASTEXITCODE -ne 0) { throw "Failed to upload archive files" }
-
-          Write-Host "Uploaded $env:BRAND channel files to https://ai.fengchiyun.com/downloads/$env:BRAND/$env:CHANNEL/"
-          Write-Host "Uploaded $env:BRAND archive files to https://ai.fengchiyun.com/downloads/$env:BRAND/releases/v$env:VERSION/"
+        run: ./.github/scripts/upload-release-to-linux.ps1
 
       - name: Upload macOS DMG Packages
         uses: actions/upload-artifact@v4
