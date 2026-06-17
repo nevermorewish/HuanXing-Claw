@@ -498,12 +498,34 @@ jobs:
           build_args=(--mac --publish never --config.directories.output="release/${BRAND}")
 
           has_signing_identity=true
-          if [[ -z "${CSC_LINK}" && -z "${CSC_NAME}" ]]; then
+          has_valid_csc_link=false
+          if [[ -n "${CSC_LINK}" ]]; then
+            if [[ "${CSC_LINK}" == file://* ]]; then
+              csc_link_file="${CSC_LINK#file://}"
+              if [[ -f "${csc_link_file}" ]]; then
+                has_valid_csc_link=true
+              else
+                echo "macOS CSC_LINK file:// target is not a certificate file; ignoring it."
+                unset CSC_LINK
+              fi
+            elif [[ "${CSC_LINK}" == http://* || "${CSC_LINK}" == https://* || "${CSC_LINK}" == data:* ]]; then
+              has_valid_csc_link=true
+            elif [[ ${#CSC_LINK} -gt 100 && "${CSC_LINK}" =~ ^[A-Za-z0-9+/=_-]+$ ]]; then
+              has_valid_csc_link=true
+            elif [[ -f "${CSC_LINK}" ]]; then
+              has_valid_csc_link=true
+            else
+              echo "macOS CSC_LINK is set but is not a certificate file, URL, file:// URL, data URL, or base64 payload; ignoring it."
+              unset CSC_LINK
+            fi
+          fi
+
+          if [[ -z "${CSC_NAME}" && "${has_valid_csc_link}" != "true" ]]; then
             has_signing_identity=false
             unset CSC_LINK CSC_NAME CSC_KEY_PASSWORD
             export CSC_IDENTITY_AUTO_DISCOVERY=false
             echo "macOS signing identity is not configured; building unsigned."
-          elif [[ -z "${CSC_KEY_PASSWORD}" ]]; then
+          elif [[ "${has_valid_csc_link}" == "true" && -z "${CSC_KEY_PASSWORD}" ]]; then
             has_signing_identity=false
             unset CSC_LINK CSC_NAME CSC_KEY_PASSWORD
             export CSC_IDENTITY_AUTO_DISCOVERY=false
