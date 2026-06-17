@@ -535,6 +535,20 @@ jobs:
             echo "macOS signing identity is incomplete (missing CSC_KEY_PASSWORD); building unsigned."
           fi
 
+          if [[ "${has_signing_identity}" == "true" && -n "${CSC_NAME}" ]]; then
+            csc_name_normalized="$(printf '%s' "${CSC_NAME}" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+            if [[ "${csc_name_normalized}" == Developer\ ID\ Application:* ]]; then
+              csc_name_normalized="${csc_name_normalized#Developer ID Application:}"
+              csc_name_normalized="$(printf '%s' "${csc_name_normalized}" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+              echo "Removed Developer ID Application prefix from macOS CSC_NAME."
+            fi
+            if [[ -n "${csc_name_normalized}" ]]; then
+              export CSC_NAME="${csc_name_normalized}"
+            else
+              unset CSC_NAME
+            fi
+          fi
+
           has_apple_password_notary=false
           if [[ -n "${APPLE_ID}" && -n "${APPLE_APP_SPECIFIC_PASSWORD}" && -n "${APPLE_TEAM_ID}" ]]; then
             has_apple_password_notary=true
