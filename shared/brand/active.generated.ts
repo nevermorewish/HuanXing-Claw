@@ -20,5 +20,6 @@ export const ACTIVE_BRAND: BrandConfig = {
   maintainer: 'HuanxingClaw Team <support@huanxingclaw.ai>',
   linuxWMClass: 'huanxingclaw',
   tagline: 'AI Assistant',
+  logoPng: 'brands/huanxinglogo.png',
   assetsDir: 'resources/brands/huanxingclaw',
 };

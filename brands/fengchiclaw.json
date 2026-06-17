@@ -15,5 +15,6 @@
   "maintainer": "FengchiClaw Team <support@fengchiclaw.ai>",
   "linuxWMClass": "fengchiclaw",
   "tagline": "AI Assistant",
+  "logoPng": "brands/fengchiyunlogo.png",
   "assetsDir": "resources/brands/fengchiclaw"
 }

@@ -57,7 +57,31 @@ function emitActiveModule(brand) {
 
 function copyLogo(brand) {
   const brandLogo = resolve(ROOT, brand.assetsDir, 'logo.svg');
-  const src = existsSync(brandLogo) ? brandLogo : PLACEHOLDER_LOGO;
+  if (existsSync(brandLogo)) {
+    mkdirSync(dirname(LOGO_OUT), { recursive: true });
+    copyFileSync(brandLogo, LOGO_OUT);
+    return true;
+  }
+
+  if (brand.logoPng) {
+    const logoPng = resolve(ROOT, brand.logoPng);
+    if (existsSync(logoPng)) {
+      const data = readFileSync(logoPng).toString('base64');
+      mkdirSync(dirname(LOGO_OUT), { recursive: true });
+      writeFileSync(
+        LOGO_OUT,
+        [
+          '<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">',
+          `  <image href="data:image/png;base64,${data}" width="1024" height="1024" preserveAspectRatio="xMidYMid meet"/>`,
+          '</svg>',
+          '',
+        ].join('\n'),
+      );
+      return true;
+    }
+  }
+
+  const src = PLACEHOLDER_LOGO;
   if (!existsSync(src)) {
     console.warn(`[brand] No logo found for "${brand.id}" and no placeholder at ${PLACEHOLDER_LOGO}.`);
     return false;

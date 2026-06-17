@@ -35,6 +35,7 @@ const REQUIRED_FIELDS = [
   'maintainer',
   'linuxWMClass',
   'tagline',
+  'logoPng',
   'assetsDir',
 ];
 

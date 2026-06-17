@@ -15,5 +15,6 @@
   "maintainer": "FrogClaw Team <support@frogclaw.ai>",
   "linuxWMClass": "frogclaw",
   "tagline": "AI Assistant",
+  "logoPng": "brands/frogclawlogo.png",
   "assetsDir": "resources/brands/frogclaw"
 }

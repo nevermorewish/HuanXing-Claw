@@ -43,6 +43,8 @@ export interface BrandConfig {
   linuxWMClass: string;
   /** Short tagline ("AI Assistant"). */
   tagline: string;
-  /** Directory (repo-relative) holding this brand's icons + logo.svg. */
+  /** Repo-relative PNG source used to generate this brand's app icons. */
+  logoPng: string;
+  /** Directory (repo-relative) holding this brand's generated icons + optional logo.svg. */
   assetsDir: string;
 }

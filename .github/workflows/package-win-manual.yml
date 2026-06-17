@@ -122,6 +122,11 @@ jobs:
           }
           Write-Host "Verified generated active brand: $env:BRAND"
 
+      - name: Generate brand package icons
+        env:
+          BRAND: ${{ matrix.brand }}
+        run: pnpm run icons
+
       - name: Bundle OpenClaw runtime
         run: pnpm exec zx scripts/bundle-openclaw.mjs
 
