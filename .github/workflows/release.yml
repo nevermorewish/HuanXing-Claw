@@ -364,7 +364,6 @@ jobs:
     name: Release macOS (${{ matrix.brand }})
     needs:
       - validate-release
-      - release-windows
     runs-on: macos-latest
     strategy:
       fail-fast: false
