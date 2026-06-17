@@ -502,6 +502,7 @@ jobs:
           if [[ -z "${CSC_LINK}" ]]; then
             unset CSC_LINK
           else
+            csc_link_compact="$(printf '%s' "${CSC_LINK}" | tr -d '[:space:]')"
             if [[ "${CSC_LINK}" == file://* ]]; then
               csc_link_file="${CSC_LINK#file://}"
               if [[ -f "${csc_link_file}" ]]; then
@@ -512,7 +513,8 @@ jobs:
               fi
             elif [[ "${CSC_LINK}" == http://* || "${CSC_LINK}" == https://* || "${CSC_LINK}" == data:* ]]; then
               has_valid_csc_link=true
-            elif [[ ${#CSC_LINK} -gt 100 && "${CSC_LINK}" =~ ^[A-Za-z0-9+/=_-]+$ ]]; then
+            elif [[ ${#csc_link_compact} -gt 100 && "${csc_link_compact}" =~ ^[A-Za-z0-9+/=_-]+$ ]]; then
+              export CSC_LINK="${csc_link_compact}"
               has_valid_csc_link=true
             elif [[ -f "${CSC_LINK}" ]]; then
               has_valid_csc_link=true
