@@ -499,7 +499,9 @@ jobs:
 
           has_signing_identity=true
           has_valid_csc_link=false
-          if [[ -n "${CSC_LINK}" ]]; then
+          if [[ -z "${CSC_LINK}" ]]; then
+            unset CSC_LINK
+          else
             if [[ "${CSC_LINK}" == file://* ]]; then
               csc_link_file="${CSC_LINK#file://}"
               if [[ -f "${csc_link_file}" ]]; then
@@ -520,12 +522,12 @@ jobs:
             fi
           fi
 
-          if [[ -z "${CSC_NAME}" && "${has_valid_csc_link}" != "true" ]]; then
+          if [[ "${has_valid_csc_link}" != "true" ]]; then
             has_signing_identity=false
             unset CSC_LINK CSC_NAME CSC_KEY_PASSWORD
             export CSC_IDENTITY_AUTO_DISCOVERY=false
-            echo "macOS signing identity is not configured; building unsigned."
-          elif [[ "${has_valid_csc_link}" == "true" && -z "${CSC_KEY_PASSWORD}" ]]; then
+            echo "macOS signing certificate is not configured; building unsigned."
+          elif [[ -z "${CSC_KEY_PASSWORD}" ]]; then
             has_signing_identity=false
             unset CSC_LINK CSC_NAME CSC_KEY_PASSWORD
             export CSC_IDENTITY_AUTO_DISCOVERY=false
