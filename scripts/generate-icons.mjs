@@ -10,7 +10,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const FALLBACK_ICONS_DIR = path.join(PROJECT_ROOT, 'resources', 'icons');
-const FALLBACK_SVG_SOURCE = path.join(PROJECT_ROOT, 'favicon.svg');
+// Brand-neutral fallback source, used only when a brand declares no logoPng.
+// (The former root favicon.svg was removed; brands now own their logos.)
+const FALLBACK_SVG_SOURCE = path.join(FALLBACK_ICONS_DIR, 'icon.svg');
 const LINUX_SIZES = [16, 32, 48, 64, 128, 256, 512];
 
 function repoPath(...parts) {

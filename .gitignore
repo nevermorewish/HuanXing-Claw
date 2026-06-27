@@ -59,6 +59,9 @@ tests/fixtures/transcripts/
 
 resources/bin
 
+# Downloaded bundled uv binaries (fetched by scripts/download-bundled-uv.mjs)
+uv-*.zip
+
 # Secrets
 *.p12
 *.pem

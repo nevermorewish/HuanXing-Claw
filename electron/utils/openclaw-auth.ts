@@ -3366,19 +3366,22 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
     // ── tools.profile & sessions.visibility ───────────────────────
     // sessions.visibility must be 'all' for DeepClaw to integrate with its
-    // tool system. tools.profile, however, is user-tunable: the OpenClaw
-    // kernel accepts 'full' | 'standard' | 'minimal' | 'messaging' | 'none'
-    // and uses it to filter which tools load into the context (smaller
-    // profile = fewer tools = smaller prompt). We only enforce 'minimal' as a
-    // fallback when the value is missing or invalid, so users can pick a
-    // different profile without it being reverted.
-    const VALID_TOOL_PROFILES = ['full', 'standard', 'minimal', 'messaging', 'none'];
+    // tool system. tools.profile selects which tools the OpenClaw kernel loads
+    // into the context (smaller profile = fewer tools = smaller prompt). The
+    // kernel accepts 'full' | 'standard' | 'minimal' | 'messaging' | 'none'.
+    //
+    // DeepClaw is a local desktop app where the user is the trusted operator,
+    // so we force 'full': this guarantees the complete tool set — including the
+    // file write/edit and exec tools — is always loaded. A 'minimal' profile
+    // omits those tools entirely, which made the agent report that it had
+    // "no file write/execution tools" and could not create files.
     const toolsConfig = (config.tools as Record<string, unknown> | undefined) || {};
     let toolsModified = false;
 
-    if (typeof toolsConfig.profile !== 'string' || !VALID_TOOL_PROFILES.includes(toolsConfig.profile)) {
-      toolsConfig.profile = 'minimal';
+    if (toolsConfig.profile !== 'full') {
+      toolsConfig.profile = 'full';
       toolsModified = true;
+      console.log('[sanitize] Forced tools.profile="full" so file write/exec tools always load for DeepClaw desktop');
     }
 
     const sessions = (toolsConfig.sessions as Record<string, unknown> | undefined) || {};

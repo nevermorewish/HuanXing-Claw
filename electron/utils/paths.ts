@@ -157,6 +157,22 @@ export function getResourcesDir(): string {
 }
 
 /**
+ * Resolve a runtime icon file for the active brand.
+ *
+ * Prefers the active brand's asset bundle (resources/brands/<id>/<file>) and
+ * falls back to the brand-neutral resources/icons/<file> only when the brand
+ * doesn't ship that particular file. This keeps the running app's tray + window
+ * icons in sync with the brand identity baked into the installer (which is wired
+ * separately in scripts/run-electron-builder.mjs). Works in both dev and
+ * packaged mode because getResourcesDir() already resolves the right root.
+ */
+export function getBrandIconPath(file: string): string {
+  const branded = join(getResourcesDir(), 'brands', BRAND.id, file);
+  if (existsSync(branded)) return branded;
+  return join(getResourcesDir(), 'icons', file);
+}
+
+/**
  * Get preload script path
  */
 export function getPreloadPath(): string {

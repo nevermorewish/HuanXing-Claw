@@ -30,7 +30,7 @@ import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToPro
 import { isQuitting, setQuitting } from './app-state';
 import { getMacTrafficLightPosition, syncMacTrafficLightPosition } from './traffic-light-layout';
 import { getSetting } from '../utils/store';
-import { setOpenClawConfigDirOverride } from '../utils/paths';
+import { setOpenClawConfigDirOverride, getBrandIconPath } from '../utils/paths';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
 import {
@@ -145,28 +145,16 @@ function sendMainWindowEvent(channel: string, payload: unknown): void {
 }
 
 /**
- * Resolve the icons directory path (works in both dev and packaged mode)
- */
-function getIconsDir(): string {
-  if (app.isPackaged) {
-    // Packaged: icons are in extraResources → process.resourcesPath/resources/icons
-    return join(process.resourcesPath, 'resources', 'icons');
-  }
-  // Development: relative to dist-electron/main/
-  return join(__dirname, '../../resources/icons');
-}
-
-/**
  * Get the app icon for the current platform
  */
 function getAppIcon(): Electron.NativeImage | undefined {
   if (process.platform === 'darwin') return undefined; // macOS uses the app bundle icon
 
-  const iconsDir = getIconsDir();
+  // Use the active brand's window/taskbar icon (falls back to resources/icons).
   const iconPath =
     process.platform === 'win32'
-      ? join(iconsDir, 'icon.ico')
-      : join(iconsDir, 'icon.png');
+      ? getBrandIconPath('icon.ico')
+      : getBrandIconPath('icon.png');
   const icon = nativeImage.createFromPath(iconPath);
   return icon.isEmpty() ? undefined : icon;
 }

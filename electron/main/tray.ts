@@ -3,11 +3,11 @@
  * Creates and manages the system tray icon and menu
  */
 import { Tray, Menu, BrowserWindow, app, nativeImage } from 'electron';
-import { join } from 'path';
 import { BRAND } from '@shared/brand';
 import { MENU_LABELS } from '@shared/i18n/resources';
 import { resolveSupportedLanguage, type LanguageCode } from '@shared/language';
 import { getSetting } from '../utils/store';
+import { getBrandIconPath } from '../utils/paths';
 
 let tray: Tray | null = null;
 // Keep the window the tray drives so the menu can be rebuilt on language change.
@@ -108,40 +108,34 @@ export async function refreshTrayMenu(language?: string): Promise<void> {
 }
 
 /**
- * Resolve the icons directory path (works in both dev and packaged mode)
+ * Resolve the platform tray icon file name. The actual path is resolved per
+ * brand via getBrandIconPath() so the tray shows the active brand's logo.
  */
-function getIconsDir(): string {
-  if (app.isPackaged) {
-    return join(process.resourcesPath, 'resources', 'icons');
+function getTrayIconFile(): string {
+  if (process.platform === 'win32') {
+    // Windows: use .ico for best quality in system tray
+    return 'icon.ico';
   }
-  return join(__dirname, '../../resources/icons');
+  if (process.platform === 'darwin') {
+    // macOS: "Template" suffix tells macOS to treat it as a template image
+    return 'tray-icon-Template.png';
+  }
+  // Linux: use 32x32 PNG
+  return '32x32.png';
 }
 
 /**
  * Create system tray icon and menu
  */
 export function createTray(mainWindow: BrowserWindow): Tray {
-  // Use platform-appropriate icon for system tray
-  const iconsDir = getIconsDir();
-  let iconPath: string;
-
-  if (process.platform === 'win32') {
-    // Windows: use .ico for best quality in system tray
-    iconPath = join(iconsDir, 'icon.ico');
-  } else if (process.platform === 'darwin') {
-    // macOS: use Template.png for proper status bar icon
-    // The "Template" suffix tells macOS to treat it as a template image
-    iconPath = join(iconsDir, 'tray-icon-Template.png');
-  } else {
-    // Linux: use 32x32 PNG
-    iconPath = join(iconsDir, '32x32.png');
-  }
+  // Use the active brand's platform-appropriate tray icon
+  const iconPath = getBrandIconPath(getTrayIconFile());
 
   let icon = nativeImage.createFromPath(iconPath);
 
   // Fallback to icon.png if platform-specific icon not found
   if (icon.isEmpty()) {
-    icon = nativeImage.createFromPath(join(iconsDir, 'icon.png'));
+    icon = nativeImage.createFromPath(getBrandIconPath('icon.png'));
     // Still try to set as template for macOS
     if (process.platform === 'darwin') {
       icon.setTemplateImage(true);
