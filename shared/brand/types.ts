@@ -29,6 +29,13 @@ export interface BrandConfig {
   providerKey: string;
   /** Default account/login service address (the login dialog's prefilled server URL). Also the "官网" (official site) link. */
   serviceUrl: string;
+  /**
+   * Model ids recommended for this brand. After login, the model picker pins
+   * these (when the gateway actually returns them) into a top "推荐" group and
+   * pre-selects ONLY these by default. Optional — omit/empty means nothing is
+   * pre-selected and the user picks manually.
+   */
+  recommendedModels?: string[];
   /** Recharge / top-up page URL opened by the "充值" button. */
   rechargeUrl: string;
   /** Base update feed URL; the updater appends the release channel such as `/latest` or `/alpha`. */

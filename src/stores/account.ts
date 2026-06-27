@@ -292,8 +292,21 @@ export const useAccountStore = create<AccountState>()(
     }),
     {
       name: 'account-connection',
+      // The service address is fixed per brand (BRAND.serviceUrl), so we don't
+      // persist serverUrl — it always initialises from the active brand default.
+      // Persisting it caused stale values from a previously-built brand to leak
+      // across rebuilds and override the brand's configured address.
+      version: 1,
+      // Drop any serverUrl left in localStorage by an older (v0) build so it
+      // can't override the brand default on the first hydration after upgrade.
+      migrate: (persisted) => {
+        if (persisted && typeof persisted === 'object') {
+          const { serverUrl: _drop, ...rest } = persisted as Record<string, unknown>;
+          return rest;
+        }
+        return persisted;
+      },
       partialize: (state) => ({
-        serverUrl: state.serverUrl,
         lastUsername: state.lastUsername,
       }),
     },

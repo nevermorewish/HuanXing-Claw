@@ -5,7 +5,7 @@
  * session, then lets the user pick which fetched models to register as custom
  * provider accounts.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { LogIn, Loader2, Boxes, KeyRound } from 'lucide-react';
 import {
@@ -19,6 +19,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAccountStore, DEFAULT_ACCOUNT_URL, type AccountToken } from '@/stores/account';
 import { ACCOUNT_BRAND } from '@/lib/account-brand';
+import { groupAccountModels, defaultSelectedModels, type ModelGroup } from '@/lib/account-models';
+import { BRAND } from '@shared/brand';
 
 interface AccountLoginDialogProps {
   open: boolean;
@@ -122,12 +124,17 @@ export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogPro
     try {
       setServerUrl(url.trim() || DEFAULT_ACCOUNT_URL);
       const fetched = await login(username.trim(), password);
-      // Pre-select models that are already configured so re-login doesn't drop
-      // them, plus every newly-fetched model.
+      // Pre-select the brand's recommended models (those the gateway actually
+      // returned), plus any models already configured so re-login doesn't drop
+      // them. We intentionally do NOT select every fetched model.
       const existing = await loadModelConfig().catch(() => null);
       const existingIds = new Set((existing?.models ?? []).map((m) => m.id));
       setModels(fetched);
-      setSelected(new Set([...fetched, ...fetched.filter((id) => existingIds.has(id))]));
+      const initial = defaultSelectedModels(fetched, BRAND.recommendedModels ?? []);
+      for (const id of fetched) {
+        if (existingIds.has(id)) initial.add(id);
+      }
+      setSelected(initial);
       // Fetch the account's API tokens so the user can pick which one backs the
       // provider; default to a "default"-group token. Non-fatal on failure —
       // omitting a token id lets the backend auto-pick.
@@ -162,6 +169,25 @@ export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogPro
   const allSelected = models.length > 0 && selected.size === models.length;
   const toggleAll = () => {
     setSelected(allSelected ? new Set() : new Set(models));
+  };
+
+  // Group fetched models for display: a pinned "推荐" group on top, then the
+  // rest grouped by model family. Recomputed only when the model list changes.
+  const groups = useMemo<ModelGroup[]>(
+    () => groupAccountModels(models, BRAND.recommendedModels ?? []),
+    [models],
+  );
+
+  const toggleGroup = (group: ModelGroup) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const allInGroup = group.models.every((m) => next.has(m));
+      for (const m of group.models) {
+        if (allInGroup) next.delete(m);
+        else next.add(m);
+      }
+      return next;
+    });
   };
 
   const handleConfirm = async () => {
@@ -297,21 +323,40 @@ export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogPro
               </Button>
             </div>
 
-            <div className="mt-2 max-h-64 space-y-1 overflow-auto rounded-md border border-border/60 p-2">
-              {models.map((model) => (
-                <label
-                  key={model}
-                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected.has(model)}
-                    onChange={() => toggleModel(model)}
-                    className="h-4 w-4 accent-primary"
-                  />
-                  <span className="truncate" title={model}>{model}</span>
-                </label>
-              ))}
+            <div className="mt-2 max-h-64 space-y-3 overflow-auto rounded-md border border-border/60 p-2">
+              {groups.map((group) => {
+                const groupAllSelected = group.models.every((m) => selected.has(m));
+                return (
+                  <div key={group.key} className="space-y-1">
+                    <div className="flex items-center justify-between px-1">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {group.label} · {group.models.length}
+                      </span>
+                      <button
+                        type="button"
+                        className="text-xs text-primary hover:underline"
+                        onClick={() => toggleGroup(group)}
+                      >
+                        {groupAllSelected ? '全不选' : '全选'}
+                      </button>
+                    </div>
+                    {group.models.map((model) => (
+                      <label
+                        key={model}
+                        className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected.has(model)}
+                          onChange={() => toggleModel(model)}
+                          className="h-4 w-4 accent-primary"
+                        />
+                        <span className="truncate" title={model}>{model}</span>
+                      </label>
+                    ))}
+                  </div>
+                );
+              })}
             </div>
 
             {error && <p className="mt-3 text-sm text-destructive">{error}</p>}

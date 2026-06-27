@@ -8,6 +8,13 @@
   "instanceLockName": "huanxingclaw",
   "providerKey": "huanxingclaw",
   "serviceUrl": "https://api.huanxing.ai/",
+  "recommendedModels": [
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+    "gpt-5.5",
+    "gemini-3.1-pro-preview",
+    "deepseek-v4-pro"
+  ],
   "rechargeUrl": "https://api.huanxing.ai/wallet",
   "updateFeedBaseUrl": "https://ai.fengchiyun.com/downloads/huanxingclaw",
   "copyright": "Copyright © 2026 HuanxingClaw",

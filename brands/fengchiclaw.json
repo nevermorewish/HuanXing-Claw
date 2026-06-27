@@ -8,6 +8,13 @@
   "instanceLockName": "fengchiclaw",
   "providerKey": "fengchiclaw",
   "serviceUrl": "https://ai.fengchiyun.com/",
+  "recommendedModels": [
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+    "gpt-5.5",
+    "gemini-3.1-pro-preview",
+    "deepseek-v4-pro"
+  ],
   "rechargeUrl": "https://ai.fengchiyun.com/topup",
   "updateFeedBaseUrl": "https://ai.fengchiyun.com/downloads/fengchiclaw",
   "copyright": "Copyright © 2026 FengchiClaw",
