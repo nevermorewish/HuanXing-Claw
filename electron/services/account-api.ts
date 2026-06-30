@@ -21,12 +21,11 @@ import { testProviderModel } from './providers/provider-validation';
 import { logger } from '../utils/logger';
 
 type SavedAccountCredentials = {
-  baseUrl: string;
   username: string;
   password: string;
 };
 type StoredAccountCredentials = {
-  baseUrl: string;
+  baseUrl?: string;
   username: string;
   password?: string;
   encryptedPassword?: string;
@@ -70,13 +69,12 @@ function normalizeCredentials(value: unknown): SavedAccountCredentials | null {
     return null;
   }
   const record = value as StoredAccountCredentials;
-  const baseUrl = typeof record.baseUrl === 'string' ? record.baseUrl : '';
   const username = typeof record.username === 'string' ? record.username : '';
   const password = decryptPassword(record);
-  if (!baseUrl || !username || !password) {
+  if (!username || !password) {
     return null;
   }
-  return { baseUrl, username, password };
+  return { username, password };
 }
 
 async function getSavedCredentials(): Promise<SavedAccountCredentials | null> {
@@ -87,7 +85,6 @@ async function getSavedCredentials(): Promise<SavedAccountCredentials | null> {
 async function saveCredentials(credentials: SavedAccountCredentials): Promise<void> {
   const store = await getDeepClawProviderStore();
   store.set(ACCOUNT_CREDENTIALS_KEY, {
-    baseUrl: credentials.baseUrl,
     username: credentials.username,
     ...encryptPassword(credentials.password),
   } satisfies StoredAccountCredentials);
@@ -125,7 +122,6 @@ export function createAccountApi(
           payload.password,
         );
         await saveCredentials({
-          baseUrl: payload.baseUrl,
           username: payload.username,
           password: payload.password,
         });

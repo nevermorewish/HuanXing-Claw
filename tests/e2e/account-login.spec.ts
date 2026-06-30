@@ -7,7 +7,6 @@ test.describe('Account login', () => {
         '["account","savedCredentials",null]': {
           success: true,
           credentials: {
-            baseUrl: 'http://localhost:3000',
             username: 'demo-user',
             password: 'demo-password',
           },
@@ -16,9 +15,10 @@ test.describe('Account login', () => {
     });
 
     await completeSetup(page);
-    await page.getByRole('button', { name: /连接 Account|Connect Account/i }).click();
+    await page.getByTestId('sidebar-account-login').click();
 
-    await expect(page.getByLabel('用户名')).toHaveValue('demo-user');
-    await expect(page.getByLabel('密码')).toHaveValue('demo-password');
+    await expect(page.locator('#hx-url')).toHaveValue('https://api.huanxing.ai/');
+    await expect(page.locator('#hx-username')).toHaveValue('demo-user');
+    await expect(page.locator('#hx-password')).toHaveValue('demo-password');
   });
 });

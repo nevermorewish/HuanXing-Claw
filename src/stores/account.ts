@@ -6,8 +6,9 @@
  * list + a `sk-` API key, then turn the user-selected models into custom
  * provider accounts via the existing provider store.
  *
- * Only the server URL and last username are persisted. The session cookie and
- * API key never leave the main process / provider secure storage.
+ * Only the last username is persisted. The service URL always starts from the
+ * active brand default, and the session cookie / API key never leave the main
+ * process / provider secure storage.
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -70,7 +71,6 @@ export interface AccountToken {
 }
 
 interface AccountState {
-  serverUrl: string;
   lastUsername: string;
   loggedIn: boolean;
   user: AccountUser | null;
@@ -87,10 +87,9 @@ interface AccountState {
   loading: boolean;
   error: string | null;
 
-  setServerUrl: (url: string) => void;
-  savedCredentials: () => Promise<{ baseUrl: string; username: string; password: string } | null>;
+  savedCredentials: () => Promise<{ username: string; password: string } | null>;
   /** Log in and fetch models + key. Returns the model list on success. */
-  login: (username: string, password: string) => Promise<string[]>;
+  login: (baseUrl: string, username: string, password: string) => Promise<string[]>;
   /** Refresh the account balance. Safe to call when logged out (no-op). */
   fetchBalance: () => Promise<void>;
   /** Fetch the account's API tokens for selection. Returns them (also stored). */
@@ -120,7 +119,6 @@ interface AccountState {
 export const useAccountStore = create<AccountState>()(
   persist(
     (set, get) => ({
-      serverUrl: DEFAULT_ACCOUNT_URL,
       lastUsername: '',
       loggedIn: false,
       user: null,
@@ -132,7 +130,6 @@ export const useAccountStore = create<AccountState>()(
       loading: false,
       error: null,
 
-      setServerUrl: (url) => set({ serverUrl: url }),
       clearError: () => set({ error: null }),
 
       savedCredentials: async () => {
@@ -181,8 +178,8 @@ export const useAccountStore = create<AccountState>()(
         await hostApi.shell.openExternal(url);
       },
 
-      login: async (username, password) => {
-        const baseUrl = get().serverUrl.trim() || DEFAULT_ACCOUNT_URL;
+      login: async (baseUrlInput, username, password) => {
+        const baseUrl = baseUrlInput.trim() || DEFAULT_ACCOUNT_URL;
         set({ loading: true, error: null });
         try {
           const loginResult = await hostApi.account.login({ baseUrl, username, password });
@@ -211,7 +208,6 @@ export const useAccountStore = create<AccountState>()(
             models,
             apiKey: setup.apiKey ?? null,
             lastUsername: username,
-            serverUrl: baseUrl,
             loading: false,
           });
           // Fetch balance in the background — don't block the login flow.
@@ -292,10 +288,9 @@ export const useAccountStore = create<AccountState>()(
     }),
     {
       name: 'account-connection',
-      // The service address is fixed per brand (BRAND.serviceUrl), so we don't
-      // persist serverUrl — it always initialises from the active brand default.
-      // Persisting it caused stale values from a previously-built brand to leak
-      // across rebuilds and override the brand's configured address.
+      // The service address is fixed per brand (BRAND.serviceUrl) as the login
+      // default, so only the username is persisted. Old persisted serverUrl
+      // values are ignored by migrate/merge below.
       version: 1,
       // Drop any serverUrl left in localStorage by an older (v0) build so it
       // can't override the brand default on the first hydration after upgrade.
@@ -305,6 +300,16 @@ export const useAccountStore = create<AccountState>()(
           return rest;
         }
         return persisted;
+      },
+      merge: (persisted, current) => {
+        if (!persisted || typeof persisted !== 'object') {
+          return current;
+        }
+        const { lastUsername } = persisted as Partial<AccountState>;
+        return {
+          ...current,
+          ...(typeof lastUsername === 'string' ? { lastUsername } : {}),
+        };
       },
       partialize: (state) => ({
         lastUsername: state.lastUsername,

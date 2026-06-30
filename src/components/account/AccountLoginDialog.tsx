@@ -43,9 +43,7 @@ function pickDefaultToken(tokens: AccountToken[]): number | null {
 }
 
 export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogProps) {
-  const serverUrl = useAccountStore((s) => s.serverUrl);
   const lastUsername = useAccountStore((s) => s.lastUsername);
-  const setServerUrl = useAccountStore((s) => s.setServerUrl);
   const savedCredentials = useAccountStore((s) => s.savedCredentials);
   const login = useAccountStore((s) => s.login);
   const listTokens = useAccountStore((s) => s.listTokens);
@@ -53,7 +51,7 @@ export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogPro
   const loadModelConfig = useAccountStore((s) => s.loadModelConfig);
 
   const [step, setStep] = useState<Step>('credentials');
-  const [url, setUrl] = useState(serverUrl || DEFAULT_ACCOUNT_URL);
+  const [url, setUrl] = useState(DEFAULT_ACCOUNT_URL);
   const [username, setUsername] = useState(lastUsername);
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -66,9 +64,9 @@ export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogPro
 
   // Track whether we've already initialised for the current open cycle, so the
   // reset only runs on the open→ transition. Without this guard, handleLogin's
-  // setServerUrl()/login() mutate serverUrl/lastUsername in the store, which
-  // would re-fire a [serverUrl, lastUsername]-keyed reset, bounce step back to
-  // 'credentials', and wipe the user's model selection.
+  // login() mutates lastUsername in the store, which would re-fire a
+  // [lastUsername]-keyed reset, bounce step back to 'credentials', and wipe the
+  // user's model selection.
   const initialisedRef = useRef(false);
 
   // Reset to a clean state whenever the dialog is (re)opened — once per open.
@@ -80,7 +78,7 @@ export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogPro
     if (initialisedRef.current) return;
     initialisedRef.current = true;
     setStep('credentials');
-    setUrl(serverUrl || DEFAULT_ACCOUNT_URL);
+    setUrl(DEFAULT_ACCOUNT_URL);
     setUsername(lastUsername);
     setPassword('');
     setError(null);
@@ -88,7 +86,7 @@ export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogPro
     setSelected(new Set());
     setTokens([]);
     setSelectedTokenId(null);
-  }, [open, serverUrl, lastUsername]);
+  }, [open, lastUsername]);
 
   useEffect(() => {
     if (!open) {
@@ -101,7 +99,7 @@ export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogPro
         if (cancelled || !credentials) {
           return;
         }
-        setUrl((current) => current || credentials.baseUrl || DEFAULT_ACCOUNT_URL);
+        setUrl((current) => current || DEFAULT_ACCOUNT_URL);
         setUsername((current) => current || credentials.username);
         setPassword((current) => current || credentials.password);
       })
@@ -122,8 +120,7 @@ export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogPro
     setSubmitting(true);
     setError(null);
     try {
-      setServerUrl(url.trim() || DEFAULT_ACCOUNT_URL);
-      const fetched = await login(username.trim(), password);
+      const fetched = await login(url, username.trim(), password);
       // Pre-select the brand's recommended models (those the gateway actually
       // returned), plus any models already configured so re-login doesn't drop
       // them. We intentionally do NOT select every fetched model.

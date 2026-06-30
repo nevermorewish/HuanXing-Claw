@@ -731,7 +731,6 @@ export type AccountLoginPayload = {
   password: string;
 };
 export type AccountCredentials = {
-  baseUrl: string;
   username: string;
   password: string;
 };
