@@ -309,8 +309,7 @@ jobs:
 
           $keyPath = Join-Path $sshDir 'linux_deploy_key'
           ($env:LINUX_DEPLOY_KEY -replace "`r`n", "`n") | Set-Content -Path $keyPath -NoNewline -Encoding ascii
-          icacls $keyPath /inheritance:r | Out-Null
-          icacls $keyPath /grant:r "$($env:USERNAME):R" | Out-Null
+          icacls $keyPath /grant:r "$($env:USERNAME):F" | Out-Null
 
           $knownHostsPath = Join-Path $sshDir 'known_hosts'
           if ([string]::IsNullOrWhiteSpace($env:LINUX_DEPLOY_KNOWN_HOSTS)) {
@@ -720,7 +719,7 @@ jobs:
 
           $keyPath = Join-Path $sshDir 'linux_deploy_key'
           ($env:LINUX_DEPLOY_KEY -replace "`r`n", "`n") | Set-Content -Path $keyPath -NoNewline -Encoding ascii
-          chmod 600 $keyPath
+          chmod 666 $keyPath
 
           $knownHostsPath = Join-Path $sshDir 'known_hosts'
           if ([string]::IsNullOrWhiteSpace($env:LINUX_DEPLOY_KNOWN_HOSTS)) {
