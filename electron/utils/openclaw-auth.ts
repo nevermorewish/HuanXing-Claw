@@ -1626,12 +1626,6 @@ export async function getProviderApiKey(key: string): Promise<string | null> {
   return entry && typeof entry.apiKey === 'string' && entry.apiKey ? entry.apiKey : null;
 }
 
-export interface AccountModelConfigData {
-  baseUrl: string;
-  models: AccountModelEntry[];
-  primary: string | null;
-}
-
 /** Read the account provider entry + default model. Delegates to the generic reader. */
 export async function readAccountModelConfig(): Promise<AccountModelConfigData> {
   const config = await readProviderModelConfig(ACCOUNT_PROVIDER_KEY);

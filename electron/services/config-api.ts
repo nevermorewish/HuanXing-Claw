@@ -488,7 +488,6 @@ export function createConfigApi(
           const providers = (models as JsonObject).providers as JsonObject;
           for (const [providerName, provider] of Object.entries(providers)) {
             if (isRecord(provider) && Array.isArray((provider as JsonObject).models)) {
-              (provider as JsonObject).models as JsonValue[];
               ((provider as JsonObject).models as JsonValue[]).forEach((model, idx) => {
                 if (isRecord(model)) {
                   for (const field of ['lastTestAt', 'latency', 'testStatus', 'testError']) {
