@@ -16,7 +16,7 @@
     "deepseek-v4-pro"
   ],
   "rechargeUrl": "https://ai.fengchiyun.com/topup",
-  "updateFeedBaseUrl": "https://ai.fengchiyun.com/downloads/fengchiclaw",
+  "updateFeedBaseUrl": "https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/fengchiclaw",
   "copyright": "Copyright © 2026 FengchiClaw",
   "vendor": "FengchiClaw",
   "maintainer": "FengchiClaw Team <support@fengchiclaw.ai>",

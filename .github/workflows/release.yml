@@ -19,7 +19,8 @@ permissions:
 
 env:
   SERVICE_URL: https://ai.fengchiyun.com
-  UPDATE_FEED_BASE_URL: https://ai.fengchiyun.com/downloads
+  UPDATE_FEED_BASE_URL: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw
+  LEGACY_UPDATE_FEED_BASE_URL: https://ai.fengchiyun.com/downloads
 
 jobs:
   validate-release:
@@ -173,6 +174,13 @@ jobs:
           BRAND: ${{ matrix.brand }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/run-electron-builder.mjs --win --publish never --config.directories.output=release/${{ matrix.brand }}
+
+      - name: Publish update feed to Volcengine TOS
+        env:
+          BRAND: ${{ matrix.brand }}
+          RELEASE_SOURCE_DIR: release/${{ matrix.brand }}
+          RELEASE_TOS_BASE_URL: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw
+        run: node scripts/upload-electron-release-tos.mjs
 
       - name: Prepare Linux upload payload
         id: upload_payload
@@ -328,7 +336,7 @@ jobs:
           "LINUX_DEPLOY_USER=$deployUser" >> $env:GITHUB_ENV
           "LINUX_DEPLOY_REMOTE_PATH=$remotePath" >> $env:GITHUB_ENV
 
-      - name: Upload package to Linux server
+      - name: Upload legacy update manifest to Linux server
         env:
           BRAND: ${{ matrix.brand }}
           CHANNEL: ${{ steps.upload_payload.outputs.channel }}
@@ -584,6 +592,13 @@ jobs:
 
           node scripts/run-electron-builder.mjs "${build_args[@]}"
 
+      - name: Publish update feed to Volcengine TOS
+        env:
+          BRAND: ${{ matrix.brand }}
+          RELEASE_SOURCE_DIR: release/${{ matrix.brand }}
+          RELEASE_TOS_BASE_URL: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw
+        run: node scripts/upload-electron-release-tos.mjs
+
       - name: Prepare Linux upload payload
         id: upload_payload
         env:
@@ -738,7 +753,7 @@ jobs:
           "LINUX_DEPLOY_USER=$deployUser" >> $env:GITHUB_ENV
           "LINUX_DEPLOY_REMOTE_PATH=$remotePath" >> $env:GITHUB_ENV
 
-      - name: Upload package to Linux server
+      - name: Upload legacy update manifest to Linux server
         env:
           BRAND: ${{ matrix.brand }}
           CHANNEL: ${{ steps.upload_payload.outputs.channel }}
