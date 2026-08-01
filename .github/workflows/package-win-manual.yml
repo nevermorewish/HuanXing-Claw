@@ -279,7 +279,13 @@ jobs:
             return "'" + $value.Replace("'", "'\''") + "'"
           }
 
-          $destinationRoot = "$env:LINUX_DEPLOY_REMOTE_PATH/downloads/$env:BRAND"
+          # Accept both deployment-root conventions used by existing secrets:
+          # either the web root itself (append /downloads) or the already
+          # configured downloads directory (do not append it twice).
+          $remoteRoot = $env:LINUX_DEPLOY_REMOTE_PATH.TrimEnd('/', '\\')
+          $remoteLeaf = Split-Path -Path $remoteRoot -Leaf
+          $downloadsRoot = if ($remoteLeaf -eq 'downloads') { $remoteRoot } else { "$remoteRoot/downloads" }
+          $destinationRoot = "$downloadsRoot/$env:BRAND"
           $channelDestination = "$destinationRoot/$env:CHANNEL"
 
           $remoteChannel = Quote-RemotePath $channelDestination
