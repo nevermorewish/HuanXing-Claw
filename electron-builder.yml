@@ -50,9 +50,8 @@ asarUnpack:
 # own process — @electron/rebuild must NOT touch them.
 npmRebuild: false
 
-# Auto-update configuration
-# Primary: Alibaba Cloud OSS (fast for Chinese users, used for auto-update)
-# Fallback: GitHub Releases (backup, used when OSS is unavailable)
+# Auto-update configuration. The generated brand config replaces the generic
+# feed with the brand's public Volcengine TOS feed; GitHub remains a fallback.
 publish:
   - provider: generic
     url: https://oss.intelli-spectrum.com/latest

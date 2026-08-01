@@ -2,9 +2,11 @@
  * Auto-Updater Module
  * Handles automatic application updates using electron-updater
  *
- * Update providers are configured in electron-builder.yml (OSS primary, GitHub fallback).
+ * Update providers are configured in electron-builder.yml (Volcengine TOS primary,
+ * GitHub fallback). Legacy installations still discover the manifest on the old
+ * feed, whose asset URLs are rewritten to TOS during release publishing.
  * For prerelease channels (alpha, beta), the feed URL is overridden at runtime
- * to point at the channel-specific OSS directory (e.g. /alpha/, /beta/).
+ * to point at the channel-specific TOS directory (e.g. /alpha/, /beta/).
  */
 import { autoUpdater, UpdateInfo, ProgressInfo, UpdateDownloadedEvent } from 'electron-updater';
 import { BrowserWindow, app, ipcMain } from 'electron';
