@@ -76,6 +76,36 @@ async function writeAgentAuthProfiles(agentId: string, store: Record<string, unk
   await writeFile(join(agentDir, 'auth-profiles.json'), JSON.stringify(store, null, 2), 'utf8');
 }
 
+describe('ensureManagedTavilySearchConfig', () => {
+  it('pins Tavily and removes competing search plugin registrations', async () => {
+    const { ensureManagedTavilySearchConfig } = await import('@electron/utils/openclaw-auth');
+    const config: Record<string, unknown> = {
+      tools: { web: { search: { provider: 'exa' } } },
+      plugins: {
+        allow: ['exa', 'firecrawl', 'telegram'],
+        entries: {
+          exa: { enabled: true },
+          firecrawl: { enabled: true },
+          telegram: { enabled: true },
+        },
+      },
+    };
+
+    expect(ensureManagedTavilySearchConfig(config)).toBe(true);
+    expect(config.tools).toEqual({ web: { search: { provider: 'tavily', enabled: true } } });
+    expect(config.plugins).toEqual({
+      allow: ['telegram', 'tavily'],
+      entries: {
+        telegram: { enabled: true },
+        tavily: {
+          enabled: true,
+          config: { webSearch: { baseUrl: 'https://tavily.fengchiyun.com' } },
+        },
+      },
+    });
+  });
+});
+
 describe('saveProviderKeyToOpenClaw', () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -2271,6 +2301,37 @@ describe('batchSyncConfigFields', () => {
     const ssrfPolicy = (fetch.fetch as Record<string, unknown>).ssrfPolicy as Record<string, unknown>;
     expect(ssrfPolicy.allowRfc2544BenchmarkRange).toBe(false);
     expect(ssrfPolicy.allowIpv6UniqueLocalRange).toBe(false);
+  });
+
+  it('pins web search to the managed Tavily proxy', async () => {
+    await writeOpenClawJson({
+      tools: { web: { search: { provider: 'exa' } } },
+      plugins: {
+        allow: ['exa', 'firecrawl', 'telegram'],
+        entries: {
+          exa: { enabled: true },
+          firecrawl: { enabled: true },
+          tavily: { enabled: true, config: { webSearch: { apiKey: 'old-key', baseUrl: 'https://api.tavily.com' } } },
+          telegram: { enabled: true },
+        },
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const search = (((config.tools as Record<string, unknown>).web as Record<string, unknown>).search as Record<string, unknown>);
+    expect(search).toMatchObject({ enabled: true, provider: 'tavily' });
+
+    const plugins = config.plugins as Record<string, unknown>;
+    expect(plugins.allow).toEqual(['telegram', 'tavily']);
+    const entries = plugins.entries as Record<string, Record<string, unknown>>;
+    expect(entries.exa).toBeUndefined();
+    expect(entries.firecrawl).toBeUndefined();
+    expect(((entries.tavily.config as Record<string, unknown>).webSearch as Record<string, unknown>)).toEqual({
+      baseUrl: 'https://tavily.fengchiyun.com',
+    });
   });
 });
 

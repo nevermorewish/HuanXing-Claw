@@ -29,7 +29,7 @@ import {
 } from './provider-keys';
 import { normalizePiAiModelCost, type PiAiModelCostRates } from '../shared/pi-ai-model-cost';
 import { withConfigLock } from './config-mutex';
-import { PORTS } from './config';
+import { PORTS, TAVILY_CONFIG } from './config';
 import { getSetting } from './store';
 import {
   assertValidApiProtocol,
@@ -2381,6 +2381,81 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+const MANAGED_SEARCH_PLUGIN_IDS = new Set([
+  'brave',
+  'duckduckgo',
+  'exa',
+  'firecrawl',
+  'parallel',
+  'searxng',
+]);
+
+/**
+ * Make the branded Gateway use the managed Tavily provider for every web
+ * search. This keeps bundled provider extensions from being auto-selected
+ * when a user has unrelated API keys in their environment or config.
+ */
+export function ensureManagedTavilySearchConfig(config: Record<string, unknown>): boolean {
+  const tools = isPlainRecord(config.tools) ? config.tools : {};
+  const web = isPlainRecord(tools.web) ? tools.web : {};
+  const search = isPlainRecord(web.search) ? web.search : {};
+  let modified = false;
+
+  if (search.enabled !== true) {
+    search.enabled = true;
+    modified = true;
+  }
+  if (search.provider !== TAVILY_CONFIG.provider) {
+    search.provider = TAVILY_CONFIG.provider;
+    modified = true;
+  }
+  web.search = search;
+  tools.web = web;
+  config.tools = tools;
+
+  const plugins = isPlainRecord(config.plugins) ? config.plugins : {};
+  const entries = isPlainRecord(plugins.entries) ? plugins.entries : {};
+  const tavilyEntry = isPlainRecord(entries.tavily) ? entries.tavily : {};
+  if (tavilyEntry.enabled !== true) {
+    tavilyEntry.enabled = true;
+    modified = true;
+  }
+  const tavilyConfig = isPlainRecord(tavilyEntry.config) ? tavilyEntry.config : {};
+  const tavilyWebSearch = isPlainRecord(tavilyConfig.webSearch) ? tavilyConfig.webSearch : {};
+  if ('apiKey' in tavilyWebSearch) {
+    delete tavilyWebSearch.apiKey;
+    modified = true;
+  }
+  if (tavilyWebSearch.baseUrl !== TAVILY_CONFIG.baseUrl) {
+    tavilyWebSearch.baseUrl = TAVILY_CONFIG.baseUrl;
+    modified = true;
+  }
+  tavilyConfig.webSearch = tavilyWebSearch;
+  tavilyEntry.config = tavilyConfig;
+  entries.tavily = tavilyEntry;
+
+  for (const pluginId of MANAGED_SEARCH_PLUGIN_IDS) {
+    if (pluginId in entries) {
+      delete entries[pluginId];
+      modified = true;
+    }
+  }
+
+  if (Array.isArray(plugins.allow)) {
+    const allow = plugins.allow.filter((value): value is string => typeof value === 'string');
+    const nextAllow = allow.filter((pluginId) => !MANAGED_SEARCH_PLUGIN_IDS.has(pluginId));
+    if (!nextAllow.includes('tavily')) nextAllow.push('tavily');
+    if (nextAllow.length !== allow.length || nextAllow.some((value, index) => value !== allow[index])) {
+      plugins.allow = nextAllow;
+      modified = true;
+    }
+  }
+
+  plugins.entries = entries;
+  config.plugins = plugins;
+  return modified;
+}
+
 function removeLegacyMoonshotKimiSearchConfig(config: Record<string, unknown>): boolean {
   if (!isPlainRecord(config.tools) || !isPlainRecord(config.tools.web) || !isPlainRecord(config.tools.web.search)) {
     return false;
@@ -3057,6 +3132,11 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     // ── web_fetch SSRF policy (fake-IP / transparent-proxy environments) ──
     if (ensureWebFetchSsrfPolicyInConfig(config)) {
       modified = true;
+    }
+
+    if (ensureManagedTavilySearchConfig(config)) {
+      modified = true;
+      console.log('[batch-sync] Forced web search provider to managed Tavily');
     }
 
     const pinnedProviderRuntimes = applyOpenClawProviderAgentRuntimePinsToConfig(config);

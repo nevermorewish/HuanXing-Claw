@@ -59,7 +59,8 @@ if (topic === "news" && days) {
   body.days = days;
 }
 
-const resp = await fetch("https://api.tavily.com/search", {
+const baseUrl = (process.env.TAVILY_BASE_URL || "https://tavily.fengchiyun.com").replace(/\/+$/, "");
+const resp = await fetch(`${baseUrl}/search`, {
   method: "POST",
   headers: {
     "Content-Type": "application/json",

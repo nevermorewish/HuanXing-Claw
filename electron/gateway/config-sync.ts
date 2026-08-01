@@ -36,6 +36,7 @@ import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandid
 import { DEEPCLAW_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
 import { stripSystemdSupervisorEnv } from './config-sync-env';
 import { cleanupAgentsSymlinkedSkills, cleanupStalePluginRuntimeDeps } from './skills-symlink-cleanup';
+import { TAVILY_CONFIG } from '../utils/config';
 import {
   buildPrelaunchMaintenanceCacheKey,
   directoryChildrenSignature,
@@ -633,6 +634,10 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     ...providerEnv,
     ...uvEnv,
     ...proxyEnv,
+    // Brand builds use the operator-owned Tavily-compatible proxy. Set these
+    // after inherited/provider env so user shell values cannot bypass it.
+    TAVILY_BASE_URL: TAVILY_CONFIG.baseUrl,
+    TAVILY_API_KEY: TAVILY_CONFIG.apiKey,
     OPENCLAW_GATEWAY_TOKEN: appSettings.gatewayToken,
     OPENCLAW_SKIP_CHANNELS: skipChannels ? '1' : '',
     CLAWDBOT_SKIP_CHANNELS: skipChannels ? '1' : '',

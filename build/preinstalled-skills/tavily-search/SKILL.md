@@ -32,7 +32,8 @@ node {baseDir}/scripts/extract.mjs "https://example.com/article"
 ```
 
 Notes:
-- Needs `TAVILY_API_KEY` from https://tavily.com
+- Uses the branded Tavily-compatible proxy configured by the desktop app.
+- The app injects a search/extract-only `TAVILY_API_KEY` into the Gateway process.
 - Tavily is optimized for AI - returns clean, relevant snippets
 - Use `--deep` for complex research questions
 - Use `--topic news` for current events
