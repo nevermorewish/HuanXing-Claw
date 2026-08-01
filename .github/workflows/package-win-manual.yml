@@ -17,7 +17,8 @@ permissions:
 
 env:
   SERVICE_URL: https://ai.fengchiyun.com
-  UPDATE_FEED_BASE_URL: https://ai.fengchiyun.com/downloads
+  UPDATE_FEED_BASE_URL: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw
+  LEGACY_UPDATE_FEED_BASE_URL: https://ai.fengchiyun.com/downloads
 
 jobs:
   package-windows:
@@ -153,6 +154,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/run-electron-builder.mjs --win --publish never --config.directories.output=release/${{ matrix.brand }}
 
+      - name: Publish update feed to Volcengine TOS
+        env:
+          BRAND: ${{ matrix.brand }}
+          RELEASE_SOURCE_DIR: release/${{ matrix.brand }}
+          RELEASE_TOS_BASE_URL: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw
+        run: node scripts/upload-electron-release-tos.mjs
+
       - name: Prepare Linux upload payload
         id: upload_payload
         env:
@@ -258,7 +266,7 @@ jobs:
           "LINUX_DEPLOY_USER=$deployUser" >> $env:GITHUB_ENV
           "LINUX_DEPLOY_REMOTE_PATH=$remotePath" >> $env:GITHUB_ENV
 
-      - name: Upload package to Linux server
+      - name: Upload legacy update manifest to Linux server
         env:
           BRAND: ${{ matrix.brand }}
           CHANNEL: ${{ steps.upload_payload.outputs.channel }}
@@ -271,12 +279,16 @@ jobs:
             return "'" + $value.Replace("'", "'\''") + "'"
           }
 
-          $destinationRoot = "$env:LINUX_DEPLOY_REMOTE_PATH/downloads/$env:BRAND"
+          # Accept both deployment-root conventions used by existing secrets:
+          # either the web root itself (append /downloads) or the already
+          # configured downloads directory (do not append it twice).
+          $remoteRoot = $env:LINUX_DEPLOY_REMOTE_PATH.TrimEnd('/', '\\')
+          $remoteLeaf = Split-Path -Path $remoteRoot -Leaf
+          $downloadsRoot = if ($remoteLeaf -eq 'downloads') { $remoteRoot } else { "$remoteRoot/downloads" }
+          $destinationRoot = "$downloadsRoot/$env:BRAND"
           $channelDestination = "$destinationRoot/$env:CHANNEL"
-          $archiveDestination = "$destinationRoot/releases/v$env:VERSION"
 
           $remoteChannel = Quote-RemotePath $channelDestination
-          $remoteArchive = Quote-RemotePath $archiveDestination
           $remote = "$env:LINUX_DEPLOY_USER@$env:LINUX_DEPLOY_HOST"
 
           ssh `
@@ -284,11 +296,11 @@ jobs:
             -p $env:LINUX_DEPLOY_PORT `
             -o "UserKnownHostsFile=$env:SSH_KNOWN_HOSTS_PATH" `
             -o "StrictHostKeyChecking=$env:SSH_STRICT_HOST_KEY_CHECKING" `
-            $remote "mkdir -p $remoteChannel $remoteArchive"
+            $remote "mkdir -p $remoteChannel"
           if ($LASTEXITCODE -ne 0) { throw "Failed to create remote upload directories" }
 
-          $channelFiles = Get-ChildItem $env:CHANNEL_DIR -File | ForEach-Object { $_.FullName }
-          $archiveFiles = Get-ChildItem $env:ARCHIVE_DIR -File | ForEach-Object { $_.FullName }
+          $channelFiles = Get-ChildItem $env:CHANNEL_DIR -File -Filter '*.yml' | ForEach-Object { $_.FullName }
+          if ($channelFiles.Count -eq 0) { throw "No update manifest found in $env:CHANNEL_DIR" }
 
           scp `
             -i $env:SSH_KEY_PATH `
@@ -298,16 +310,7 @@ jobs:
             $channelFiles "${remote}:$channelDestination/"
           if ($LASTEXITCODE -ne 0) { throw "Failed to upload channel files" }
 
-          scp `
-            -i $env:SSH_KEY_PATH `
-            -P $env:LINUX_DEPLOY_PORT `
-            -o "UserKnownHostsFile=$env:SSH_KNOWN_HOSTS_PATH" `
-            -o "StrictHostKeyChecking=$env:SSH_STRICT_HOST_KEY_CHECKING" `
-            $archiveFiles "${remote}:$archiveDestination/"
-          if ($LASTEXITCODE -ne 0) { throw "Failed to upload archive files" }
-
-          Write-Host "Uploaded $env:BRAND channel files to https://ai.fengchiyun.com/downloads/$env:BRAND/$env:CHANNEL/"
-          Write-Host "Uploaded $env:BRAND archive files to https://ai.fengchiyun.com/downloads/$env:BRAND/releases/v$env:VERSION/"
+          Write-Host "Uploaded legacy $env:BRAND update manifests to https://ai.fengchiyun.com/downloads/$env:BRAND/$env:CHANNEL/"
 
       - name: Upload Windows Installer (x64)
         uses: actions/upload-artifact@v4

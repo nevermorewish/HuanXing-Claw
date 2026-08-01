@@ -86,3 +86,13 @@ export const GATEWAY_CONFIG = {
   /** Startup retry interval (ms) */
   STARTUP_RETRY_INTERVAL: 1000,
 };
+
+/**
+ * Managed Tavily-compatible search service used by branded desktop builds.
+ * The credential is restricted by TavilyProxyManager to search/extract only.
+ */
+export const TAVILY_CONFIG = {
+  baseUrl: 'https://tavily.fengchiyun.com',
+  apiKey: '3JElum7mkWtDU8IzA8rZERBekzzcYyNkW-v0iAhArkI',
+  provider: 'tavily',
+} as const;

@@ -126,6 +126,8 @@ The Skills page can display skills discovered from multiple OpenClaw sources (ma
 
 Environment variables for bundled search skills:
 - `TAVILY_API_KEY` for `tavily-search` (OAuth may also be supported by upstream skill runtime)
+
+Branded desktop builds force OpenClaw web search to the Tavily provider and route requests through `https://tavily.fengchiyun.com`; the app injects a search/extract-only credential into the managed Gateway process.
 - `find-skills` and `self-improving-agent` do not require API keys
 
 ### 🔐 Secure Provider Integration

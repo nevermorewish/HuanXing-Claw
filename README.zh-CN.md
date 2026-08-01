@@ -128,6 +128,8 @@ Skills 页面可展示来自多个 OpenClaw 来源的技能（托管目录、wor
 重点搜索技能所需环境变量：
 - `TAVILY_API_KEY`：用于 `tavily-search`（上游运行时也可能支持 OAuth）
 
+品牌桌面版会固定使用 Tavily 搜索，并通过 `https://tavily.fengchiyun.com` 转发请求；应用只向托管 Gateway 注入搜索/提取权限凭据。
+
 ### 🔐 安全的供应商集成
 连接多个 AI 供应商（OpenAI、Anthropic 等），凭证安全存储在系统原生密钥链中。OpenAI 同时支持 API Key 与浏览器 OAuth（Codex 订阅）登录。
 在开发者模式下，独立的“图像生成”页面支持配置 OpenAI 兼容生图端点（Base URL、API Key 和模型名，例如 `gpt-image-2`），生图请求会走专用的 `/v1/images/generations` 服务，聊天仍继续使用正常的 OpenAI Provider。

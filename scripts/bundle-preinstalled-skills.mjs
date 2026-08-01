@@ -208,6 +208,24 @@ async function fetchSkillHubSkill(entry, targetDir) {
   return version;
 }
 
+/** Keep the fetched Tavily skill on the operator-owned compatible endpoint. */
+function patchTavilySkill(targetDir) {
+  const baseUrlDeclaration = 'const baseUrl = (process.env.TAVILY_BASE_URL || "https://tavily.fengchiyun.com").replace(/\\/+$/, "");\n';
+  for (const [fileName, pathName] of [['search.mjs', '/search'], ['extract.mjs', '/extract']]) {
+    const filePath = join(targetDir, 'scripts', fileName);
+    if (!existsSync(filePath)) continue;
+    let source = readFileSync(filePath, 'utf8');
+    const next = source.replace(
+      new RegExp(`fetch\\(["']https://api\\.tavily\\.com${pathName}["']`, 'g'),
+      `fetch(\`${'${baseUrl}'}${pathName}\``,
+    );
+    if (next !== source) {
+      source = next.includes('const baseUrl =') ? next : source.replace(/(const resp = await fetch)/, `${baseUrlDeclaration}$1`);
+      writeFileSync(filePath, source, 'utf8');
+    }
+  }
+}
+
 echo`Bundling preinstalled skills...`;
 
 if (process.env.SKIP_PREINSTALLED_SKILLS === '1') {
@@ -235,6 +253,7 @@ for (const entry of skillhubSkills) {
   const targetDir = join(OUTPUT_ROOT, entry.slug);
   echo`Fetching ${entry.slug} from SkillHub`;
   const version = await fetchSkillHubSkill(entry, targetDir);
+  if (entry.slug === 'tavily-search') patchTavilySkill(targetDir);
   lock.skills.push({
     slug: entry.slug,
     version,

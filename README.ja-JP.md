@@ -127,6 +127,8 @@ Skills ページでは OpenClaw の複数ソース（管理ディレクトリ、
 主な検索スキルで必要な環境変数:
 - `TAVILY_API_KEY`: `tavily-search` 用（上流ランタイムで OAuth 対応の場合あり）
 
+ブランド版デスクトップは Web 検索プロバイダーを Tavily に固定し、`https://tavily.fengchiyun.com` 経由でリクエストします。アプリが管理対象 Gateway に注入する資格情報は検索・抽出専用です。
+
 ### 🔐 セキュアなプロバイダー統合
 複数のAIプロバイダー（OpenAI、Anthropicなど）に接続でき、資格情報はシステムのネイティブキーチェーンに安全に保存されます。OpenAI は API キーとブラウザ OAuth（Codex サブスクリプション）の両方に対応しています。
 開発者モードでは、専用の Image Generation ページで、独立した OpenAI 互換の画像生成エンドポイント（Base URL、API キー、`gpt-image-2` などのモデル名）を設定でき、画像生成だけ専用の `/v1/images/generations` サービスを使い、チャットは通常の OpenAI Provider のまま継続できます。
