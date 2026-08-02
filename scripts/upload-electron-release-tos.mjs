@@ -12,8 +12,9 @@ const REQUESTED_VERSION = process.env.RELEASE_VERSION?.replace(/^v/u, '');
 const TOS_BASE_URL = requiredHttpsUrl(
   process.env.RELEASE_TOS_BASE_URL
     || process.env.UPDATE_FEED_BASE_URL
-    || 'https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw',
+    || 'https://huangxingpackage.tos-cn-hongkong.volces.com/package',
 );
+const TOS_FEED_MIRROR_URLS = optionalHttpsUrls(process.env.RELEASE_TOS_FEED_MIRROR_URLS);
 const DRY_RUN = process.env.RELEASE_TOS_DRY_RUN === '1';
 const UPLOAD_CONCURRENCY = positiveIntegerEnv('RELEASE_TOS_UPLOAD_CONCURRENCY', 3);
 
@@ -30,6 +31,14 @@ function requiredHttpsUrl(value) {
   return url;
 }
 
+function optionalHttpsUrls(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map(requiredHttpsUrl);
+}
+
 function positiveIntegerEnv(name, fallback) {
   const raw = String(process.env[name] || '').trim();
   if (!raw) return fallback;
@@ -40,8 +49,8 @@ function positiveIntegerEnv(name, fallback) {
   return value;
 }
 
-function publicUrl(objectPath) {
-  const url = new URL(TOS_BASE_URL);
+function publicUrl(objectPath, baseUrl = TOS_BASE_URL) {
+  const url = new URL(baseUrl);
   url.pathname = `${url.pathname.replace(/\/+$/u, '')}/${objectPath.split('\\').join('/')}`;
   return url.toString();
 }
@@ -77,7 +86,7 @@ export function rewriteUpdaterManifest(text, versionedUrlFor) {
   return `${YAML.stringify(root).trimEnd()}\n`;
 }
 
-function uploadFile(filePath, objectPath, contentLength) {
+function uploadFile(filePath, objectPath, contentLength, baseUrl) {
   return new Promise((resolveUpload, rejectUpload) => {
     let body = '';
     let settled = false;
@@ -88,7 +97,7 @@ function uploadFile(filePath, objectPath, contentLength) {
       else resolveUpload();
     };
 
-    const url = new URL(publicUrl(objectPath));
+    const url = new URL(publicUrl(objectPath, baseUrl));
     const request = httpsRequest(url, {
       method: 'PUT',
       headers: {
@@ -120,17 +129,17 @@ function uploadFile(filePath, objectPath, contentLength) {
   });
 }
 
-async function upload(filePath, objectPath) {
+async function upload(filePath, objectPath, baseUrl = TOS_BASE_URL) {
   if (DRY_RUN) {
-    console.log(`[TOS dry-run] ${filePath} -> ${publicUrl(objectPath)}`);
+    console.log(`[TOS dry-run] ${filePath} -> ${publicUrl(objectPath, baseUrl)}`);
     return;
   }
   const { size } = await stat(filePath);
   let lastError;
   for (let attempt = 1; attempt <= 5; attempt += 1) {
     try {
-      await uploadFile(filePath, objectPath, size);
-      console.log(`Uploaded ${objectPath}`);
+      await uploadFile(filePath, objectPath, size, baseUrl);
+      console.log(`Uploaded ${publicUrl(objectPath, baseUrl)}`);
       return;
     } catch (error) {
       lastError = error;
@@ -193,6 +202,9 @@ async function main() {
     await writeFile(filePath, rewritten, 'utf8');
     await upload(filePath, `${versionRoot}/${fileName}`);
     await upload(filePath, `${latestRoot}/${fileName}`);
+    for (const mirrorUrl of TOS_FEED_MIRROR_URLS) {
+      await upload(filePath, `${latestRoot}/${fileName}`, mirrorUrl);
+    }
   }
 
   console.log(`Published ${BRAND} ${version} (${channel}) update feed to ${publicUrl(`${latestRoot}/`)}`);

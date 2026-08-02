@@ -19,7 +19,7 @@ permissions:
 
 env:
   SERVICE_URL: https://ai.fengchiyun.com
-  UPDATE_FEED_BASE_URL: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw
+  UPDATE_FEED_BASE_URL: https://huangxingpackage.tos-cn-hongkong.volces.com/package
   LEGACY_UPDATE_FEED_BASE_URL: https://ai.fengchiyun.com/downloads
 
 jobs:
@@ -179,7 +179,8 @@ jobs:
         env:
           BRAND: ${{ matrix.brand }}
           RELEASE_SOURCE_DIR: release/${{ matrix.brand }}
-          RELEASE_TOS_BASE_URL: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw
+          RELEASE_TOS_BASE_URL: https://huangxingpackage.tos-cn-hongkong.volces.com/package
+          RELEASE_TOS_FEED_MIRROR_URLS: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw
           RELEASE_TOS_UPLOAD_CONCURRENCY: 3
         run: node scripts/upload-electron-release-tos.mjs
 
@@ -597,7 +598,8 @@ jobs:
         env:
           BRAND: ${{ matrix.brand }}
           RELEASE_SOURCE_DIR: release/${{ matrix.brand }}
-          RELEASE_TOS_BASE_URL: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw
+          RELEASE_TOS_BASE_URL: https://huangxingpackage.tos-cn-hongkong.volces.com/package
+          RELEASE_TOS_FEED_MIRROR_URLS: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw
           RELEASE_TOS_UPLOAD_CONCURRENCY: 3
         run: node scripts/upload-electron-release-tos.mjs
 
