@@ -15,6 +15,7 @@ const TOS_BASE_URL = requiredHttpsUrl(
     || 'https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw',
 );
 const DRY_RUN = process.env.RELEASE_TOS_DRY_RUN === '1';
+const UPLOAD_CONCURRENCY = positiveIntegerEnv('RELEASE_TOS_UPLOAD_CONCURRENCY', 3);
 
 function requiredEnv(name) {
   const value = String(process.env[name] || '').trim();
@@ -27,6 +28,16 @@ function requiredHttpsUrl(value) {
   if (url.protocol !== 'https:') throw new Error(`TOS URL must use https: ${value}`);
   url.pathname = url.pathname.replace(/\/+$/u, '');
   return url;
+}
+
+function positiveIntegerEnv(name, fallback) {
+  const raw = String(process.env[name] || '').trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error(`${name} must be a positive integer, received: ${raw}`);
+  }
+  return value;
 }
 
 function publicUrl(objectPath) {
@@ -129,6 +140,21 @@ async function upload(filePath, objectPath) {
   throw new Error(`TOS upload failed for ${objectPath}: ${lastError?.message || lastError}`);
 }
 
+async function mapWithConcurrency(items, concurrency, task) {
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (nextIndex < items.length) {
+        const item = items[nextIndex];
+        nextIndex += 1;
+        await task(item);
+      }
+    },
+  );
+  await Promise.all(workers);
+}
+
 async function packageVersion() {
   if (REQUESTED_VERSION) return REQUESTED_VERSION;
   const packageJson = JSON.parse(await readFile(join(process.cwd(), 'package.json'), 'utf8'));
@@ -149,14 +175,24 @@ async function main() {
   const versionRoot = `${root}/releases/v${version}`;
   const versionedUrlFor = (fileName) => publicUrl(`${versionRoot}/${fileName}`);
 
-  for (const fileName of files) {
+  const manifests = files.filter((fileName) => fileName.toLowerCase().endsWith('.yml'));
+  const assets = files.filter((fileName) => !fileName.toLowerCase().endsWith('.yml'));
+  if (manifests.length === 0) throw new Error(`No updater manifest found under ${SOURCE_DIR}`);
+
+  // Manifests contain absolute versioned URLs, so large immutable assets only
+  // need one upload. Upload independent assets concurrently, then publish the
+  // small manifests last so clients never discover an incomplete release.
+  await mapWithConcurrency(assets, UPLOAD_CONCURRENCY, async (fileName) => {
     const filePath = join(SOURCE_DIR, fileName);
-    if (fileName.toLowerCase().endsWith('.yml')) {
-      const rewritten = rewriteUpdaterManifest(await readFile(filePath, 'utf8'), versionedUrlFor);
-      await writeFile(filePath, rewritten, 'utf8');
-    }
-    await upload(filePath, `${latestRoot}/${fileName}`);
     await upload(filePath, `${versionRoot}/${fileName}`);
+  });
+
+  for (const fileName of manifests) {
+    const filePath = join(SOURCE_DIR, fileName);
+    const rewritten = rewriteUpdaterManifest(await readFile(filePath, 'utf8'), versionedUrlFor);
+    await writeFile(filePath, rewritten, 'utf8');
+    await upload(filePath, `${versionRoot}/${fileName}`);
+    await upload(filePath, `${latestRoot}/${fileName}`);
   }
 
   console.log(`Published ${BRAND} ${version} (${channel}) update feed to ${publicUrl(`${latestRoot}/`)}`);

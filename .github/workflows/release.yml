@@ -180,6 +180,7 @@ jobs:
           BRAND: ${{ matrix.brand }}
           RELEASE_SOURCE_DIR: release/${{ matrix.brand }}
           RELEASE_TOS_BASE_URL: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw
+          RELEASE_TOS_UPLOAD_CONCURRENCY: 3
         run: node scripts/upload-electron-release-tos.mjs
 
       - name: Prepare Linux upload payload
@@ -597,6 +598,7 @@ jobs:
           BRAND: ${{ matrix.brand }}
           RELEASE_SOURCE_DIR: release/${{ matrix.brand }}
           RELEASE_TOS_BASE_URL: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw
+          RELEASE_TOS_UPLOAD_CONCURRENCY: 3
         run: node scripts/upload-electron-release-tos.mjs
 
       - name: Prepare Linux upload payload
