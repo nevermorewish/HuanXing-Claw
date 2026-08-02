@@ -12,9 +12,8 @@ const REQUESTED_VERSION = process.env.RELEASE_VERSION?.replace(/^v/u, '');
 const TOS_BASE_URL = requiredHttpsUrl(
   process.env.RELEASE_TOS_BASE_URL
     || process.env.UPDATE_FEED_BASE_URL
-    || 'https://huangxingpackage.tos-cn-hongkong.volces.com/package',
+    || 'https://huanxing.tos-accelerate.volces.com/package/huanxingclaw',
 );
-const TOS_FEED_MIRROR_URLS = optionalHttpsUrls(process.env.RELEASE_TOS_FEED_MIRROR_URLS);
 const DRY_RUN = process.env.RELEASE_TOS_DRY_RUN === '1';
 const UPLOAD_CONCURRENCY = positiveIntegerEnv('RELEASE_TOS_UPLOAD_CONCURRENCY', 3);
 
@@ -29,14 +28,6 @@ function requiredHttpsUrl(value) {
   if (url.protocol !== 'https:') throw new Error(`TOS URL must use https: ${value}`);
   url.pathname = url.pathname.replace(/\/+$/u, '');
   return url;
-}
-
-function optionalHttpsUrls(value) {
-  return String(value || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map(requiredHttpsUrl);
 }
 
 function positiveIntegerEnv(name, fallback) {
@@ -202,9 +193,6 @@ async function main() {
     await writeFile(filePath, rewritten, 'utf8');
     await upload(filePath, `${versionRoot}/${fileName}`);
     await upload(filePath, `${latestRoot}/${fileName}`);
-    for (const mirrorUrl of TOS_FEED_MIRROR_URLS) {
-      await upload(filePath, `${latestRoot}/${fileName}`, mirrorUrl);
-    }
   }
 
   console.log(`Published ${BRAND} ${version} (${channel}) update feed to ${publicUrl(`${latestRoot}/`)}`);

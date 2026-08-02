@@ -16,7 +16,7 @@
     "deepseek-v4-pro"
   ],
   "rechargeUrl": "https://api.huanxing.ai/wallet",
-  "updateFeedBaseUrl": "https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/huanxingclaw",
+  "updateFeedBaseUrl": "https://huanxing.tos-accelerate.volces.com/package/huanxingclaw/huanxingclaw",
   "copyright": "Copyright © 2026 HuanxingClaw",
   "vendor": "HuanxingClaw",
   "maintainer": "HuanxingClaw Team <support@huanxingclaw.ai>",
