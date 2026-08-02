@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>旧更新服务器 latest.yml 上传说明</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        line-height: 1.6;
+        background: Canvas;
+        color: CanvasText;
+      }
+
+      body {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 32px 20px 56px;
+      }
+
+      h1,
+      h2 {
+        font-weight: 600;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        font-size: 28px;
+        margin: 0 0 12px;
+      }
+
+      h2 {
+        font-size: 19px;
+        margin: 32px 0 12px;
+      }
+
+      .summary {
+        padding: 14px 16px;
+        border-left: 4px solid #147d64;
+        background: color-mix(in srgb, CanvasText 6%, Canvas);
+      }
+
+      code,
+      pre {
+        font-family: "Cascadia Code", Consolas, monospace;
+      }
+
+      code {
+        overflow-wrap: anywhere;
+      }
+
+      pre {
+        overflow-x: auto;
+        padding: 14px 16px;
+        border: 1px solid color-mix(in srgb, CanvasText 18%, Canvas);
+        border-radius: 6px;
+        background: color-mix(in srgb, CanvasText 5%, Canvas);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 10px 12px;
+        border: 1px solid color-mix(in srgb, CanvasText 20%, Canvas);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: color-mix(in srgb, CanvasText 7%, Canvas);
+      }
+
+      .ok {
+        color: #08775b;
+        font-weight: 600;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .ok {
+          color: #5ed6b3;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>旧更新服务器 latest.yml 上传说明</h1>
+      <p class="summary">
+        把本目录下的三个品牌文件夹合并上传到旧服务器的
+        <code>/www/wwwroot/downloads/</code>。只需要覆盖三个
+        <code>latest.yml</code>，不需要上传安装包或 blockmap。
+      </p>
+
+      <h2>目标目录</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>本地文件</th>
+            <th>旧服务器目标文件</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>update/huanxingclaw/latest/latest.yml</code></td>
+            <td><code>/www/wwwroot/downloads/huanxingclaw/latest/latest.yml</code></td>
+          </tr>
+          <tr>
+            <td><code>update/fengchiclaw/latest/latest.yml</code></td>
+            <td><code>/www/wwwroot/downloads/fengchiclaw/latest/latest.yml</code></td>
+          </tr>
+          <tr>
+            <td><code>update/frogclaw/latest/latest.yml</code></td>
+            <td><code>/www/wwwroot/downloads/frogclaw/latest/latest.yml</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>服务器最终结构</h2>
+      <pre>/www/wwwroot/downloads/
+|-- huanxingclaw/
+|   `-- latest/
+|       `-- latest.yml
+|-- fengchiclaw/
+|   `-- latest/
+|       `-- latest.yml
+`-- frogclaw/
+    `-- latest/
+        `-- latest.yml</pre>
+
+      <h2>上传后验证</h2>
+      <p>在浏览器中打开以下地址，确认返回版本清单，并且其中的 <code>url</code> 和 <code>path</code> 都以火山 TOS 域名开头：</p>
+      <pre>https://ai.fengchiyun.com/downloads/huanxingclaw/latest/latest.yml
+https://ai.fengchiyun.com/downloads/fengchiclaw/latest/latest.yml
+https://ai.fengchiyun.com/downloads/frogclaw/latest/latest.yml</pre>
+      <p>清单中的安装包地址应以此路径开头：</p>
+      <pre>https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/</pre>
+
+      <h2>注意事项</h2>
+      <ul>
+        <li>不要修改 <code>sha512</code>、<code>size</code>、文件名或版本号。</li>
+        <li>旧服务器只保存更新清单；EXE 和 blockmap 继续由火山 TOS 提供。</li>
+        <li>当前清单版本为 <code>0.4.25</code>，仅供现有老版本迁移使用。</li>
+        <li>发布 <code>0.4.26</code> 后，新的发布流水线会自动同步旧服务器清单。</li>
+      </ul>
+
+      <p class="ok">完成标准：三个旧地址均可访问，且清单内的下载地址均指向火山 TOS。</p>
+    </main>
+  </body>
+</html>
