@@ -1,8 +1,8 @@
 version: 0.4.27
 files:
   - url: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/frogclaw/releases/v0.4.27/FrogClaw-0.4.27-win-x64.exe
-    sha512: 5rB9qxj4wWMn/0Ox0ni1tKjH4TDWlWTQue1z7NpsJdHInSbcMPsST6JVsUyIkNINdKckMB7jwodmRX07kpC6/Q==
-    size: 267941761
+    sha512: 3wApn5uRaTWbdZotrpG8l/Y4dhVZ4A11p1s1vn8cTzBNG934IKWVV4ohRM5jk5KmwHiznvRf1RCeVHilXRcYDg==
+    size: 267941511
 path: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/frogclaw/releases/v0.4.27/FrogClaw-0.4.27-win-x64.exe
-sha512: 5rB9qxj4wWMn/0Ox0ni1tKjH4TDWlWTQue1z7NpsJdHInSbcMPsST6JVsUyIkNINdKckMB7jwodmRX07kpC6/Q==
-releaseDate: 2026-08-02T14:35:52.864Z
+sha512: 3wApn5uRaTWbdZotrpG8l/Y4dhVZ4A11p1s1vn8cTzBNG934IKWVV4ohRM5jk5KmwHiznvRf1RCeVHilXRcYDg==
+releaseDate: 2026-08-02T16:48:39.322Z

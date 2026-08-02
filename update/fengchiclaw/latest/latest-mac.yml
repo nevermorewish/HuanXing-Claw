@@ -1,0 +1,26 @@
+version: 0.4.27
+files:
+  - url: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/fengchiclaw/releases/v0.4.27/FengchiClaw-0.4.27-mac-x64.zip
+    sha512: Jx7S0PtEBZ+IRr8oVfrPylvuDSPxX4GCPI/fo3qRvythE7J6lxaKVEthiXzCXpZPPAAcea+jw2H0qle7qukzFA==
+    size: 284222026
+  - url: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/fengchiclaw/releases/v0.4.27/FengchiClaw-0.4.27-mac-arm64.zip
+    sha512: xYx3X7E5wxb7oVK9u+HytvxVjtWyiZl5qteT+7rZDAUdwjJaabtSPJzk1+DpgKr60EpZXBlXnaDDlDMdLWzjNQ==
+    size: 271299946
+  - url: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/fengchiclaw/releases/v0.4.27/FengchiClaw-0.4.27-mac-arm64.zip
+    sha512: xYx3X7E5wxb7oVK9u+HytvxVjtWyiZl5qteT+7rZDAUdwjJaabtSPJzk1+DpgKr60EpZXBlXnaDDlDMdLWzjNQ==
+    size: 271299946
+  - url: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/fengchiclaw/releases/v0.4.27/FengchiClaw-0.4.27-mac-x64.dmg
+    sha512: V+KtT+PurjCRs5ao5APiks+9efbNP93uPJdVVTDZGLBMNAFZ5AEMEHnRcOwL8EaxB0LhyBcWDCuiwC6kwnDUmA==
+    size: 250782030
+  - url: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/fengchiclaw/releases/v0.4.27/FengchiClaw-0.4.27-mac-x64.dmg
+    sha512: V+KtT+PurjCRs5ao5APiks+9efbNP93uPJdVVTDZGLBMNAFZ5AEMEHnRcOwL8EaxB0LhyBcWDCuiwC6kwnDUmA==
+    size: 250782030
+  - url: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/fengchiclaw/releases/v0.4.27/FengchiClaw-0.4.27-mac-arm64.dmg
+    sha512: aEyh2PkgYdz1MPetUCNdmjx606GPOPppzIKlnaIMlAamh8FPcoY863lfj/JeQGyiNb8hrNBc6Ve3S6CDM2DzmQ==
+    size: 239070441
+  - url: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/fengchiclaw/releases/v0.4.27/FengchiClaw-0.4.27-mac-arm64.dmg
+    sha512: aEyh2PkgYdz1MPetUCNdmjx606GPOPppzIKlnaIMlAamh8FPcoY863lfj/JeQGyiNb8hrNBc6Ve3S6CDM2DzmQ==
+    size: 239070441
+path: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/fengchiclaw/releases/v0.4.27/FengchiClaw-0.4.27-mac-x64.zip
+sha512: Jx7S0PtEBZ+IRr8oVfrPylvuDSPxX4GCPI/fo3qRvythE7J6lxaKVEthiXzCXpZPPAAcea+jw2H0qle7qukzFA==
+releaseDate: 2026-08-02T17:40:05.796Z

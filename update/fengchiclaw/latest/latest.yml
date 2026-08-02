@@ -1,8 +1,8 @@
 version: 0.4.27
 files:
   - url: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/fengchiclaw/releases/v0.4.27/FengchiClaw-0.4.27-win-x64.exe
-    sha512: sWdQmMnG9OQTqet51/jyDiDt630Mux/w60uI09gH8lSD+QaJ9DqmYphrsWSyG3qyQNVw45G4TLlSeZ3k7u1u/w==
-    size: 268399403
+    sha512: ZCohcQJzLX0LumOL1ffR4YmnXgZZ3b5FVhKlNNzi+/fcoj1beMQnNaqp2jUO1Bi86DMace05r62fJq9E569alw==
+    size: 268399459
 path: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/fengchiclaw/releases/v0.4.27/FengchiClaw-0.4.27-win-x64.exe
-sha512: sWdQmMnG9OQTqet51/jyDiDt630Mux/w60uI09gH8lSD+QaJ9DqmYphrsWSyG3qyQNVw45G4TLlSeZ3k7u1u/w==
-releaseDate: 2026-08-02T14:26:23.608Z
+sha512: ZCohcQJzLX0LumOL1ffR4YmnXgZZ3b5FVhKlNNzi+/fcoj1beMQnNaqp2jUO1Bi86DMace05r62fJq9E569alw==
+releaseDate: 2026-08-02T16:40:11.837Z

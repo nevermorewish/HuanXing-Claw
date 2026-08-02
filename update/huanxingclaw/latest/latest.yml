@@ -1,8 +1,8 @@
 version: 0.4.27
 files:
   - url: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/huanxingclaw/releases/v0.4.27/HuanxingClaw-0.4.27-win-x64.exe
-    sha512: xnSre66+zhXfLcCADumKP8CjkIQHTBVOhOGccKQObzeduhV3jjb1nJLirdYUDtaohz+arZk/B2+2X5zCSEAaIw==
-    size: 269060281
+    sha512: 6drydzpjixv+PpYIVbCI3J/NBoOQMZBXAIqgqwDf4zdFi2tqfnbkcmzCA+TJbzl6ucLGds1E5umzT8xq//s3mg==
+    size: 269055104
 path: https://huanxing.tos-cn-beijing.volces.com/package/huanxingclaw/huanxingclaw/releases/v0.4.27/HuanxingClaw-0.4.27-win-x64.exe
-sha512: xnSre66+zhXfLcCADumKP8CjkIQHTBVOhOGccKQObzeduhV3jjb1nJLirdYUDtaohz+arZk/B2+2X5zCSEAaIw==
-releaseDate: 2026-08-02T14:17:46.360Z
+sha512: 6drydzpjixv+PpYIVbCI3J/NBoOQMZBXAIqgqwDf4zdFi2tqfnbkcmzCA+TJbzl6ucLGds1E5umzT8xq//s3mg==
+releaseDate: 2026-08-02T16:30:17.559Z
