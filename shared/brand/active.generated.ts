@@ -21,7 +21,7 @@ export const ACTIVE_BRAND: BrandConfig = {
     'deepseek-v4-pro',
   ],
   rechargeUrl: 'https://api.huanxing.ai/wallet',
-  updateFeedBaseUrl: 'https://huanxing.tos-accelerate.volces.com/package/huanxingclaw/huanxingclaw',
+  updateFeedBaseUrl: 'https://ai.fengchiyun.com/downloads/huanxingclaw',
   copyright: 'Copyright © 2026 HuanxingClaw',
   vendor: 'HuanxingClaw',
   maintainer: 'HuanxingClaw Team <support@huanxingclaw.ai>',

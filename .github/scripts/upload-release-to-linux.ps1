@@ -17,12 +17,8 @@ function Get-ReleaseAssetUrl([string]$AssetName) {
   return "$script:GithubServerUrl/$script:GithubRepository/releases/download/v$script:Version/$encodedAssetName"
 }
 
-function Get-ReleaseFileCommands([string]$SourceDir, [string]$ChannelDestination) {
-  # The legacy host is only an upgrade bridge. Installers and blockmaps live in
-  # TOS; old clients need the current manifest so its absolute URLs lead there.
-  $files = @(Get-ChildItem $SourceDir -File | Where-Object {
-      $_.Extension -eq '.yml' -and $_.Name -ne 'builder-debug.yml'
-    })
+function Get-ReleaseFileCommands([string]$SourceDir, [string]$ChannelDestination, [string]$ArchiveDestination) {
+  $files = @(Get-ChildItem $SourceDir -File | Where-Object { $_.Name -ne 'builder-debug.yml' })
   if ($files.Count -eq 0) {
     throw "No release files found under $SourceDir"
   }
@@ -36,12 +32,14 @@ function Get-ReleaseFileCommands([string]$SourceDir, [string]$ChannelDestination
 
     $assetUrl = Get-ReleaseAssetUrl $assetName
     $channelFile = "$ChannelDestination/$($file.Name)"
+    $archiveFile = "$ArchiveDestination/$($file.Name)"
     $temporaryFile = "$channelFile.tmp-$script:GithubRunId"
 
     $commands += "echo Downloading $(Quote-RemoteArg $assetName) to $(Quote-RemoteArg $channelFile)"
     $commands += "rm -f $(Quote-RemoteArg $temporaryFile)"
     $commands += "curl -fL --retry 8 --retry-all-errors --retry-delay 10 --connect-timeout 30 --speed-time 60 --speed-limit 1024 -o $(Quote-RemoteArg $temporaryFile) $(Quote-RemoteArg $assetUrl)"
     $commands += "mv -f $(Quote-RemoteArg $temporaryFile) $(Quote-RemoteArg $channelFile)"
+    $commands += "cp -f $(Quote-RemoteArg $channelFile) $(Quote-RemoteArg $archiveFile)"
   }
 
   return $commands
@@ -50,7 +48,7 @@ function Get-ReleaseFileCommands([string]$SourceDir, [string]$ChannelDestination
 function Invoke-RemoteScript([string[]]$Commands) {
   $script = @(
     "set -euo pipefail",
-    "mkdir -p $(Quote-RemoteArg $script:ChannelDestination)"
+    "mkdir -p $(Quote-RemoteArg $script:ChannelDestination) $(Quote-RemoteArg $script:ArchiveDestination)"
   ) + $Commands
 
   $scriptText = ($script -join "`n") + "`n"
@@ -90,7 +88,7 @@ $channel = Assert-Env 'CHANNEL'
 $script:Version = Assert-Env 'VERSION'
 $channelDir = Assert-Env 'CHANNEL_DIR'
 $remoteRoot = (Assert-Env 'LINUX_DEPLOY_REMOTE_PATH').TrimEnd('/', '\')
-$updateFeedBaseUrl = Assert-Env 'LEGACY_UPDATE_FEED_BASE_URL'
+$updateFeedBaseUrl = Assert-Env 'UPDATE_FEED_BASE_URL'
 
 $script:SshKeyPath = Assert-Env 'SSH_KEY_PATH'
 $script:SshKnownHostsPath = Assert-Env 'SSH_KNOWN_HOSTS_PATH'
@@ -116,9 +114,11 @@ if ($feedDir -and $remoteLeaf -ne $feedDir) {
 
 $destinationRoot = "$remoteRoot/$script:Brand"
 $script:ChannelDestination = "$destinationRoot/$channel"
+$script:ArchiveDestination = "$destinationRoot/releases/v$script:Version"
 $script:Remote = "$deployUser@$deployHost"
 
-$commands = Get-ReleaseFileCommands $channelDir $script:ChannelDestination
+$commands = Get-ReleaseFileCommands $channelDir $script:ChannelDestination $script:ArchiveDestination
 Invoke-RemoteScript $commands
 
-Write-Host "Uploaded legacy $script:Brand update manifests to https://ai.fengchiyun.com/downloads/$script:Brand/$channel/"
+Write-Host "Uploaded $script:Brand channel files to https://ai.fengchiyun.com/downloads/$script:Brand/$channel/"
+Write-Host "Uploaded $script:Brand archive files to https://ai.fengchiyun.com/downloads/$script:Brand/releases/v$script:Version/"
