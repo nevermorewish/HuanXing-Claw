@@ -19,7 +19,7 @@ permissions:
 
 env:
   SERVICE_URL: https://ai.fengchiyun.com
-  UPDATE_FEED_BASE_URL: https://ai.fengchiyun.com/downloads
+  UPDATE_FEED_BASE_URL: https://huanxing.ai/downloads
 
 jobs:
   validate-release:

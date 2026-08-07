@@ -120,5 +120,5 @@ $script:Remote = "$deployUser@$deployHost"
 $commands = Get-ReleaseFileCommands $channelDir $script:ChannelDestination $script:ArchiveDestination
 Invoke-RemoteScript $commands
 
-Write-Host "Uploaded $script:Brand channel files to https://ai.fengchiyun.com/downloads/$script:Brand/$channel/"
-Write-Host "Uploaded $script:Brand archive files to https://ai.fengchiyun.com/downloads/$script:Brand/releases/v$script:Version/"
+Write-Host "Uploaded $script:Brand channel files to https://huanxing.ai/downloads/$script:Brand/$channel/"
+Write-Host "Uploaded $script:Brand archive files to https://huanxing.ai/downloads/$script:Brand/releases/v$script:Version/"

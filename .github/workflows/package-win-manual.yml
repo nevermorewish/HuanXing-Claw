@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
       remote_path:
-        description: 'Linux server web root mapped to https://ai.fengchiyun.com/. Leave empty to use LINUX_DEPLOY_PATH.'
+        description: 'Linux server web root mapped to https://huanxing.ai/. Leave empty to use LINUX_DEPLOY_PATH.'
         required: false
         default: ''
 
@@ -17,7 +17,7 @@ permissions:
 
 env:
   SERVICE_URL: https://ai.fengchiyun.com
-  UPDATE_FEED_BASE_URL: https://ai.fengchiyun.com/downloads
+  UPDATE_FEED_BASE_URL: https://huanxing.ai/downloads
 
 jobs:
   package-windows:
@@ -314,8 +314,8 @@ jobs:
             $archiveFiles "${remote}:$archiveDestination/"
           if ($LASTEXITCODE -ne 0) { throw "Failed to upload archive files" }
 
-          Write-Host "Uploaded $env:BRAND channel files to https://ai.fengchiyun.com/downloads/$env:BRAND/$env:CHANNEL/"
-          Write-Host "Uploaded $env:BRAND archive files to https://ai.fengchiyun.com/downloads/$env:BRAND/releases/v$env:VERSION/"
+          Write-Host "Uploaded $env:BRAND channel files to https://huanxing.ai/downloads/$env:BRAND/$env:CHANNEL/"
+          Write-Host "Uploaded $env:BRAND archive files to https://huanxing.ai/downloads/$env:BRAND/releases/v$env:VERSION/"
 
       - name: Upload Windows Installer (x64)
         uses: actions/upload-artifact@v4
