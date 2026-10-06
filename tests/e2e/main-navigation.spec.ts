@@ -1,4 +1,5 @@
 import type { ElectronApplication } from '@playwright/test';
+import { BRAND } from '../../shared/brand';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 
 async function readNativeMenuLabels(app: ElectronApplication) {
@@ -50,6 +51,10 @@ test.describe('DeepClaw main navigation without setup flow', () => {
       const page = await getStableWindow(app);
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      const brandLogo = page.getByRole('img', { name: BRAND.appName, exact: true });
+      await expect(brandLogo).toBeVisible();
+      await expect.poll(() => brandLogo.evaluate((image: HTMLImageElement) =>
+        image.complete && image.naturalWidth > 0)).toBe(true);
       await expect(page.getByTestId('chat-page')).toBeVisible();
       await expect(page.getByTestId('main-content')).toBeVisible();
       await expect(page.getByTestId('sidebar-resize-handle')).toBeVisible();

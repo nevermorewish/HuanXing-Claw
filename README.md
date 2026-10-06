@@ -292,7 +292,16 @@ ccwork organization. Local Token history is diagnostic and does not determine
 wallet charges. Log out to revoke local access and remove the account provider.
 
 The added `ccworkclaw` brand has its own app ID, executable, data directory
-(`.ccworkclaw`), provider key, and CCWork icons. On PowerShell:
+(`.ccworkclaw`), provider key, and CCWork icons.
+
+The brand logo is copied from the ccwork project's root `logo.png` into
+`brands/ccworklogo.png`. Updates use ccwork's `huanxingupdate` Aliyun OSS bucket
+at `https://huanxingupdate.oss-cn-beijing.aliyuncs.com/desktop-updates/ccworkclaw`.
+The updater appends the release channel; Windows stable packages and `latest.yml`
+belong in `ccworkclaw/latest/`. This directory is separate from ccwork desktop
+releases. Upload the CCWorkClaw installer, manifest, and blockmap together.
+
+Build on PowerShell:
 
 ```powershell
 $env:BRAND = 'ccworkclaw'

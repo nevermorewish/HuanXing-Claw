@@ -292,7 +292,15 @@ Claw 的账号登录、注册默认连接 **https://ccwork.site**。点击侧栏
 退出登录会撤销本地调用权限并移除账号模型配置。
 
 新增 `ccworkclaw` 品牌，拥有独立应用 ID、可执行文件、数据目录 `.ccworkclaw`、
-提供商标识及 CCWork 图标。PowerShell 构建方式：
+提供商标识及 CCWork 图标。
+
+品牌图标从 ccwork 项目根目录的 `logo.png` 复制到 `brands/ccworklogo.png`。
+更新使用 ccwork 的阿里云 OSS `huanxingupdate` 桶，基址为
+`https://huanxingupdate.oss-cn-beijing.aliyuncs.com/desktop-updates/ccworkclaw`。
+更新器会追加渠道目录；Windows 正式版安装包和 `latest.yml` 应一起放在
+`ccworkclaw/latest/`，同时上传 blockmap。该目录独立于 ccwork 桌面客户端更新目录。
+
+PowerShell 构建方式：
 
 ```powershell
 $env:BRAND = 'ccworkclaw'

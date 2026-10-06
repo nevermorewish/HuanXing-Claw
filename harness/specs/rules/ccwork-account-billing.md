@@ -25,3 +25,8 @@ an expired access token before processing. Consumption comes from ccwork wallet
 transactions; local transcript token estimates are diagnostic, not wallet charges.
 
 Reference: [ccwork backend contracts](../../reference/ccwork-backend.md).
+
+CCWorkClaw brand assets use a repository-local copy of ccwork's root logo.png.
+Its update feed shares ccwork's public OSS bucket but has a separate
+desktop-updates/ccworkclaw/<channel>/ prefix. Do not point it at the ccwork
+desktop manifest or place OSS upload credentials in the brand or client bundle.

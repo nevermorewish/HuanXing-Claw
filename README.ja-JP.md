@@ -292,6 +292,13 @@ ccwork の課金プロキシを通ります。テストにもクレジットを�
 `ccworkclaw` ブランドは独立したアプリ ID、実行ファイル、データディレクトリ
 `.ccworkclaw`、プロバイダーキー、CCWork アイコンを持ちます。
 
+ブランドロゴは ccwork のルート `logo.png` から `brands/ccworklogo.png` にコピーします。
+更新は ccwork の Aliyun OSS バケット `huanxingupdate` を使用し、ベース URL は
+`https://huanxingupdate.oss-cn-beijing.aliyuncs.com/desktop-updates/ccworkclaw` です。
+更新チャネルが URL に追加されます。Windows 安定版のインストーラー、`latest.yml`、
+blockmap は `ccworkclaw/latest/` にまとめて配置します。このディレクトリは
+ccwork デスクトップの更新ディレクトリと分離されています。
+
 ```powershell
 $env:BRAND = 'ccworkclaw'
 corepack pnpm run build:vite
