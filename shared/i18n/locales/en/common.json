@@ -101,7 +101,7 @@
         "codeSent": "Verification code sent",
         "resendAfter": "Resend in {{count}}s",
         "passwordHint": "At least 8 characters, including 3 of uppercase, lowercase, numbers and symbols.",
-        "required": "Enter your account, password and a 6-digit registration code when registering.",
+        "required": "Enter the account and a 6-digit code. Registration and password login also need a password.",
         "identifierRequired": "Enter an email or phone number.",
         "createAccount": "Create an account",
         "haveAccount": "Already have an account? Log in",
@@ -126,6 +126,13 @@
         "amount": "Credits charged",
         "transactionDescription": "Description",
         "loadFailed": "Could not load ccwork consumption.",
-        "useModel": "Use as primary"
+        "useModel": "Use as primary",
+        "models": "ccwork models",
+        "account": "Account settings",
+        "useCodeLogin": "Log in with a code",
+        "usePasswordLogin": "Log in with a password",
+        "identifierInvalid": "Enter a valid email address or mainland China phone number.",
+        "sendCodeFirst": "Send a verification code first.",
+        "loginSuccess": "Logged in to CCWork"
     }
 }

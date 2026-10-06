@@ -14,8 +14,9 @@ touchedAreas:
   - harness/**
   - README*.md
 expectedUserBehavior:
-  - Users log in or register with a verification code against their ccwork server.
-  - Available models and credit transactions come from the personal ccwork organization.
+  - Users log in with a verification code by default, or with a password, or register; all three run against their ccwork server.
+  - Signing in enables every routable model from the personal ccwork organization without a per-model selection step.
+  - Credit balances and transactions come from the personal ccwork organization.
   - Account model calls including tools and streaming run through ccwork billing.
 requiredProfiles:
   - fast

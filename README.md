@@ -275,19 +275,23 @@ DeepClaw is released under the [MIT License](LICENSE). You're free to use, modif
 ## CCWork accounts and CCWorkClaw
 
 Claw account login and registration connect to **https://ccwork.site**. Open the
-sidebar account entry to sign in with a username/email/phone, or register with an
-email/mainland China phone verification code and password. A custom ccwork HTTPS
-origin or local HTTP server can be entered in the same dialog. Self-signup policy
-and password validation come from ccwork. Passwords are not saved. JWT sessions
-stay in Electron Main and are encrypted with the operating system; when encryption
-is unavailable they last only for the current app run.
+sidebar account entry to sign in. Verification-code login is the default: enter an
+email or mainland China phone number, request a code, and submit it. ccwork
+registers an identifier it has not seen before, so the same form works for new and
+existing accounts and no password is needed. Password login and explicit
+registration (verification code plus a password) are one click away in the same
+dialog. A custom ccwork HTTPS origin or local HTTP server can be entered there too.
+Self-signup policy and password validation come from ccwork. Passwords are not
+saved. JWT sessions stay in Electron Main and are encrypted with the operating
+system; when encryption is unavailable they last only for the current app run.
 
-Choose available chat models on the Models page. The catalog uses ccwork model
-UUIDs and preserves server context/output limits and vision/reasoning capabilities.
-Account model calls, tools, streaming responses, and model tests pass through the
-ccwork billed proxy. Tests consume credits. The selected account's default and
-fallback chain and chat model selector use ccwork. Existing agent model overrides
-are migrated to the selected ccwork models when saving the account configuration. Credit balance and consumption on the Usage page come from the personal
+Signing in enables every routable chat model in your personal ccwork catalog — there
+is no per-model opt-in step. The catalog uses ccwork model UUIDs and preserves
+server context/output limits and vision/reasoning capabilities. Account model calls,
+tools, streaming responses, and model tests pass through the ccwork billed proxy.
+Tests consume credits. The account's default and fallback chain and the chat model
+selector use ccwork, and the Models page lists the enabled models so you can switch
+which one is primary. Credit balance and consumption on the Usage page come from the personal
 ccwork organization. Local Token history is diagnostic and does not determine
 wallet charges. Log out to revoke local access and remove the account provider.
 

@@ -39,6 +39,20 @@ export interface AccountModelConfig {
   primary: string | null;
 }
 
+/**
+ * Exactly three ccwork entry points, as a discriminated union so a caller can
+ * never submit the wrong combination of fields:
+ *   - `password`  → `POST /api/auth/login`
+ *   - `code`      → `POST /api/auth/login/verification-code` (auto-registers
+ *                   an unknown identifier, so it needs no password)
+ *   - `register`  → `POST /api/auth/register` (password + a `register` code)
+ */
+export type AccountLoginInput = { baseUrl: string; username: string } & (
+  | { mode: 'password'; password: string }
+  | { mode: 'code'; verificationCode: string; challengeKey: string }
+  | { mode: 'register'; password: string; verificationCode: string }
+);
+
 export interface AccountTestResult {
   ok: boolean;
   latencyMs?: number;
@@ -84,8 +98,14 @@ interface AccountState {
   error: string | null;
 
   savedCredentials: () => Promise<{ username: string; password: string; baseUrl?: string } | null>;
-  /** Log in and fetch models + key. Returns the model list on success. */
-  login: (baseUrl: string, username: string, password: string, verificationCode?: string) => Promise<string[]>;
+  /**
+   * Log in and fetch models. Returns the model list on success.
+   * `verificationCode`+`challengeKey` drive ccwork's code login; `password`
+   * drives password login; passing neither submits a new registration.
+   */
+  login: (input: AccountLoginInput) => Promise<string[]>;
+  /** Request a ccwork code and keep the returned challenge key for the redeem call. */
+  sendCode: (input: { baseUrl: string; username: string; codeType: 'login' | 'register' }) => Promise<{ challengeKey: string }>;
   /** Refresh the account balance. Safe to call when logged out (no-op). */
   fetchBalance: () => Promise<void>;
   /** Fetch the account's API tokens for selection. Returns them (also stored). */
@@ -188,13 +208,31 @@ export const useAccountStore = create<AccountState>()(
         await hostApi.shell.openExternal(url);
       },
 
-      login: async (baseUrlInput, username, password, verificationCode) => {
+      sendCode: async ({ baseUrl, username, codeType }) => {
+        const result = await hostApi.account.sendVerificationCode({
+          baseUrl: baseUrl.trim() || DEFAULT_ACCOUNT_URL,
+          username: username.trim(),
+          codeType,
+        });
+        if (!result.success) {
+          throw new Error(result.error || '发送验证码失败');
+        }
+        return { challengeKey: result.challengeKey ?? '' };
+      },
+
+      login: async ({ baseUrl: baseUrlInput, username, ...credentials }) => {
         const baseUrl = baseUrlInput.trim() || DEFAULT_ACCOUNT_URL;
         set({ loading: true, error: null });
         try {
-          const loginResult = verificationCode === undefined
-            ? await hostApi.account.login({ baseUrl, username, password })
-            : await hostApi.account.register({ baseUrl, username, password, verificationCode });
+          const loginResult = credentials.mode === 'password'
+            ? await hostApi.account.login({ baseUrl, username, password: credentials.password })
+            : credentials.mode === 'code'
+              ? await hostApi.account.loginWithVerificationCode({
+                  baseUrl, username, verificationCode: credentials.verificationCode, challengeKey: credentials.challengeKey,
+                })
+              : await hostApi.account.register({
+                  baseUrl, username, password: credentials.password, verificationCode: credentials.verificationCode,
+                });
           if (!loginResult.success) {
             throw new Error(loginResult.error || '登录失败');
           }

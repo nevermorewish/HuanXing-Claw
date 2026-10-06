@@ -101,7 +101,7 @@
         "codeSent": "認証コードを送信しました",
         "resendAfter": "{{count}} 秒後に再送信",
         "passwordHint": "8 文字以上で、大文字・小文字・数字・記号のうち 3 種類以上を含めてください。",
-        "required": "アカウントとパスワードを入力してください。登録には 6 桁のコードも必要です。",
+        "required": "アカウントと 6 桁のコードを入力してください。登録とパスワードログインではパスワードも必要です。",
         "identifierRequired": "メールまたは電話番号を入力してください。",
         "createAccount": "新規登録",
         "haveAccount": "アカウントをお持ちですか？ログイン",
@@ -126,6 +126,13 @@
         "amount": "使用クレジット",
         "transactionDescription": "説明",
         "loadFailed": "ccwork の利用記録を取得できません。",
-        "useModel": "メインに設定"
+        "useModel": "メインに設定",
+        "models": "ccwork モデル",
+        "account": "アカウント設定",
+        "useCodeLogin": "認証コードでログイン",
+        "usePasswordLogin": "パスワードでログイン",
+        "identifierInvalid": "有効なメールアドレスまたは中国本土の携帯番号を入力してください。",
+        "sendCodeFirst": "先に認証コードを送信してください。",
+        "loginSuccess": "CCWork にログインしました"
     }
 }

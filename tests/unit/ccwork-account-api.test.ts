@@ -78,8 +78,25 @@ describe('ccwork account service credential ownership', () => {
     const service = await api(); await service.getModelConfig();
     expect(state.values.has('ccworkSession')).toBe(false); expect(state.config.models).toEqual([]);
   });
+  it('enables the whole catalog on sign-in instead of requiring a model selection', async () => {
+    const service = await api();
+    await service.login({ baseUrl: 'https://ccwork.site', username: 'demo', password: 'password' });
+    // ccwork grants every routable model, so the first catalog entry becomes the
+    // default without the renderer ever sending a model list.
+    expect(state.writes).toEqual([{
+      baseUrl: 'http://127.0.0.1:23456/v1', apiKey: 'local-runtime-key', primaryModelId: 'model-uuid',
+      models: [{ id: 'model-uuid', name: 'Model', contextWindow: 128000, maxTokens: 16000, input: ['text', 'image'] }],
+    }]);
+  });
+  it('keeps the previously chosen primary across sign-in when it is still offered', async () => {
+    state.config = { baseUrl: '', models: [{ id: 'model-uuid', name: 'Model' }], primary: 'huanxingclaw/model-uuid' };
+    const service = await api();
+    await service.login({ baseUrl: 'https://ccwork.site', username: 'demo', password: 'password' });
+    expect(state.writes.at(-1)).toMatchObject({ primaryModelId: 'model-uuid' });
+  });
   it('saves server-owned UUID capabilities and the local credential, never caller metadata or JWT', async () => {
     const service = await api(); await service.login({ baseUrl: 'https://ccwork.site', username: 'demo', password: 'password' });
+    state.writes = [];
     const result = await service.saveModelConfig({ models: [{ id: 'model-uuid', name: 'Wrong', contextWindow: 1 }], primaryModelId: 'model-uuid' });
     expect(result.success).toBe(true);
     expect(state.writes).toEqual([{ baseUrl: 'http://127.0.0.1:23456/v1', apiKey: 'local-runtime-key', primaryModelId: 'model-uuid', models: [{ id: 'model-uuid', name: 'Model', contextWindow: 128000, maxTokens: 16000, input: ['text', 'image'] }] }]);

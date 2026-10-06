@@ -4,12 +4,21 @@ Default origin: `https://ccwork.site`. Custom HTTPS deployments and local HTTP
 development servers are supported by the account dialog. `/api` is appended
 exactly once. ccwork source is read-only reference, not a dependency to edit.
 
-Authentication uses `/api/auth/login`, `/register`, `/send-verification-code`,
-`/refresh-token`, and `/logout`. Login/registration return `{success, data}` with
-`access_token`, `refresh_token`, `expires_in`, and a user whose ID is a UUID.
-Registration sends `email` or an 11-digit mainland China `phone`, `password`, and
-`verification_code`. Code sending uses `username` and `code_type: register`.
+Authentication uses `/api/auth/login`, `/login/verification-code`, `/register`,
+`/send-verification-code`, `/refresh-token`, and `/logout`. Login/registration
+return `{success, data}` with `access_token`, `refresh_token`, `expires_in`, and a
+user whose ID is a UUID. Registration sends `email` or an 11-digit mainland China
+`phone`, `password`, and `verification_code`. Verification-code login sends
+`username`, `verification_code`, `challenge_key`, and logs in an unknown
+identifier by registering it, so it doubles as the lowest-friction signup.
 Registration restrictions, validation, and rate limits remain server-owned.
+
+`POST /api/auth/send-verification-code` sends `username` plus a `code_type`. The
+code is scoped to its type: a `register` code is refused once the identifier
+exists, and a `login` code is bound to a client-generated `challenge_key`
+(16-64 chars) that must be replayed verbatim when the code is redeemed. Main mints
+the key and hands it back to the renderer to echo, so the client can only ever
+replay a key the server was actually given.
 
 `GET /api/context/organizations?type=personal` returns `data.organizations`.
 The personal organization's UUID scopes catalog, wallet, consumption and calls.

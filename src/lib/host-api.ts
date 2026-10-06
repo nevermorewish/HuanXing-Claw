@@ -481,11 +481,14 @@ export const hostApi = {
   },
   account: {
     register: (input: { baseUrl: string; username: string; password: string; verificationCode: string }) => invokeHost('account', 'register', input),
-    sendVerificationCode: (input: { baseUrl: string; username: string }) => invokeHost('account', 'sendVerificationCode', input),
+    sendVerificationCode: (input: { baseUrl: string; username: string; codeType: 'login' | 'register' }) => invokeHost('account', 'sendVerificationCode', input),
     restore: () => invokeHost('account', 'restore'),
     transactions: (input: { limit?: number; offset?: number } = {}) => invokeHost('account', 'transactions', input),
     login: (input: { baseUrl: string; username: string; password: string }) => (
       invokeHost('account', 'login', input)
+    ),
+    loginWithVerificationCode: (input: { baseUrl: string; username: string; verificationCode: string; challengeKey: string }) => (
+      invokeHost('account', 'loginWithVerificationCode', input)
     ),
     fetchSetup: () => invokeHost('account', 'fetchSetup'),
     savedCredentials: () => invokeHost('account', 'savedCredentials'),

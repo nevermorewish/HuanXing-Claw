@@ -13,8 +13,10 @@ export function CcworkModels() {
   const loggedIn = useAccountStore((s) => s.loggedIn);
   const load = useAccountStore((s) => s.loadModelConfig);
   useEffect(() => { void load(); }, [load, loggedIn, open]);
+  // Every catalog model is granted on login, so this list only chooses which
+  // one chat uses by default — membership is not a per-model opt-in.
   return <section data-testid="ccwork-models" className="mb-8 space-y-3">
-    <div className="flex items-center justify-between"><h2 className="font-serif text-2xl font-normal tracking-tight">{t('ccwork.selectModels')}</h2><Button onClick={() => setOpen(true)}>{t(loggedIn ? 'ccwork.selectModels' : 'ccwork.login')}</Button></div>
+    <div className="flex items-center justify-between"><h2 className="font-serif text-2xl font-normal tracking-tight">{t('ccwork.models')}</h2><Button onClick={() => setOpen(true)}>{t(loggedIn ? 'ccwork.account' : 'ccwork.login')}</Button></div>
     <p className="text-sm text-muted-foreground">{t('ccwork.modelsDescription')}</p>
     {!config?.models.length && <p className="text-muted-foreground">{t('ccwork.noModels')}</p>}
     {config?.models.map((model) => <div key={model.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-input p-3"><span>{model.name}</span><Button variant="outline" disabled={!loggedIn || config.primary === `${BRAND.providerKey}/${model.id}`} onClick={() => { void useAccountStore.getState().setPrimaryModel(model.id).catch((err) => setError(String(err))); }}>{t('ccwork.useModel')}</Button></div>)}

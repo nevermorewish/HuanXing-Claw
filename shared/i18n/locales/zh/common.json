@@ -101,7 +101,7 @@
         "codeSent": "验证码已发送",
         "resendAfter": "{{count}} 秒后重发",
         "passwordHint": "密码至少 8 位，须包含大写、小写、数字、特殊字符中的至少 3 种。",
-        "required": "请填写账号、密码；注册时还需填写 6 位验证码。",
+        "required": "请填写账号和 6 位验证码；注册与密码登录还需填写密码。",
         "identifierRequired": "请填写邮箱或手机号。",
         "createAccount": "注册新账号",
         "haveAccount": "已有账号？去登录",
@@ -126,6 +126,13 @@
         "amount": "消耗额度",
         "transactionDescription": "说明",
         "loadFailed": "无法加载 ccwork 消费记录。",
-        "useModel": "设为主模型"
+        "useModel": "设为主模型",
+        "models": "ccwork 模型",
+        "account": "账号设置",
+        "useCodeLogin": "使用验证码登录",
+        "usePasswordLogin": "使用密码登录",
+        "identifierInvalid": "请输入有效的邮箱或中国大陆手机号。",
+        "sendCodeFirst": "请先发送验证码。",
+        "loginSuccess": "已登录 CCWork"
     }
 }

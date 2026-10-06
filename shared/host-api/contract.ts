@@ -977,6 +977,8 @@ export type AccountBalance = {
 };
 export type AccountBalanceResult = HostSuccess & { balance?: AccountBalance; sessionExpired?: boolean };
 export type AccountLoginResult = HostSuccess & { user?: AccountUser };
+/** `challengeKey` must be replayed to `loginWithVerificationCode`; empty for register codes. */
+export type AccountSendCodeResult = HostSuccess & { challengeKey?: string };
 export type AccountSetupResult = HostSuccess & {
   user?: AccountUser;
   baseUrl?: string;
@@ -1313,8 +1315,11 @@ export type HostApiContract = {
   };
   account: {
     login: (payload: AccountLoginPayload) => AccountLoginResult;
+    /** Verification-code login; ccwork registers the identifier on first use. */
+    loginWithVerificationCode: (payload: { baseUrl: string; username: string; verificationCode: string; challengeKey: string }) => AccountLoginResult;
     register: (payload: AccountLoginPayload & { verificationCode: string }) => AccountLoginResult;
-    sendVerificationCode: (payload: { baseUrl: string; username: string }) => HostSuccess;
+    /** Main generates the `challenge_key` and returns it for the later redeem call. */
+    sendVerificationCode: (payload: { baseUrl: string; username: string; codeType: 'login' | 'register' }) => AccountSendCodeResult;
     restore: () => AccountSetupResult;
     transactions: (payload: { limit?: number; offset?: number }) => AccountTransactionsResult;
     fetchSetup: () => AccountSetupResult;

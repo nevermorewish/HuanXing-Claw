@@ -44,11 +44,31 @@ describe('ccwork account session', () => {
       else if (req.url?.startsWith('/api/context')) json(res, { success: true, data: { organizations: [{ id: 'org', type: 'personal' }] } });
       else json(res, { success: true });
     })(); });
-    const session = new AccountSession(); await session.sendVerificationCode(baseUrl, identifier);
+    const session = new AccountSession();
+    await session.sendVerificationCode(baseUrl, identifier, 'register');
     await session.register(baseUrl, identifier, 'Password123!', '123456');
     expect(calls).toEqual([
       ['/api/auth/send-verification-code', { username: identifier, code_type: 'register' }],
       ['/api/auth/register', { ...(identifier.includes('@') ? { email: identifier } : { phone: identifier }), password: 'Password123!', verification_code: '123456' }],
+    ]);
+  });
+  it('mints a challenge key for login codes and replays it when redeeming', async () => {
+    const calls: unknown[] = [];
+    const baseUrl = await server((req, res) => { void (async () => {
+      if (req.url?.startsWith('/api/auth/')) calls.push([req.url, await body(req)]);
+      if (req.url === '/api/auth/login/verification-code') json(res, { success: true, data: { access_token: 'a', refresh_token: 'r', expires_in: 3600, user: { id: 'u' } } });
+      else if (req.url?.startsWith('/api/context')) json(res, { success: true, data: { organizations: [{ id: 'org', type: 'personal' }] } });
+      else json(res, { success: true });
+    })(); });
+    const session = new AccountSession();
+    const { challengeKey } = await session.sendVerificationCode(baseUrl, 'demo@example.com');
+    // ccwork scopes a login code to the challenge key it was issued under, so the
+    // redemption must echo the exact same value or verify_code() misses its cache entry.
+    expect(challengeKey).toMatch(/^[0-9a-f-]{36}$/);
+    await session.loginWithVerificationCode(baseUrl, 'demo@example.com', '123456', challengeKey);
+    expect(calls).toEqual([
+      ['/api/auth/send-verification-code', { username: 'demo@example.com', code_type: 'login', challenge_key: challengeKey }],
+      ['/api/auth/login/verification-code', { username: 'demo@example.com', verification_code: '123456', challenge_key: challengeKey, remember_me: true }],
     ]);
   });
   it('uses UUID model identifiers and filters disabled/non-chat entries, preserving capabilities', async () => {

@@ -1,10 +1,14 @@
 /** ccwork JWT session. Tokens never leave Main except to the selected backend. */
+import { randomUUID } from 'node:crypto';
 import type { AccountModelEntry, AccountUser } from '@shared/host-api/contract';
 export type { AccountUser } from '@shared/host-api/contract';
 export type SessionSnapshot = {
   baseUrl: string; accessToken: string; refreshToken: string; expiresAt: number;
   user: AccountUser; organizationId: string;
 };
+/** ccwork `code_type` values the account dialog can request. */
+export type AccountCodeType = 'login' | 'register';
+export type SendCodeResult = { challengeKey: string };
 type AuthResponse = {
   access_token: string; refresh_token: string; expires_in: number;
   user?: { id: string; username?: string; email?: string; phone?: string; nickname?: string; is_staff?: boolean };
@@ -69,13 +73,34 @@ export class AccountSession {
   login(baseUrl: string, username: string, password: string): Promise<AccountUser> {
     return this.authenticate(baseUrl, '/api/auth/login', { username, password, remember_me: true });
   }
+  /**
+   * Verification-code login. ccwork issues the code for `code_type: 'login'` and
+   * registers the identifier on first use, so no password is required.
+   */
+  loginWithVerificationCode(baseUrl: string, username: string, verificationCode: string, challengeKey: string): Promise<AccountUser> {
+    return this.authenticate(baseUrl, '/api/auth/login/verification-code', {
+      username, verification_code: verificationCode, challenge_key: challengeKey, remember_me: true,
+    });
+  }
   register(baseUrl: string, identifier: string, password: string, verificationCode: string): Promise<AccountUser> {
     return this.authenticate(baseUrl, '/api/auth/register', {
       ...(identifier.includes('@') ? { email: identifier } : { phone: identifier }), password, verification_code: verificationCode,
     });
   }
-  async sendVerificationCode(baseUrl: string, username: string): Promise<void> {
-    await this.json(normalizeCcworkUrl(baseUrl), '/api/auth/send-verification-code', { username, code_type: 'register' });
+  /**
+   * ccwork scopes a code by its `code_type`, and a `login` code is additionally
+   * bound to a client-generated `challenge_key` that must be replayed when the
+   * code is redeemed. Neither may be substituted: a `register` code is refused
+   * for an identifier that already exists, and a challenge-less code cannot be
+   * redeemed by `/login/verification-code`. Main generates the key so the
+   * renderer can only ever echo back what the server was actually given.
+   */
+  async sendVerificationCode(baseUrl: string, username: string, codeType: AccountCodeType = 'login'): Promise<SendCodeResult> {
+    const challengeKey = codeType === 'login' ? randomUUID() : undefined;
+    await this.json(normalizeCcworkUrl(baseUrl), '/api/auth/send-verification-code', {
+      username, code_type: codeType, ...(challengeKey ? { challenge_key: challengeKey } : {}),
+    });
+    return { challengeKey: challengeKey ?? '' };
   }
   private async refresh(): Promise<void> {
     if (this.refreshFlight) return this.refreshFlight;

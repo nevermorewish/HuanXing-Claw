@@ -59,6 +59,21 @@ export function createAccountApi({ gatewayManager }: { gatewayManager: GatewayMa
     return { success: true, user: accountSession.getUser()!, baseUrl: accountSession.getBaseUrl()!,
       models: modelEntries.map((m) => m.id), modelEntries };
   };
+  /**
+   * ccwork grants the whole catalog, so logging in turns every routable model on
+   * instead of asking the user to pick. The previously chosen primary is kept
+   * when it is still in the catalog, otherwise the first entry becomes primary.
+   * Runs on every successful sign-in so a catalog change lands without the user
+   * having to re-open settings.
+   */
+  const applyAllAccountModels = async (): Promise<AccountModelEntry[]> => {
+    const catalog = await accountSession.fetchModelEntries();
+    if (!catalog.length) { await deleteAccountProvider(); return []; }
+    const previous = await readAccountModelConfig();
+    const primary = catalog.find((m) => `${BRAND.providerKey}/${m.id}` === previous.primary)?.id ?? catalog[0].id;
+    await writeAccountModelConfig({ ...await relay.start(), models: catalog, primaryModelId: primary });
+    return catalog;
+  };
   const save = async (models: AccountModelEntry[], primaryModelId?: string | null) => {
     if (!accountSession.isLoggedIn()) throw new Error('Please log in to ccwork');
     const catalog = await accountSession.fetchModelEntries();
@@ -76,18 +91,32 @@ export function createAccountApi({ gatewayManager }: { gatewayManager: GatewayMa
       try {
         await initializeCcworkAccount();
         await deleteAccountProvider();
-        return { success: true, user: await accountSession.login(payload.baseUrl, payload.username, payload.password) };
+        const user = await accountSession.login(payload.baseUrl, payload.username, payload.password);
+        await applyAllAccountModels();
+        return { success: true, user };
+      } catch (error) { return failure(error); }
+    },
+    loginWithVerificationCode: async (payload) => {
+      try {
+        await initializeCcworkAccount();
+        await deleteAccountProvider();
+        const user = await accountSession.loginWithVerificationCode(
+          payload.baseUrl, payload.username, payload.verificationCode, payload.challengeKey);
+        await applyAllAccountModels();
+        return { success: true, user };
       } catch (error) { return failure(error); }
     },
     register: async (payload) => {
       try {
         await initializeCcworkAccount();
         await deleteAccountProvider();
-        return { success: true, user: await accountSession.register(payload.baseUrl, payload.username, payload.password, payload.verificationCode) };
+        const user = await accountSession.register(payload.baseUrl, payload.username, payload.password, payload.verificationCode);
+        await applyAllAccountModels();
+        return { success: true, user };
       } catch (error) { return failure(error); }
     },
     sendVerificationCode: async (payload) => {
-      try { await accountSession.sendVerificationCode(payload.baseUrl, payload.username); return { success: true }; }
+      try { return { success: true, ...await accountSession.sendVerificationCode(payload.baseUrl, payload.username, payload.codeType) }; }
       catch (error) { return failure(error); }
     },
     fetchSetup: async () => { try { return await setup(); } catch (error) { return failure(error); } },
