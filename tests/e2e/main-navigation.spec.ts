@@ -58,7 +58,7 @@ test.describe('DeepClaw main navigation without setup flow', () => {
       await page.getByTestId('sidebar-nav-models').click();
       await expect(page.getByTestId('models-page')).toBeVisible();
       await expect(page.getByTestId('models-page-title')).toBeVisible();
-      await expect(page.getByTestId('providers-model-config')).toBeVisible();
+      await expect(page.getByTestId('ccwork-models')).toBeVisible();
 
       await page.getByTestId('sidebar-nav-config').click();
       await expect(page.getByTestId('config-page')).toBeVisible();

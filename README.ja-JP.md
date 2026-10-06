@@ -271,3 +271,32 @@ DeepClawは [MITライセンス](LICENSE) のもとで公開されています�
 <p align="center">
   <sub>ValueCell Teamが❤️を込めて開発</sub>
 </p>
+
+## CCWork アカウントと CCWorkClaw
+
+Claw のログインと登録は **https://ccwork.site** に接続します。サイドバーから
+ユーザー名・メール・電話番号でログインするか、メールまたは中国本土の電話番号
+に届くコードとパスワードで登録します。別の ccwork HTTPS サーバーやローカル
+HTTP サーバーも指定できます。登録ポリシーは ccwork が管理します。パスワード
+は保存しません。JWT は Main プロセスで管理し OS で暗号化します。暗号化が
+使えない場合、アプリを終了するとログイン状態は失われます。
+
+モデル画面のカタログは ccwork の UUID、コンテキスト・出力上限、画像・推論
+能力を使用します。アカウントモデルの対話、ツール、ストリーミング、テストは
+ccwork の課金プロキシを通ります。テストにもクレジットを使用します。メインと
+フォールバックとモデル選択は ccwork に限定し、保存時に既存の Agent
+モデル設定も ccwork に更新します。利用画面のクレジットと支払い履歴は個人組織ウォレットから取得します。
+ローカルトークン履歴は診断用であり課金を決定しません。ログアウトするとローカル
+アクセスとアカウントモデル設定を削除します。
+
+`ccworkclaw` ブランドは独立したアプリ ID、実行ファイル、データディレクトリ
+`.ccworkclaw`、プロバイダーキー、CCWork アイコンを持ちます。
+
+```powershell
+$env:BRAND = 'ccworkclaw'
+corepack pnpm run build:vite
+corepack pnpm run package:win
+```
+
+既定のブランドは HuanxingClaw のままです。この変更ではインストーラーの公開や
+CCWorkClaw 更新フィードのサーバー構築は行いません。

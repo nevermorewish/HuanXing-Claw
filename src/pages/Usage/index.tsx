@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { CcworkConsumption } from '@/components/account/CcworkConsumption';
 import {
   ChevronLeft,
   ChevronRight,
@@ -289,6 +290,7 @@ export function Usage() {
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
+          <CcworkConsumption />
           <div>
             {usageLoading ? (
               <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-transparent border-dashed">

@@ -1591,6 +1591,8 @@ export interface AccountModelEntry {
   name: string;
   contextWindow?: number;
   reasoning?: boolean;
+  maxTokens?: number;
+  input?: Array<'text' | 'image'>;
 }
 
 /** A model entry on a provider — same shape regardless of provider. */
@@ -1635,6 +1637,8 @@ function normalizeAccountModelEntry(value: unknown): AccountModelEntry | null {
   };
   if (typeof record.contextWindow === 'number') entry.contextWindow = record.contextWindow;
   if (typeof record.reasoning === 'boolean') entry.reasoning = record.reasoning;
+  if (typeof record.maxTokens === 'number') entry.maxTokens = record.maxTokens;
+  if (Array.isArray(record.input)) entry.input = record.input.filter((v): v is 'text' | 'image' => v === 'text' || v === 'image');
   return entry;
 }
 
@@ -1704,6 +1708,7 @@ export async function writeProviderModelConfig(
     apiKey?: string;
     models: ProviderModelEntry[];
     primaryModelId?: string | null;
+    accountManaged?: boolean;
   },
 ): Promise<void> {
   assertValidApiProtocol(input.api, key);
@@ -1731,6 +1736,8 @@ export async function writeProviderModelConfig(
         const entry: Record<string, unknown> = { id: m.id, name: m.name };
         if (m.contextWindow != null) entry.contextWindow = m.contextWindow;
         if (m.reasoning != null) entry.reasoning = m.reasoning;
+        if (m.maxTokens != null) entry.maxTokens = m.maxTokens;
+        if (m.input != null) entry.input = m.input;
         return entry;
       }),
     };
@@ -1810,6 +1817,21 @@ export async function writeProviderModelConfig(
       }
     }
     defaults.model = modelCfg;
+    if (input.accountManaged && cleanModels.length) {
+      const accountPrimary = input.primaryModelId ? `${key}/${input.primaryModelId}`
+        : validRefs.has(String(modelCfg.primary)) ? String(modelCfg.primary) : `${key}/${cleanModels[0].id}`;
+      modelCfg.primary = accountPrimary;
+      modelCfg.fallbacks = [...validRefs].filter((ref) => ref !== accountPrimary);
+      if (Array.isArray(agents.list)) {
+        for (const agent of agents.list) {
+          if (!isPlainRecord(agent)) continue;
+          const previous = typeof agent.model === 'string' ? agent.model
+            : isPlainRecord(agent.model) ? agent.model.primary : undefined;
+          const agentPrimary = typeof previous === 'string' && validRefs.has(previous) ? previous : accountPrimary;
+          agent.model = { primary: agentPrimary, fallbacks: [...validRefs].filter((ref) => ref !== agentPrimary) };
+        }
+      }
+    }
 
     // Register each model under agents.defaults.models (mirrors qtcool template):
     // keep other entries, replace this provider's set with current models.
@@ -1821,6 +1843,11 @@ export async function writeProviderModelConfig(
     }
     for (const ref of validRefs) {
       if (!modelsMap[ref]) modelsMap[ref] = {};
+    }
+    if (input.accountManaged) {
+      for (const ref of Object.keys(modelsMap)) {
+        if (!validRefs.has(ref)) delete modelsMap[ref];
+      }
     }
     defaults.models = modelsMap;
     agents.defaults = defaults;
@@ -1972,6 +1999,7 @@ export async function writeAccountModelConfig(input: {
     apiKey: input.apiKey,
     models: input.models,
     primaryModelId: input.primaryModelId,
+    accountManaged: true,
   });
 }
 

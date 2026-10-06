@@ -7,6 +7,7 @@ import { join } from 'path';
 import { GatewayManager } from '../gateway/manager';
 import { registerOpenClawConfigCoordinator } from '../gateway/config-delivery';
 import { registerIpcHandlers } from './ipc-handlers';
+import { initializeCcworkAccount } from '../services/account-api';
 import { HostApiRegistry } from './ipc/host-invoke';
 import { createTray } from './tray';
 import { createMenu } from './menu';
@@ -397,6 +398,7 @@ async function initialize(): Promise<void> {
     webBrowserGuestRegistry,
   );
 
+  await initializeCcworkAccount();
   loadMainWindow(window);
 
   // Create system tray

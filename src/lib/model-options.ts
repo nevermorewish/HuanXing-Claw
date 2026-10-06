@@ -4,6 +4,7 @@ export interface ConfiguredModelOption {
   modelRef: string;
   label: string;
   modelId: string;
+  displayName?: string;
   providerName: string;
   runtimeProviderKey: string;
   accountId: string;

@@ -943,7 +943,7 @@ export type DeliveryChannelGroup = {
 export type DeliveryTargetsResult = HostSuccess & { targets: DeliveryChannelGroup[] };
 
 export type AccountUser = {
-  id: number;
+  id: string;
   username: string;
   displayName: string;
   role: number;
@@ -958,28 +958,30 @@ export type AccountLoginPayload = {
 export type AccountCredentials = {
   username: string;
   password: string;
+  baseUrl?: string;
 };
 export type AccountCredentialsResult = HostSuccess & {
   credentials?: AccountCredentials | null;
 };
 export type AccountBalance = {
-  /** Raw New-API quota units. */
+  /** Available ccwork wallet credits, preserving six decimal places. */
   quota: number;
-  /** Quota already consumed, in the same units. */
+  /** Legacy field, zero for ccwork; consumption is returned by transactions. */
   usedQuota: number;
-  /** Divisor to convert quota units → a currency amount. */
+  /** Legacy display divisor (1 for ccwork credits). */
   quotaPerUnit: number;
   /** Whether the server prefers showing a currency amount over raw quota. */
   displayInCurrency: boolean;
   /** Resolved absolute URL of the server's top-up / recharge page. */
   topUpUrl: string;
 };
-export type AccountBalanceResult = HostSuccess & { balance?: AccountBalance };
+export type AccountBalanceResult = HostSuccess & { balance?: AccountBalance; sessionExpired?: boolean };
 export type AccountLoginResult = HostSuccess & { user?: AccountUser };
 export type AccountSetupResult = HostSuccess & {
   user?: AccountUser;
   baseUrl?: string;
   models?: string[];
+  modelEntries?: AccountModelEntry[];
   apiKey?: string;
 };
 export type AccountModelEntry = {
@@ -987,7 +989,11 @@ export type AccountModelEntry = {
   name: string;
   contextWindow?: number;
   reasoning?: boolean;
+  maxTokens?: number;
+  input?: Array<'text' | 'image'>;
 };
+export type AccountTransaction = { id: string; description: string; amount_precise: string; created_at: string; transaction_type: string };
+export type AccountTransactionsResult = HostSuccess & { total?: number; transactions?: AccountTransaction[] };
 export type AccountModelConfig = {
   baseUrl: string;
   models: AccountModelEntry[];
@@ -1307,6 +1313,10 @@ export type HostApiContract = {
   };
   account: {
     login: (payload: AccountLoginPayload) => AccountLoginResult;
+    register: (payload: AccountLoginPayload & { verificationCode: string }) => AccountLoginResult;
+    sendVerificationCode: (payload: { baseUrl: string; username: string }) => HostSuccess;
+    restore: () => AccountSetupResult;
+    transactions: (payload: { limit?: number; offset?: number }) => AccountTransactionsResult;
     fetchSetup: () => AccountSetupResult;
     savedCredentials: () => AccountCredentialsResult;
     getBalance: () => AccountBalanceResult;

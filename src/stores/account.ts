@@ -1,19 +1,10 @@
-/**
- * Account Connection Store
- *
- * Drives the "connect to Account-api" flow: log in (handled in the main
- * process so the HttpOnly session cookie can be held), fetch the usable model
- * list + a `sk-` API key, then turn the user-selected models into custom
- * provider accounts via the existing provider store.
- *
- * Only the last username is persisted. The service URL always starts from the
- * active brand default, and the session cookie / API key never leave the main
- * process / provider secure storage.
- */
+/** ccwork account state. JWT pairs and session persistence are owned by Main. */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { hostApi } from '@/lib/host-api';
 import { BRAND } from '@shared/brand';
+import { useModelProvidersStore } from './modelProviders';
+import { useAgentsStore } from './agents';
 
 /** Default account/login service address, configured per-brand. */
 export const DEFAULT_ACCOUNT_URL = BRAND.serviceUrl;
@@ -25,7 +16,7 @@ export const OFFICIAL_SITE_URL = BRAND.serviceUrl;
 export const RECHARGE_URL = BRAND.rechargeUrl;
 
 export interface AccountUser {
-  id: number;
+  id: string;
   username: string;
   displayName: string;
   role: number;
@@ -38,6 +29,8 @@ export interface AccountModelEntry {
   name: string;
   contextWindow?: number;
   reasoning?: boolean;
+  maxTokens?: number;
+  input?: Array<'text' | 'image'>;
 }
 
 export interface AccountModelConfig {
@@ -71,6 +64,9 @@ export interface AccountToken {
 }
 
 interface AccountState {
+  modelEntries: AccountModelEntry[];
+  baseUrl: string;
+  restore: () => Promise<void>;
   lastUsername: string;
   loggedIn: boolean;
   user: AccountUser | null;
@@ -87,9 +83,9 @@ interface AccountState {
   loading: boolean;
   error: string | null;
 
-  savedCredentials: () => Promise<{ username: string; password: string } | null>;
+  savedCredentials: () => Promise<{ username: string; password: string; baseUrl?: string } | null>;
   /** Log in and fetch models + key. Returns the model list on success. */
-  login: (baseUrl: string, username: string, password: string) => Promise<string[]>;
+  login: (baseUrl: string, username: string, password: string, verificationCode?: string) => Promise<string[]>;
   /** Refresh the account balance. Safe to call when logged out (no-op). */
   fetchBalance: () => Promise<void>;
   /** Fetch the account's API tokens for selection. Returns them (also stored). */
@@ -120,6 +116,16 @@ export const useAccountStore = create<AccountState>()(
   persist(
     (set, get) => ({
       lastUsername: '',
+      baseUrl: DEFAULT_ACCOUNT_URL,
+      modelEntries: [],
+      restore: async () => {
+        const result = await hostApi.account.restore();
+        if (result.success && result.user) {
+          set({ loggedIn: true, user: result.user, baseUrl: result.baseUrl || DEFAULT_ACCOUNT_URL,
+            models: result.models ?? [], modelEntries: result.modelEntries ?? [] });
+          void get().fetchBalance();
+        }
+      },
       loggedIn: false,
       user: null,
       models: [],
@@ -146,6 +152,10 @@ export const useAccountStore = create<AccountState>()(
           const result = await hostApi.account.getBalance();
           if (result.success) {
             set({ balance: result.balance ?? null });
+          } else if (result.sessionExpired) {
+            set({ loggedIn: false, user: null, balance: null, modelEntries: [], models: [] });
+          } else {
+            set({ balance: null });
           }
         } catch (error) {
           // Balance is non-critical; don't surface a hard error.
@@ -166,23 +176,25 @@ export const useAccountStore = create<AccountState>()(
 
       openRecharge: async () => {
         // The recharge page is brand-configured (brands/<id>.json → rechargeUrl).
-        const url = RECHARGE_URL.trim();
+        const url = (get().balance?.topUpUrl || get().baseUrl || RECHARGE_URL).trim();
         if (!url) return;
         await hostApi.shell.openExternal(url);
       },
 
       openOfficialSite: async () => {
         // The official site is the brand's configured service address.
-        const url = OFFICIAL_SITE_URL.trim();
+        const url = (get().baseUrl || OFFICIAL_SITE_URL).trim();
         if (!url) return;
         await hostApi.shell.openExternal(url);
       },
 
-      login: async (baseUrlInput, username, password) => {
+      login: async (baseUrlInput, username, password, verificationCode) => {
         const baseUrl = baseUrlInput.trim() || DEFAULT_ACCOUNT_URL;
         set({ loading: true, error: null });
         try {
-          const loginResult = await hostApi.account.login({ baseUrl, username, password });
+          const loginResult = verificationCode === undefined
+            ? await hostApi.account.login({ baseUrl, username, password })
+            : await hostApi.account.register({ baseUrl, username, password, verificationCode });
           if (!loginResult.success) {
             throw new Error(loginResult.error || '登录失败');
           }
@@ -206,6 +218,8 @@ export const useAccountStore = create<AccountState>()(
                 }
               : null,
             models,
+            baseUrl,
+            modelEntries: setup.modelEntries ?? [],
             apiKey: setup.apiKey ?? null,
             lastUsername: username,
             loading: false,
@@ -234,6 +248,7 @@ export const useAccountStore = create<AccountState>()(
           throw new Error(result.error || '保存模型配置失败');
         }
         set({ modelConfig: result.config ?? null });
+        await Promise.all([useModelProvidersStore.getState().load(), useAgentsStore.getState().fetchAgents()]);
         return clean.length;
       },
 
@@ -259,6 +274,7 @@ export const useAccountStore = create<AccountState>()(
           throw new Error(result.error || '设置主模型失败');
         }
         set({ modelConfig: result.config ?? null });
+        await Promise.all([useModelProvidersStore.getState().load(), useAgentsStore.getState().fetchAgents()]);
       },
 
       deleteModel: async (modelId) => {
@@ -283,7 +299,7 @@ export const useAccountStore = create<AccountState>()(
         } catch {
           // ignore — clearing local state is enough
         }
-        set({ loggedIn: false, user: null, models: [], tokens: [], apiKey: null, balance: null });
+        set({ loggedIn: false, user: null, models: [], modelEntries: [], modelConfig: null, tokens: [], apiKey: null, balance: null });
       },
     }),
     {

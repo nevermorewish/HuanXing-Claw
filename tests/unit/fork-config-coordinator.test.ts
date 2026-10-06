@@ -15,7 +15,8 @@ vi.mock('@electron/utils/store', () => ({ getSetting: vi.fn(), setSetting: vi.fn
 vi.mock('@electron/utils/logger', () => ({ logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 
 import { resetOpenClawConfigCoordinatorForTests } from '@electron/gateway/config-delivery';
-import { readProviderModelConfig, setPrimaryModelRef, writeProviderModelConfig } from '@electron/utils/openclaw-auth';
+import { readProviderModelConfig, setPrimaryModelRef, writeProviderModelConfig, writeAccountModelConfig } from '@electron/utils/openclaw-auth';
+import { BRAND } from '@shared/brand';
 import { createConfigApi } from '@electron/services/config-api';
 
 const readConfig = async () => JSON.parse(await readFile(join(state.dir, 'openclaw.json'), 'utf8'));
@@ -30,6 +31,20 @@ afterEach(async () => {
 });
 
 describe('fork integration with upstream config coordination', () => {
+  it('restricts managed account defaults and fallbacks to ccwork while retaining server capabilities', async () => {
+    await writeFile(join(state.dir, 'openclaw.json'), JSON.stringify({
+      agents: { defaults: { model: { primary: 'legacy/model', fallbacks: ['legacy/fallback'] }, models: { 'legacy/model': {} } }, list: [{ id: 'main', model: { primary: 'legacy/model', fallbacks: ['legacy/fallback'] } }] },
+      models: { providers: { legacy: { apiKey: 'legacy-key', models: [{ id: 'model', name: 'Old' }] } } },
+    }));
+    await writeAccountModelConfig({ baseUrl: 'http://127.0.0.1:23456/v1', apiKey: 'local-runtime-key',
+      models: [{ id: 'uuid-a', name: 'Vision', input: ['text', 'image'], maxTokens: 16000, contextWindow: 128000 }, { id: 'uuid-b', name: 'Other' }], primaryModelId: 'uuid-a' });
+    const config = await readConfig();
+    expect(config.agents.defaults.model).toEqual({ primary: `${BRAND.providerKey}/uuid-a`, fallbacks: [`${BRAND.providerKey}/uuid-b`] });
+    expect(config.models.providers[BRAND.providerKey]).toMatchObject({ apiKey: 'local-runtime-key', models: [{ id: 'uuid-a', input: ['text', 'image'], maxTokens: 16000, contextWindow: 128000 }, { id: 'uuid-b' }] });
+    expect(config.models.providers.legacy.apiKey).toBe('legacy-key');
+    expect(config.agents.list[0].model).toEqual({ primary: `${BRAND.providerKey}/uuid-a`, fallbacks: [`${BRAND.providerKey}/uuid-b`] });
+    expect(Object.keys(config.agents.defaults.models)).toEqual([`${BRAND.providerKey}/uuid-a`, `${BRAND.providerKey}/uuid-b`]);
+  });
   it('serializes model edits with primary selection and preserves inline credentials and unrelated config', async () => {
     await writeFile(join(state.dir, 'openclaw.json'), JSON.stringify({
       channels: { telegram: { enabled: true } },

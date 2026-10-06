@@ -16,7 +16,9 @@ import { hostApi, type ChannelGroupItem } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import type { AgentSummary } from '@/types/agent';
-import { buildRuntimeProviderOptions, splitModelRef, type RuntimeProviderOption } from '@/lib/model-options';
+import { splitModelRef, type RuntimeProviderOption } from '@/lib/model-options';
+import { useAccountStore } from '@/stores/account';
+import { BRAND } from '@shared/brand';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -653,10 +655,9 @@ function AgentSettingsModal({
 
 function AgentModelModal({ open, agent, onClose }: { open: boolean; agent: AgentSummary; onClose: () => void }) {
   const { t } = useTranslation('agents');
-  const providerAccounts = useProviderStore((state) => state.accounts);
-  const providerStatuses = useProviderStore((state) => state.statuses);
-  const providerVendors = useProviderStore((state) => state.vendors);
-  const providerDefaultAccountId = useProviderStore((state) => state.defaultAccountId);
+  const accountConfig = useAccountStore((state) => state.modelConfig);
+  const loadAccountConfig = useAccountStore((state) => state.loadModelConfig);
+  useEffect(() => { if (open) void loadAccountConfig(); }, [open, loadAccountConfig]);
   const { updateAgentModel, defaultModelRef } = useAgentsStore();
   const [selectedRuntimeProviderKey, setSelectedRuntimeProviderKey] = useState('');
   const [modelIdInput, setModelIdInput] = useState('');
@@ -665,8 +666,8 @@ function AgentModelModal({ open, agent, onClose }: { open: boolean; agent: Agent
   const [prevOpen, setPrevOpen] = useState(open);
 
   const runtimeProviderOptions = useMemo<RuntimeProviderOption[]>(
-    () => buildRuntimeProviderOptions(providerAccounts, providerStatuses, providerVendors, providerDefaultAccountId),
-    [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors],
+    () => accountConfig?.models.length ? [{ runtimeProviderKey: BRAND.providerKey, accountId: BRAND.providerKey, label: BRAND.appName }] : [],
+    [accountConfig],
   );
 
   useEffect(() => {
@@ -696,8 +697,6 @@ function AgentModelModal({ open, agent, onClose }: { open: boolean; agent: Agent
     }
   }
 
-  const selectedProvider =
-    runtimeProviderOptions.find((option) => option.runtimeProviderKey === selectedRuntimeProviderKey) || null;
   const trimmedModelId = modelIdInput.trim();
   const nextModelRef =
     selectedRuntimeProviderKey && trimmedModelId ? `${selectedRuntimeProviderKey}/${trimmedModelId}` : '';
@@ -814,17 +813,15 @@ function AgentModelModal({ open, agent, onClose }: { open: boolean; agent: Agent
               <Label htmlFor="agent-model-id" className="text-xs text-foreground/70">
                 {t('settingsDialog.modelIdLabel')}
               </Label>
-              <Input
+              <select
                 id="agent-model-id"
                 value={modelIdInput}
                 onChange={(event) => setModelIdInput(event.target.value)}
-                placeholder={
-                  selectedProvider?.modelIdPlaceholder ||
-                  selectedProvider?.configuredModelId ||
-                  t('settingsDialog.modelIdPlaceholder')
-                }
                 className={inputClasses}
-              />
+              >
+                <option value="">{t('settingsDialog.modelIdPlaceholder')}</option>
+                {accountConfig?.models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
+              </select>
             </div>
             {!!nextModelRef && (
               <p className="text-xs font-mono text-foreground/70 break-all">
@@ -832,7 +829,7 @@ function AgentModelModal({ open, agent, onClose }: { open: boolean; agent: Agent
               </p>
             )}
             {runtimeProviderOptions.length === 0 && (
-              <p className="text-xs text-amber-600 dark:text-amber-400">{t('settingsDialog.modelProviderEmpty')}</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400">{t('common:ccwork.noModels')}</p>
             )}
             <div className="flex items-center justify-end gap-2 pt-2">
               <Button

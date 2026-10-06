@@ -275,3 +275,30 @@ DeepClaw 基于 [MIT 许可证](LICENSE) 发布。你可以自由地使用、修
 <p align="center">
   <sub>由 ValueCell 团队用 ❤️ 打造</sub>
 </p>
+
+## CCWork 账号与 CCWorkClaw 品牌
+
+Claw 的账号登录、注册默认连接 **https://ccwork.site**。点击侧栏账号入口，
+使用用户名、邮箱或手机号登录，或通过邮箱/中国大陆手机号验证码和密码注册。
+登录框支持填写其他 ccwork HTTPS 地址或本地 HTTP 开发地址。注册开关、验证码
+限制和密码校验由 ccwork 后端决定。Claw 不保存密码；JWT 登录态仅由 Electron
+主进程管理，通过系统加密后保存。系统加密不可用时，登录态只保留到应用关闭。
+
+在「模型」页选择 ccwork 返回的可用对话模型。使用后端模型 UUID，保留上下文、
+输出上限及视觉/推理能力信息。账号模型的对话、工具调用、流式响应和模型测试
+均经过 ccwork 计费代理；测试也会消耗额度。所选账号的主模型和自动回退模型
+均走 ccwork；保存账号模型时，已有 Agent 的模型配置也同步到 ccwork。「使用情况」页的可用额度
+和消费流水来自 ccwork 个人组织钱包；本地 Token 历史仅用于诊断，不参与扣费。
+退出登录会撤销本地调用权限并移除账号模型配置。
+
+新增 `ccworkclaw` 品牌，拥有独立应用 ID、可执行文件、数据目录 `.ccworkclaw`、
+提供商标识及 CCWork 图标。PowerShell 构建方式：
+
+```powershell
+$env:BRAND = 'ccworkclaw'
+corepack pnpm run build:vite
+corepack pnpm run package:win
+```
+
+现有默认品牌仍为 HuanxingClaw。本次源码接入不发布安装包，也不创建 CCWorkClaw
+服务端更新源。ccwork 项目仅作为只读接口参考，无需修改其代码。

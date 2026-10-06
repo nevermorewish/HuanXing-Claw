@@ -1,375 +1,102 @@
-/**
- * Account Login Dialog
- *
- * Collects server URL + credentials, logs in via the main-process Account
- * session, then lets the user pick which fetched models to register as custom
- * provider accounts.
- */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { LogIn, Loader2, Boxes, KeyRound } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAccountStore, DEFAULT_ACCOUNT_URL, type AccountToken } from '@/stores/account';
-import { ACCOUNT_BRAND } from '@/lib/account-brand';
-import { groupAccountModels, defaultSelectedModels, type ModelGroup } from '@/lib/account-models';
-import { BRAND } from '@shared/brand';
+import { hostApi } from '@/lib/host-api';
+import { useAccountStore, DEFAULT_ACCOUNT_URL, type AccountModelEntry } from '@/stores/account';
 
-interface AccountLoginDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
-
-type Step = 'credentials' | 'selectModels';
-
-/**
- * Pick the token to pre-select: prefer one on the "default" group, else the
- * first enabled token, else the first token of any status.
- */
-function pickDefaultToken(tokens: AccountToken[]): number | null {
-  if (tokens.length === 0) return null;
-  const onDefault = tokens.find((t) => t.group === 'default' && t.status === 1)
-    ?? tokens.find((t) => t.group === 'default');
-  if (onDefault) return onDefault.id;
-  const enabled = tokens.find((t) => t.status === 1);
-  return (enabled ?? tokens[0]).id;
-}
-
-export function AccountLoginDialog({ open, onOpenChange }: AccountLoginDialogProps) {
-  const lastUsername = useAccountStore((s) => s.lastUsername);
-  const savedCredentials = useAccountStore((s) => s.savedCredentials);
+export function AccountLoginDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t } = useTranslation('common');
   const login = useAccountStore((s) => s.login);
-  const listTokens = useAccountStore((s) => s.listTokens);
   const saveModels = useAccountStore((s) => s.saveModels);
-  const loadModelConfig = useAccountStore((s) => s.loadModelConfig);
-
-  const [step, setStep] = useState<Step>('credentials');
+  const [register, setRegister] = useState(false);
   const [url, setUrl] = useState(DEFAULT_ACCOUNT_URL);
-  const [username, setUsername] = useState(lastUsername);
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const [models, setModels] = useState<string[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [tokens, setTokens] = useState<AccountToken[]>([]);
-  const [selectedTokenId, setSelectedTokenId] = useState<number | null>(null);
-
-  // Track whether we've already initialised for the current open cycle, so the
-  // reset only runs on the open→ transition. Without this guard, handleLogin's
-  // login() mutates lastUsername in the store, which would re-fire a
-  // [lastUsername]-keyed reset, bounce step back to 'credentials', and wipe the
-  // user's model selection.
-  const initialisedRef = useRef(false);
-
-  // Reset to a clean state whenever the dialog is (re)opened — once per open.
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [models, setModels] = useState<AccountModelEntry[] | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [cooldown, setCooldown] = useState(0);
   useEffect(() => {
-    if (!open) {
-      initialisedRef.current = false;
-      return;
-    }
-    if (initialisedRef.current) return;
-    initialisedRef.current = true;
-    setStep('credentials');
-    setUrl(DEFAULT_ACCOUNT_URL);
-    setUsername(lastUsername);
-    setPassword('');
-    setError(null);
-    setModels([]);
-    setSelected(new Set());
-    setTokens([]);
-    setSelectedTokenId(null);
-  }, [open, lastUsername]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
+    if (!open) return;
+    const state = useAccountStore.getState();
+    setUrl(state.baseUrl || DEFAULT_ACCOUNT_URL); setUsername(state.lastUsername);
+    setPassword(''); setCode(''); setRegister(false); setError(''); setModels(null); setBusy(false);
     let cancelled = false;
-    void savedCredentials()
-      .then((credentials) => {
-        if (cancelled || !credentials) {
-          return;
-        }
-        setUrl((current) => current || DEFAULT_ACCOUNT_URL);
-        setUsername((current) => current || credentials.username);
-        setPassword((current) => current || credentials.password);
-      })
-      .catch(() => {
-        // Keep the dialog usable when no stored credentials are available.
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, savedCredentials]);
-
-  const handleLogin = async () => {
-    if (!username.trim() || !password) {
-      setError('请输入用户名和密码');
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
+    void state.savedCredentials().then((saved) => {
+      if (!cancelled && saved) { setUrl(saved.baseUrl || DEFAULT_ACCOUNT_URL); setUsername(saved.username); }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [open]);
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setTimeout(() => setCooldown((value) => value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [cooldown]);
+  const chooseModels = async () => {
+    const state = useAccountStore.getState();
+    const entries = state.modelEntries;
+    const configured = await state.loadModelConfig();
+    const ids = entries.filter((m) => configured?.models.some((c) => c.id === m.id)).map((m) => m.id);
+    setModels(entries); setSelected(ids.length ? ids : entries.slice(0, 1).map((m) => m.id));
+  };
+  const submit = async () => {
+    if (!url.trim() || !username.trim() || !password || (register && !/^\d{6}$/.test(code))) { setError(t('ccwork.required')); return; }
+    setBusy(true); setError('');
     try {
-      const fetched = await login(url, username.trim(), password);
-      // Pre-select the brand's recommended models (those the gateway actually
-      // returned), plus any models already configured so re-login doesn't drop
-      // them. We intentionally do NOT select every fetched model.
-      const existing = await loadModelConfig().catch(() => null);
-      const existingIds = new Set((existing?.models ?? []).map((m) => m.id));
-      setModels(fetched);
-      const initial = defaultSelectedModels(fetched, BRAND.recommendedModels ?? []);
-      for (const id of fetched) {
-        if (existingIds.has(id)) initial.add(id);
-      }
-      setSelected(initial);
-      // Fetch the account's API tokens so the user can pick which one backs the
-      // provider; default to a "default"-group token. Non-fatal on failure —
-      // omitting a token id lets the backend auto-pick.
-      const fetchedTokens = await listTokens().catch(() => []);
-      setTokens(fetchedTokens);
-      setSelectedTokenId(pickDefaultToken(fetchedTokens));
-      if (fetched.length === 0) {
-        toast.info('登录成功，但该账号暂无可用模型');
-        onOpenChange(false);
-        return;
-      }
-      setStep('selectModels');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSubmitting(false);
-    }
+      await login(url.trim(), username.trim(), password, register ? code : undefined);
+      setPassword(''); await chooseModels();
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
   };
-
-  const toggleModel = (model: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(model)) {
-        next.delete(model);
-      } else {
-        next.add(model);
-      }
-      return next;
-    });
-  };
-
-  const allSelected = models.length > 0 && selected.size === models.length;
-  const toggleAll = () => {
-    setSelected(allSelected ? new Set() : new Set(models));
-  };
-
-  // Group fetched models for display: a pinned "推荐" group on top, then the
-  // rest grouped by model family. Recomputed only when the model list changes.
-  const groups = useMemo<ModelGroup[]>(
-    () => groupAccountModels(models, BRAND.recommendedModels ?? []),
-    [models],
-  );
-
-  const toggleGroup = (group: ModelGroup) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      const allInGroup = group.models.every((m) => next.has(m));
-      for (const m of group.models) {
-        if (allInGroup) next.delete(m);
-        else next.add(m);
-      }
-      return next;
-    });
-  };
-
-  const handleConfirm = async () => {
-    if (selected.size === 0) {
-      setError('请至少选择一个模型');
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
+  const sendCode = async () => {
+    if (!username.trim()) { setError(t('ccwork.identifierRequired')); return; }
+    setBusy(true); setError('');
     try {
-      const count = await saveModels(
-        Array.from(selected).map((id) => ({ id, name: id })),
-        null,
-        selectedTokenId,
-      );
-      toast.success(`已添加 ${count} 个 ${ACCOUNT_BRAND} 模型，可在「模型」页查看`);
-      onOpenChange(false);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
-      toast.error(`添加模型失败：${message}`);
-    } finally {
-      setSubmitting(false);
-    }
+      const result = await hostApi.account.sendVerificationCode({ baseUrl: url.trim(), username: username.trim() });
+      if (!result.success) throw new Error(result.error);
+      setCooldown(60); toast.success(t('ccwork.codeSent'));
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
   };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[420px] max-w-[90vw] p-6">
-        {step === 'credentials' ? (
-          <>
-            <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
-              <LogIn size={18} /> 连接 {ACCOUNT_BRAND}
-            </DialogTitle>
-            <DialogDescription className="mt-1 text-sm text-muted-foreground">
-              登录到 {ACCOUNT_BRAND} API 服务，拉取可用模型并添加为可用的 Provider。
-            </DialogDescription>
-
-            <div className="mt-4 space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="hx-url">服务地址</Label>
-                <Input
-                  id="hx-url"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder={DEFAULT_ACCOUNT_URL}
-                  disabled={submitting}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="hx-username">用户名</Label>
-                <Input
-                  id="hx-username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="请输入用户名"
-                  disabled={submitting}
-                  autoComplete="username"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="hx-password">密码</Label>
-                <Input
-                  id="hx-password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !submitting) {
-                      void handleLogin();
-                    }
-                  }}
-                  placeholder="请输入密码"
-                  disabled={submitting}
-                  autoComplete="current-password"
-                />
-              </div>
-            </div>
-
-            {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
-
-            <div className="mt-5 flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
-                取消
-              </Button>
-              <Button onClick={handleLogin} disabled={submitting}>
-                {submitting ? <Loader2 size={16} className="mr-1 animate-spin" /> : <LogIn size={16} className="mr-1" />}
-                登录
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
-              <Boxes size={18} /> 选择模型
-            </DialogTitle>
-            <DialogDescription className="mt-1 text-sm text-muted-foreground">
-              选择要添加为 Provider 的模型，每个模型会作为一个可用账号。
-            </DialogDescription>
-
-            {tokens.length > 0 && (
-              <div className="mt-4 space-y-1.5">
-                <Label htmlFor="hx-token" className="flex items-center gap-1.5">
-                  <KeyRound size={14} /> API 令牌
-                </Label>
-                <select
-                  id="hx-token"
-                  value={selectedTokenId ?? ''}
-                  onChange={(e) => setSelectedTokenId(e.target.value ? Number(e.target.value) : null)}
-                  disabled={submitting}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {tokens.map((token) => (
-                    <option key={token.id} value={token.id}>
-                      {token.name}
-                      {token.group ? ` · ${token.group}` : ''}
-                      {token.status !== 1 ? '（已禁用）' : ''}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-muted-foreground">
-                  默认使用 default 分组令牌，所选令牌的密钥将用于已添加的模型。
-                </p>
-              </div>
-            )}
-
-            <div className="mt-3 flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">
-                共 {models.length} 个，已选 {selected.size} 个
-              </span>
-              <Button variant="link" size="sm" className="h-auto p-0" onClick={toggleAll}>
-                {allSelected ? '全不选' : '全选'}
-              </Button>
-            </div>
-
-            <div className="mt-2 max-h-64 space-y-3 overflow-auto rounded-md border border-border/60 p-2">
-              {groups.map((group) => {
-                const groupAllSelected = group.models.every((m) => selected.has(m));
-                return (
-                  <div key={group.key} className="space-y-1">
-                    <div className="flex items-center justify-between px-1">
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {group.label} · {group.models.length}
-                      </span>
-                      <button
-                        type="button"
-                        className="text-xs text-primary hover:underline"
-                        onClick={() => toggleGroup(group)}
-                      >
-                        {groupAllSelected ? '全不选' : '全选'}
-                      </button>
-                    </div>
-                    {group.models.map((model) => (
-                      <label
-                        key={model}
-                        className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected.has(model)}
-                          onChange={() => toggleModel(model)}
-                          className="h-4 w-4 accent-primary"
-                        />
-                        <span className="truncate" title={model}>{model}</span>
-                      </label>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-
-            {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
-
-            <div className="mt-5 flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setStep('credentials')} disabled={submitting}>
-                返回
-              </Button>
-              <Button onClick={handleConfirm} disabled={submitting || selected.size === 0}>
-                {submitting && <Loader2 size={16} className="mr-1 animate-spin" />}
-                添加 {selected.size} 个模型
-              </Button>
-            </div>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
+  const confirm = async () => {
+    setBusy(true); setError('');
+    try {
+      await saveModels((models ?? []).filter((m) => selected.includes(m.id)), selected[0]);
+      toast.success(t('ccwork.modelsSaved')); onOpenChange(false);
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
+  };
+  return <Dialog open={open} onOpenChange={(value) => { if (!busy) onOpenChange(value); }}>
+    <DialogContent className="w-[460px] max-w-[90vw] bg-surface-modal p-6">
+      <DialogTitle className="font-serif font-normal tracking-tight">{t(models ? 'ccwork.selectModels' : register ? 'ccwork.register' : 'ccwork.login')}</DialogTitle>
+      <DialogDescription>{t(models ? 'ccwork.modelsDescription' : 'ccwork.description')}</DialogDescription>
+      {models ? <>
+        <div className="max-h-[50vh] space-y-2 overflow-y-auto">
+          {models.length === 0 && <p>{t('ccwork.noModels')}</p>}
+          {models.map((m) => <label key={m.id} className="flex cursor-pointer items-center gap-2 rounded-md bg-surface-input p-2">
+            <input type="checkbox" checked={selected.includes(m.id)} onChange={() => setSelected((ids) => ids.includes(m.id) ? ids.filter((id) => id !== m.id) : [...ids, m.id])} disabled={busy} />
+            <span className="min-w-0"><span className="block">{m.name}</span><span className="block truncate text-xs text-muted-foreground">{m.id}</span></span>
+          </label>)}
+        </div>
+        <Button onClick={() => void confirm()} disabled={busy || !selected.length}>{t('ccwork.saveModels')}</Button>
+      </> : <>
+        <div className="space-y-3">
+          <div className="space-y-1"><Label htmlFor="hx-url">{t('ccwork.server')}</Label><Input id="hx-url" className="bg-surface-input" value={url} onChange={(e) => setUrl(e.target.value)} disabled={busy} /></div>
+          <div className="space-y-1"><Label htmlFor="hx-username">{t(register ? 'ccwork.registerIdentifier' : 'ccwork.identifier')}</Label><Input id="hx-username" className="bg-surface-input" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" disabled={busy} /></div>
+          <div className="space-y-1"><Label htmlFor="hx-password">{t('ccwork.password')}</Label><Input id="hx-password" className="bg-surface-input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={register ? 'new-password' : 'current-password'} disabled={busy} onKeyDown={(e) => { if (e.key === 'Enter' && !busy) void submit(); }} /></div>
+          {register && <div className="space-y-1"><Label htmlFor="ccwork-code">{t('ccwork.code')}</Label><div className="flex gap-2"><Input id="ccwork-code" className="bg-surface-input" inputMode="numeric" maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} disabled={busy} /><Button variant="outline" onClick={() => void sendCode()} disabled={busy || cooldown > 0}>{cooldown > 0 ? t('ccwork.resendAfter', { count: cooldown }) : t('ccwork.sendCode')}</Button></div><p className="text-xs text-muted-foreground">{t('ccwork.passwordHint')}</p></div>}
+        </div>
+        <Button data-testid="ccwork-submit" disabled={busy} onClick={() => void submit()}>{t(busy ? 'ccwork.loading' : register ? 'ccwork.register' : 'ccwork.login')}</Button>
+        <Button variant="ghost" data-testid="ccwork-toggle-register" disabled={busy} onClick={() => { setRegister((value) => !value); setError(''); }}>{t(register ? 'ccwork.haveAccount' : 'ccwork.createAccount')}</Button>
+        {useAccountStore.getState().loggedIn && <Button variant="outline" disabled={busy} onClick={() => void chooseModels().catch((err) => setError(String(err)))}>{t('ccwork.selectModels')}</Button>}
+      </>}
+      {error && <p role="alert" className="text-sm text-red-700 dark:text-red-400">{error}</p>}
+    </DialogContent>
+  </Dialog>;
 }

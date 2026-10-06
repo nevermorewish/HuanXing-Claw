@@ -12,7 +12,7 @@ export const ACTIVE_BRAND: BrandConfig = {
   dataDirName: '.huanxingclaw',
   instanceLockName: 'huanxingclaw',
   providerKey: 'huanxingclaw',
-  serviceUrl: 'https://api.huanxing.ai/',
+  serviceUrl: 'https://ccwork.site',
   recommendedModels: [
     'claude-opus-4-8',
     'claude-sonnet-4-6',
@@ -20,7 +20,7 @@ export const ACTIVE_BRAND: BrandConfig = {
     'gemini-3.1-pro-preview',
     'deepseek-v4-pro',
   ],
-  rechargeUrl: 'https://api.huanxing.ai/wallet',
+  rechargeUrl: 'https://ccwork.site',
   updateFeedBaseUrl: 'https://huanxing.ai/downloads/huanxingclaw',
   copyright: 'Copyright © 2026 HuanxingClaw',
   vendor: 'HuanxingClaw',

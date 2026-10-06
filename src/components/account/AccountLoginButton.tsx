@@ -6,9 +6,10 @@
  *   - Logged in: an account panel showing the username, balance, and
  *     充值 (recharge) / 登出 (logout) actions.
  * Collapses to a single icon when the sidebar is collapsed (click → dialog).
- * Credentials are saved on login, so subsequent opens pre-fill them.
+ * Main restores encrypted JWT sessions; passwords are never prefilled.
  */
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { LogIn, CheckCircle2, Wallet, LogOut, RefreshCw, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAccountStore } from '@/stores/account';
@@ -18,7 +19,7 @@ interface AccountLoginButtonProps {
   collapsed?: boolean;
 }
 
-/** Render a New-API quota figure as a currency amount (or raw quota). */
+/** ccwork credits retain six decimal places. */
 function formatBalance(balance: {
   quota: number;
   quotaPerUnit: number;
@@ -27,11 +28,13 @@ function formatBalance(balance: {
   if (balance.displayInCurrency && balance.quotaPerUnit > 0) {
     return `$${(balance.quota / balance.quotaPerUnit).toFixed(2)}`;
   }
-  return balance.quota.toLocaleString();
+  return balance.quota.toLocaleString(undefined, { maximumFractionDigits: 6 });
 }
 
 export function AccountLoginButton({ collapsed = false }: AccountLoginButtonProps) {
+  const { t } = useTranslation('common');
   const [open, setOpen] = useState(false);
+  useEffect(() => { void useAccountStore.getState().restore().catch(() => {}); }, []);
   const loggedIn = useAccountStore((s) => s.loggedIn);
   const user = useAccountStore((s) => s.user);
   const balance = useAccountStore((s) => s.balance);
@@ -65,7 +68,7 @@ export function AccountLoginButton({ collapsed = false }: AccountLoginButtonProp
           type="button"
           data-testid="sidebar-account-login"
           onClick={() => setOpen(true)}
-          title="登录 Account"
+          title={t('ccwork.login')}
           className={cn(
             'sidebar-nav-text flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
             'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
@@ -76,7 +79,7 @@ export function AccountLoginButton({ collapsed = false }: AccountLoginButtonProp
             <LogIn className="h-4 w-4" strokeWidth={2} />
           </div>
           {!collapsed && (
-            <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">登录</span>
+            <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">{t('ccwork.login')}</span>
           )}
         </button>
         <AccountLoginDialog open={open} onOpenChange={setOpen} />
@@ -92,11 +95,11 @@ export function AccountLoginButton({ collapsed = false }: AccountLoginButtonProp
           type="button"
           data-testid="sidebar-account-account"
           onClick={() => setOpen(true)}
-          title={`${user?.displayName || '已登录'}${balance ? ` · ${formatBalance(balance)}` : ''}`}
+          title={`${user?.displayName || t('ccwork.loggedIn')}${balance ? ` · ${formatBalance(balance)}` : ''}`}
           className="sidebar-nav-text flex w-full items-center justify-center rounded-lg px-0 py-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80"
         >
           <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" strokeWidth={2} />
+            <CheckCircle2 className="h-4 w-4 text-emerald-700 dark:text-emerald-400" strokeWidth={2} />
           </div>
         </button>
         <AccountLoginDialog open={open} onOpenChange={setOpen} />
@@ -115,12 +118,12 @@ export function AccountLoginButton({ collapsed = false }: AccountLoginButtonProp
         <button
           type="button"
           onClick={() => setOpen(true)}
-          title="管理 Account 连接"
+          title={t('ccwork.selectModels')}
           className="flex w-full items-center gap-2 rounded-md text-left text-foreground/90 hover:text-foreground transition-colors"
         >
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" strokeWidth={2} />
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" strokeWidth={2} />
           <span className="sidebar-nav-text flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-medium">
-            {user?.displayName || user?.username || '已登录'}
+            {user?.displayName || user?.username || t('ccwork.loggedIn')}
           </span>
         </button>
 
@@ -128,12 +131,12 @@ export function AccountLoginButton({ collapsed = false }: AccountLoginButtonProp
         <div className="mt-1.5 flex items-center gap-1.5 text-meta text-foreground/60">
           <Wallet className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
           <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-            余额 {balance ? formatBalance(balance) : '—'}
+            {t('ccwork.credits')} {balance ? formatBalance(balance) : '—'}
           </span>
           <button
             type="button"
             onClick={() => void handleRefresh()}
-            title="刷新余额"
+            title={t('ccwork.refresh')}
             className="shrink-0 rounded p-0.5 text-foreground/40 hover:text-foreground/80 transition-colors"
           >
             <RefreshCw className={cn('h-3 w-3', refreshing && 'animate-spin')} strokeWidth={2} />
@@ -146,11 +149,11 @@ export function AccountLoginButton({ collapsed = false }: AccountLoginButtonProp
             type="button"
             data-testid="sidebar-account-official"
             onClick={() => void openOfficialSite()}
-            title="官网"
+            title={t('ccwork.website')}
             className="flex items-center justify-center gap-1 rounded-md bg-black/5 dark:bg-white/5 px-2 py-1 text-meta font-medium text-foreground/70 hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
           >
             <Globe className="h-3.5 w-3.5" strokeWidth={2} />
-            官网
+            {t('ccwork.website')}
           </button>
           <button
             type="button"
@@ -159,17 +162,17 @@ export function AccountLoginButton({ collapsed = false }: AccountLoginButtonProp
             className="flex flex-1 items-center justify-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-meta font-medium text-primary hover:bg-primary/15 transition-colors"
           >
             <Wallet className="h-3.5 w-3.5" strokeWidth={2} />
-            充值
+            {t('ccwork.wallet')}
           </button>
           <button
             type="button"
             data-testid="sidebar-account-logout"
             onClick={() => void logout()}
-            title="登出"
+            title={t('ccwork.logout')}
             className="flex items-center justify-center gap-1 rounded-md px-2 py-1 text-meta font-medium text-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
           >
             <LogOut className="h-3.5 w-3.5" strokeWidth={2} />
-            登出
+            {t('ccwork.logout')}
           </button>
         </div>
       </div>

@@ -1,334 +1,162 @@
-/**
- * Account API service.
- *
- * Bridges the renderer to the main-process Account session: login, then a
- * combined "setup" fetch that returns the usable model list plus a `sk-` API
- * key the renderer can turn into provider accounts.
- */
-import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
-import type { AccountModelConfig, AccountModelEntry, AccountToken, AccountUser } from '@shared/host-api/contract';
 import { safeStorage } from 'electron';
+import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import type { AccountModelEntry } from '@shared/host-api/contract';
 import type { GatewayManager } from '../gateway/manager';
+import { BRAND } from '@shared/brand';
 import { getDeepClawProviderStore } from './providers/store-instance';
-import { accountSession } from '../utils/account-session';
-import {
-  deleteAccountProvider,
-  getAccountApiKey,
-  readAccountModelConfig,
-  writeAccountModelConfig,
-} from '../utils/openclaw-auth';
+import { accountSession, type SessionSnapshot } from '../utils/account-session';
+import { deleteAccountProvider, readAccountModelConfig, writeAccountModelConfig } from '../utils/openclaw-auth';
 import { testProviderModel } from './providers/provider-validation';
+import { CcworkRelay } from './ccwork-relay';
 import { logger } from '../utils/logger';
 
-type SavedAccountCredentials = {
-  username: string;
-  password: string;
-};
-type StoredAccountCredentials = {
-  baseUrl?: string;
-  username: string;
-  password?: string;
-  encryptedPassword?: string;
-};
+const SESSION_KEY = 'ccworkSession';
+const relay = new CcworkRelay(accountSession);
+let initialized: Promise<void> | null = null;
 
-const ACCOUNT_CREDENTIALS_KEY = 'accountCredentials';
-
-function toContractUser(user: AccountUser): AccountUser {
-  return {
-    id: user.id,
-    username: user.username,
-    displayName: user.displayName,
-    role: user.role,
-    status: user.status,
-    group: user.group,
-  };
-}
-
-function encryptPassword(password: string): Pick<StoredAccountCredentials, 'password' | 'encryptedPassword'> {
-  if (safeStorage.isEncryptionAvailable()) {
-    return {
-      encryptedPassword: safeStorage.encryptString(password).toString('base64'),
+/** Runs before Gateway startup so saved provider URLs point to the current relay port. */
+export function initializeCcworkAccount(): Promise<void> {
+  if (initialized) return initialized;
+  initialized = (async () => {
+    const store = await getDeepClawProviderStore();
+    // Remove legacy password storage. ccwork sessions use encrypted rotating JWT pairs.
+    store.delete('accountCredentials');
+    accountSession.onChange = async (state) => {
+      if (!state) {
+        relay.abortRequests(); store.delete(SESSION_KEY); return;
+      }
+      if (safeStorage.isEncryptionAvailable()) {
+        store.set(SESSION_KEY, safeStorage.encryptString(JSON.stringify(state)).toString('base64'));
+      } else {
+        store.delete(SESSION_KEY); // Memory-only if OS encryption is unavailable.
+      }
     };
-  }
-  return { password };
-}
-
-function decryptPassword(value: StoredAccountCredentials): string {
-  if (typeof value.encryptedPassword === 'string' && value.encryptedPassword) {
-    try {
-      return safeStorage.decryptString(Buffer.from(value.encryptedPassword, 'base64'));
-    } catch (error) {
-      logger.warn('account.savedCredentials decrypt failed', error);
+    const encrypted = store.get(SESSION_KEY);
+    if (typeof encrypted === 'string' && safeStorage.isEncryptionAvailable()) {
+      try {
+        const state = JSON.parse(safeStorage.decryptString(Buffer.from(encrypted, 'base64'))) as SessionSnapshot;
+        if (!state.accessToken || !state.refreshToken || !state.user?.id || !state.organizationId || !Number.isFinite(state.expiresAt)) throw new Error('Invalid saved ccwork session');
+        accountSession.restore(state);
+      } catch { store.delete(SESSION_KEY); }
     }
-  }
-  return typeof value.password === 'string' ? value.password : '';
+    const stored = await readAccountModelConfig();
+    if (stored.models.length && accountSession.isLoggedIn()) {
+      await writeAccountModelConfig({ ...await relay.start(), models: stored.models });
+    } else if (stored.models.length) {
+      // Old direct provider keys must never bypass ccwork after migration/logout.
+      await deleteAccountProvider();
+    }
+  })();
+  return initialized;
 }
 
-function normalizeCredentials(value: unknown): SavedAccountCredentials | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-  const record = value as StoredAccountCredentials;
-  const username = typeof record.username === 'string' ? record.username : '';
-  const password = decryptPassword(record);
-  if (!username || !password) {
-    return null;
-  }
-  return { username, password };
-}
-
-async function getSavedCredentials(): Promise<SavedAccountCredentials | null> {
-  const store = await getDeepClawProviderStore();
-  return normalizeCredentials(store.get(ACCOUNT_CREDENTIALS_KEY));
-}
-
-async function saveCredentials(credentials: SavedAccountCredentials): Promise<void> {
-  const store = await getDeepClawProviderStore();
-  store.set(ACCOUNT_CREDENTIALS_KEY, {
-    username: credentials.username,
-    ...encryptPassword(credentials.password),
-  } satisfies StoredAccountCredentials);
-}
-
-/** Build the renderer-facing config shape from the stored openclaw.json entry. */
-function toContractModelConfig(data: {
-  baseUrl: string;
-  models: AccountModelEntry[];
-  primary: string | null;
-}): AccountModelConfig {
-  return { baseUrl: data.baseUrl, models: data.models, primary: data.primary };
-}
-
-/**
- * Resolve the base URL for the account provider entry. Prefer the live session
- * (just-logged-in), then any previously-stored entry. The account relay is
- * OpenAI-compatible, so the entry's baseUrl needs a `/v1` suffix.
- */
-function resolveAccountBaseUrl(sessionBaseUrl: string | null, storedBaseUrl: string): string {
-  const raw = (sessionBaseUrl || storedBaseUrl || '').trim().replace(/\/+$/, '');
-  if (!raw) return '';
-  return /\/v\d+$/.test(raw) ? raw : `${raw}/v1`;
-}
-
-export function createAccountApi(
-  { gatewayManager }: { gatewayManager: GatewayManager },
-): CompleteHostServiceRegistry['account'] {
+export function createAccountApi({ gatewayManager }: { gatewayManager: GatewayManager }): CompleteHostServiceRegistry['account'] {
+  const failure = (error: unknown) => ({ success: false as const, error: error instanceof Error ? error.message : String(error) });
+  const setup = async () => {
+    await initializeCcworkAccount();
+    if (!accountSession.isLoggedIn()) return { success: false, error: 'Please log in to ccwork' };
+    const modelEntries = await accountSession.fetchModelEntries();
+    return { success: true, user: accountSession.getUser()!, baseUrl: accountSession.getBaseUrl()!,
+      models: modelEntries.map((m) => m.id), modelEntries };
+  };
+  const save = async (models: AccountModelEntry[], primaryModelId?: string | null) => {
+    if (!accountSession.isLoggedIn()) throw new Error('Please log in to ccwork');
+    const catalog = await accountSession.fetchModelEntries();
+    const selected = models.map((m) => {
+      const entry = catalog.find((candidate) => candidate.id === m.id);
+      if (!entry) throw new Error(`ccwork model unavailable: ${m.id}`);
+      return entry;
+    });
+    if (primaryModelId && !selected.some((m) => m.id === primaryModelId)) throw new Error('Primary model is unavailable');
+    await writeAccountModelConfig({ ...await relay.start(), models: selected, primaryModelId });
+    return { success: true, config: await readAccountModelConfig() };
+  };
   return {
     login: async (payload) => {
       try {
-        const user = await accountSession.login(
-          payload.baseUrl,
-          payload.username,
-          payload.password,
-        );
-        await saveCredentials({
-          username: payload.username,
-          password: payload.password,
-        });
-        return { success: true, user: toContractUser(user) };
-      } catch (error) {
-        logger.error('account.login failed', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
+        await initializeCcworkAccount();
+        await deleteAccountProvider();
+        return { success: true, user: await accountSession.login(payload.baseUrl, payload.username, payload.password) };
+      } catch (error) { return failure(error); }
     },
-
-    fetchSetup: async () => {
+    register: async (payload) => {
       try {
-        const user = accountSession.getUser();
-        const baseUrl = accountSession.getBaseUrl();
-        if (!user || !baseUrl) {
-          return { success: false, error: '尚未登录' };
-        }
-        const models = await accountSession.fetchModels();
-        const apiKey = await accountSession.ensureApiKey();
-        return {
-          success: true,
-          user: toContractUser(user),
-          baseUrl,
-          models,
-          apiKey,
-        };
-      } catch (error) {
-        logger.error('account.fetchSetup failed', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
+        await initializeCcworkAccount();
+        await deleteAccountProvider();
+        return { success: true, user: await accountSession.register(payload.baseUrl, payload.username, payload.password, payload.verificationCode) };
+      } catch (error) { return failure(error); }
     },
-
+    sendVerificationCode: async (payload) => {
+      try { await accountSession.sendVerificationCode(payload.baseUrl, payload.username); return { success: true }; }
+      catch (error) { return failure(error); }
+    },
+    fetchSetup: async () => { try { return await setup(); } catch (error) { return failure(error); } },
+    restore: async () => { try { return await setup(); } catch (error) { return failure(error); } },
     savedCredentials: async () => {
-      try {
-        return { success: true, credentials: await getSavedCredentials() };
-      } catch (error) {
-        logger.error('account.savedCredentials failed', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
+      await initializeCcworkAccount();
+      return { success: true, credentials: accountSession.isLoggedIn() ? {
+        username: accountSession.getUser()!.username, password: '', baseUrl: accountSession.getBaseUrl()!,
+      } : null };
     },
-
     getBalance: async () => {
       try {
-        if (!accountSession.isLoggedIn()) {
-          return { success: false, error: '尚未登录' };
-        }
-        const [{ quota, usedQuota }, status] = await Promise.all([
-          accountSession.fetchSelfQuota(),
-          accountSession.fetchStatus(),
-        ]);
-        const baseUrl = accountSession.getBaseUrl() ?? '';
-        // New-API top_up_link may be absolute or a path; resolve against baseUrl.
-        let topUpUrl = '';
-        if (status.topUpLink) {
-          topUpUrl = /^https?:\/\//i.test(status.topUpLink)
-            ? status.topUpLink
-            : `${baseUrl.replace(/\/+$/, '')}/${status.topUpLink.replace(/^\/+/, '')}`;
-        } else if (baseUrl) {
-          topUpUrl = `${baseUrl.replace(/\/+$/, '')}/topup`;
-        }
-        return {
-          success: true,
-          balance: {
-            quota,
-            usedQuota,
-            quotaPerUnit: status.quotaPerUnit,
-            displayInCurrency: status.displayInCurrency,
-            topUpUrl,
-          },
-        };
-      } catch (error) {
-        logger.error('account.getBalance failed', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
+        await initializeCcworkAccount();
+        const wallet = await accountSession.fetchWallet();
+        return { success: true, balance: { quota: Number(wallet.available_credits_precise), usedQuota: 0,
+          quotaPerUnit: 1, displayInCurrency: false, topUpUrl: accountSession.getBaseUrl() || BRAND.serviceUrl } };
+      } catch (error) { return { ...failure(error), sessionExpired: !accountSession.isLoggedIn() }; }
     },
-
-    listTokens: async () => {
+    transactions: async (payload) => {
       try {
-        if (!accountSession.isLoggedIn()) {
-          return { success: false, error: '尚未登录' };
-        }
-        const tokens = await accountSession.listTokens();
-        return { success: true, tokens: tokens.map((t): AccountToken => ({
-          id: t.id,
-          name: t.name,
-          group: t.group,
-          status: t.status,
-        })) };
-      } catch (error) {
-        logger.error('account.listTokens failed', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
+        await initializeCcworkAccount();
+        const limit = Math.max(1, Math.min(100, Math.floor(payload.limit || 20)));
+        const offset = Math.max(0, Math.floor(payload.offset || 0));
+        return { success: true, ...await accountSession.fetchTransactions(limit, offset) };
+      } catch (error) { return failure(error); }
     },
-
+    // Retained for older renderer callers; ccwork model calls use the JWT session.
+    listTokens: async () => ({ success: true, tokens: [] }),
     logout: async () => {
-      accountSession.logout();
-      return { success: true };
+      try {
+        await initializeCcworkAccount();
+        await accountSession.logout();
+        await relay.stop();
+        await deleteAccountProvider();
+        gatewayManager.debouncedRestart();
+        return { success: true };
+      } catch (error) { return failure(error); }
     },
-
     getModelConfig: async () => {
-      try {
-        const config = await readAccountModelConfig();
-        return { success: true, config: toContractModelConfig(config) };
-      } catch (error) {
-        logger.error('account.getModelConfig failed', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
+      try { await initializeCcworkAccount(); return { success: true, config: await readAccountModelConfig() }; }
+      catch (error) { return failure(error); }
     },
-
     saveModelConfig: async (payload) => {
-      try {
-        // baseUrl + key come from the live session right after login; on a later
-        // edit (no live session) we keep whatever the stored entry already holds.
-        const stored = await readAccountModelConfig();
-        const baseUrl = resolveAccountBaseUrl(accountSession.getBaseUrl(), stored.baseUrl);
-        if (!baseUrl) {
-          return { success: false, error: '缺少服务地址，请重新登录 Account' };
-        }
-        let apiKey: string | undefined;
-        if (accountSession.isLoggedIn()) {
-          apiKey = await accountSession.ensureApiKey(payload.tokenId ?? undefined);
-        }
-        await writeAccountModelConfig({
-          baseUrl,
-          apiKey,
-          models: payload.models,
-          primaryModelId: payload.primaryModelId ?? null,
-        });
-
-        const config = await readAccountModelConfig();
-        return { success: true, config: toContractModelConfig(config) };
-      } catch (error) {
-        logger.error('account.saveModelConfig failed', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
+      try { await initializeCcworkAccount(); return await save(payload.models, payload.primaryModelId); }
+      catch (error) { return failure(error); }
     },
-
     setPrimaryModel: async (payload) => {
-      try {
-        const stored = await readAccountModelConfig();
-        if (!stored.models.some((m) => m.id === payload.modelId)) {
-          return { success: false, error: `模型不存在：${payload.modelId}` };
-        }
-        await writeAccountModelConfig({
-          baseUrl: stored.baseUrl,
-          models: stored.models,
-          primaryModelId: payload.modelId,
-        });
-
-        const config = await readAccountModelConfig();
-        return { success: true, config: toContractModelConfig(config) };
-      } catch (error) {
-        logger.error('account.setPrimaryModel failed', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
+      try { await initializeCcworkAccount(); return await save((await readAccountModelConfig()).models, payload.modelId); }
+      catch (error) { return failure(error); }
     },
-
     deleteModel: async (payload) => {
       try {
+        await initializeCcworkAccount();
         const stored = await readAccountModelConfig();
-        const remaining = stored.models.filter((m) => m.id !== payload.modelId);
-        if (remaining.length === 0) {
-          // Last model removed → drop the whole provider entry.
-          await deleteAccountProvider();
-          gatewayManager.debouncedRestart();
-          return { success: true, config: { baseUrl: '', models: [], primary: null } };
-        }
-        await writeAccountModelConfig({
-          baseUrl: stored.baseUrl,
-          models: remaining,
-          // Keep the existing primary unless it was the deleted model.
-          primaryModelId: stored.primary === `account/${payload.modelId}`
-            ? remaining[0].id
-            : undefined,
-        });
-
-        const config = await readAccountModelConfig();
-        return { success: true, config: toContractModelConfig(config) };
-      } catch (error) {
-        logger.error('account.deleteModel failed', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
+        const models = stored.models.filter((m) => m.id !== payload.modelId);
+        if (!models.length) { await deleteAccountProvider(); return { success: true, config: await readAccountModelConfig() }; }
+        return await save(models, stored.primary === `${BRAND.providerKey}/${payload.modelId}` ? models[0].id : undefined);
+      } catch (error) { return failure(error); }
     },
-
     testModel: async (payload) => {
       try {
-        const stored = await readAccountModelConfig();
-        const baseUrl = resolveAccountBaseUrl(accountSession.getBaseUrl(), stored.baseUrl);
-        if (!baseUrl) {
-          return { success: false, error: '缺少服务地址，请重新登录 Account' };
-        }
-        // Prefer the live session key; fall back to the inline key on the entry.
-        const apiKey = accountSession.isLoggedIn()
-          ? await accountSession.ensureApiKey()
-          : (await getAccountApiKey()) ?? '';
-        if (!apiKey) {
-          return { success: false, error: '缺少 API 密钥，请重新登录 Account' };
-        }
-        const result = await testProviderModel(baseUrl, apiKey, payload.modelId, 'openai-completions');
-        if (!result.ok) {
-          return { success: false, error: result.error || '测试失败' };
-        }
-        return { success: true, latencyMs: result.latencyMs, reply: result.reply };
-      } catch (error) {
-        logger.error('account.testModel failed', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
+        await initializeCcworkAccount();
+        if (!accountSession.isLoggedIn()) throw new Error('Please log in to ccwork');
+        const catalog = await accountSession.fetchModels();
+        if (!catalog.includes(payload.modelId)) throw new Error('ccwork model unavailable');
+        const connection = await relay.start();
+        const result = await testProviderModel(connection.baseUrl, connection.apiKey, payload.modelId, 'openai-completions');
+        return result.ok ? { success: true, latencyMs: result.latencyMs, reply: result.reply } : failure(result.error || 'ccwork model test failed');
+      } catch (error) { logger.warn('ccwork model test failed'); return failure(error); }
     },
   };
 }

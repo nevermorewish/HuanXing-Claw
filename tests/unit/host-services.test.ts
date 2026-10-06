@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DiagnosticsGatewaySnapshotResult } from '@shared/host-api/contract';
+import { BRAND } from '@shared/brand';
 
 const {
   applyNativeThemeSettingMock,
@@ -251,6 +252,7 @@ vi.mock('@electron/services/providers/provider-runtime-sync', () => ({
 }));
 
 vi.mock('@electron/utils/openclaw-auth', () => ({
+  readAccountModelConfig: vi.fn(async () => ({ models: [{ id: 'model-uuid', name: 'ccwork Model' }] })),
   removeProviderFromOpenClaw: vi.fn(),
   saveProviderKeyToOpenClaw: vi.fn(),
 }));
@@ -1574,10 +1576,11 @@ describe('host services', () => {
 
     await expect(createAgentsApi({ gatewayManager: gatewayManager as never }).updateModel({
       id: 'main',
-      modelRef: 'custom-enterpri/claude-sonnet-4',
+      modelRef: `${BRAND.providerKey}/model-uuid`,
     })).resolves.toEqual({ success: true, ...snapshot });
 
-    expect(agentConfig.updateAgentModel).toHaveBeenCalledWith('main', 'custom-enterpri/claude-sonnet-4');
+    expect(agentConfig.updateAgentModel).toHaveBeenCalledWith('main', `${BRAND.providerKey}/model-uuid`);
+    await expect(createAgentsApi({ gatewayManager: gatewayManager as never }).updateModel({ id: 'main', modelRef: 'legacy/direct-model' })).rejects.toThrow('Select an available ccwork account model');
     expect(providerRuntimeSync.syncAllProviderAuthToRuntime).toHaveBeenCalledTimes(1);
     expect(providerRuntimeSync.syncAgentModelOverrideToRuntime).toHaveBeenCalledWith('main');
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();

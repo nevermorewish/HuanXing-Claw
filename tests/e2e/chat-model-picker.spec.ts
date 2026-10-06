@@ -1,277 +1,63 @@
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
+import { BRAND } from '../../shared/brand';
 
-const alphaModelRef = 'custom-alpha123/model-alpha';
-const betaModelRef = 'custom-beta5678/provider/model-beta';
-
-test.describe('DeepClaw chat model picker', () => {
-  test('switches the current agent model without requesting a gateway refresh', async ({ launchElectronApp }) => {
+test.describe('ccwork chat model picker', () => {
+  test('offers ccwork model labels while routing UUIDs and excludes legacy direct providers', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
-
     try {
-      await app.evaluate(async ({ app: _app }, refs) => {
+      await app.evaluate(async ({ app: _app }, providerKey) => {
         const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
-
-        let currentModelRef = refs.alphaModelRef;
-        const hostRequests: Array<{ path: string; method: string; body: unknown }> = [];
-        const now = new Date().toISOString();
-        let releaseProviderAccounts: (() => void) | undefined;
-        const providerAccountsReady = new Promise<void>((resolve) => {
-          releaseProviderAccounts = resolve;
-        });
-        const originalHostInvoke = (ipcMain as unknown as {
-          _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
-        })._invokeHandlers?.get('host:invoke');
-        const makeResponse = (id: unknown, data: unknown) => ({
-          id: typeof id === 'string' ? id : undefined,
-          ok: true,
-          data,
-        });
-
-        const workspacePath = '/tmp/deepclaw-model-picker-workspace';
-        const agentsSnapshot = () => ({
-          success: true,
-          agents: [{
-            id: 'main',
-            name: 'Main',
-            isDefault: true,
-            modelDisplay: currentModelRef.split('/').slice(1).join('/'),
-            modelRef: currentModelRef,
-            overrideModelRef: currentModelRef,
-            inheritedModel: false,
-            workspace: workspacePath,
-            agentDir: '~/.openclaw/agents/main/agent',
-            mainSessionKey: 'agent:main:main',
-            channelTypes: [],
-          }],
-          defaultAgentId: 'main',
-          defaultModelRef: refs.alphaModelRef,
-          configuredChannelTypes: [],
-          channelOwners: {},
-          channelAccountOwners: {},
-        });
-
-        ipcMain.removeHandler('gateway:status');
-        ipcMain.handle('gateway:status', async () => ({ state: 'running', port: 18789, pid: 12345 }));
-
-        ipcMain.removeHandler('gateway:rpc');
-        ipcMain.handle('gateway:rpc', async (_event: unknown, method: string, params: unknown) => {
-          hostRequests.push({ path: `gateway:${method}`, method: 'RPC', body: params ?? null });
-          if (method === 'sessions.list') {
-            return { success: true, result: { sessions: [{ key: 'agent:main:main', displayName: 'main' }] } };
-          }
-          return { success: true, result: {} };
-        });
-
+        const original = (ipcMain as unknown as { _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>> })._invokeHandlers?.get('host:invoke');
+        let current = `${providerKey}/uuid-alpha`;
+        const requests: string[] = [];
+        const workspace = '/tmp/ccwork-model-picker';
+        const snapshot = () => ({ success: true, agents: [{ id: 'main', name: 'Main', isDefault: true,
+          modelRef: current, overrideModelRef: current, modelDisplay: current, inheritedModel: false,
+          workspace, agentDir: '~/.openclaw/agents/main/agent', mainSessionKey: 'agent:main:main', channelTypes: [] }],
+          defaultAgentId: 'main', defaultModelRef: `${providerKey}/uuid-alpha`, configuredChannelTypes: [], channelOwners: {}, channelAccountOwners: {} });
         ipcMain.removeHandler('host:invoke');
-        ipcMain.handle('host:invoke', async (event: unknown, request: {
-          id?: string;
-          module?: string;
-          action?: string;
-          payload?: Record<string, unknown>;
-        }) => {
-          const body = request?.payload ?? null;
-          hostRequests.push({
-            path: `${request?.module ?? ''}:${request?.action ?? ''}`,
-            method: 'HOST',
-            body,
-          });
-
-          if (request?.module === 'gateway' && request.action === 'status') {
-            return makeResponse(request.id, { state: 'running', port: 18789, pid: 12345, gatewayReady: true });
-          }
-          if (request?.module === 'settings' && request.action === 'getAll') {
-            return makeResponse(request.id, {
-              language: 'en',
-              setupComplete: true,
-              chatWorkspacePath: workspacePath,
-              recentWorkspacePaths: [workspacePath],
-            });
-          }
-          if (request?.module === 'files' && request.action === 'resolveWorkspaceContext') {
-            const workspaceRoot = typeof body?.workspaceRoot === 'string' ? body.workspaceRoot.trim() : '';
-            const executionCwd = typeof body?.executionCwd === 'string' ? body.executionCwd.trim() : '';
-            if (!workspaceRoot || !executionCwd) {
-              return makeResponse(request.id, { ok: false, error: 'outsideSandbox' });
-            }
-            return makeResponse(request.id, { ok: true, workspaceRoot, executionCwd });
-          }
-          if (request?.module === 'chat' && request.action === 'loadAcpSession') {
-            return makeResponse(request.id, { success: true, generation: 1 });
-          }
-          if (request?.module === 'gateway' && request.action === 'rpc') {
-            const method = typeof body?.method === 'string' ? body.method : '';
-            const params = body?.params ?? null;
-            hostRequests.push({ path: `gateway:${method}`, method: 'RPC', body: params });
-            if (method === 'sessions.list') {
-              return makeResponse(request.id, { success: true, result: { sessions: [{ key: 'agent:main:main', displayName: 'main' }] } });
-            }
-            return makeResponse(request.id, { success: true, result: {} });
-          }
-          if (request?.module === 'agents' && request.action === 'list') {
-            return makeResponse(request.id, agentsSnapshot());
-          }
-          if (request?.module === 'agents' && request.action === 'updateModel') {
-            currentModelRef = typeof body?.modelRef === 'string' ? body.modelRef : refs.alphaModelRef;
-            hostRequests.push({
-              path: '/api/agents/main/model',
-              method: 'PUT',
-              body: { modelRef: currentModelRef },
-            });
-            return makeResponse(request.id, agentsSnapshot());
-          }
-          if (request?.module === 'providers' && request.action === 'accounts') {
-            await providerAccountsReady;
-            return makeResponse(request.id, [
-              {
-                id: 'alpha1234',
-                vendorId: 'custom',
-                label: 'Alpha',
-                authMode: 'api_key',
-                baseUrl: 'http://127.0.0.1:1111/v1',
-                model: 'model-alpha',
-                enabled: true,
-                isDefault: true,
-                createdAt: now,
-                updatedAt: now,
-              },
-              {
-                id: 'beta5678',
-                vendorId: 'custom',
-                label: 'Beta',
-                authMode: 'api_key',
-                baseUrl: 'http://127.0.0.1:2222/v1',
-                model: refs.betaModelRef,
-                enabled: true,
-                isDefault: false,
-                createdAt: now,
-                updatedAt: now,
-              },
-              {
-                id: 'openai-oauth',
-                vendorId: 'openai',
-                label: 'OpenAI',
-                authMode: 'oauth_browser',
-                model: 'openai/gpt-5.6',
-                metadata: { customModels: ['gpt-5.5', 'openai/gpt-5.6'] },
-                enabled: true,
-                isDefault: false,
-                createdAt: now,
-                updatedAt: now,
-              },
-              {
-                id: 'moonshot-api-key',
-                vendorId: 'moonshot',
-                label: 'Moonshot',
-                authMode: 'api_key',
-                model: 'moonshot/kimi-k2.7',
-                metadata: { customModels: ['kimi-k2.6', 'moonshot/kimi-k2.7'] },
-                enabled: true,
-                isDefault: false,
-                createdAt: now,
-                updatedAt: now,
-              },
-            ]);
-          }
-          if (request?.module === 'providers' && request.action === 'list') {
-            return makeResponse(request.id, [
-              { id: 'alpha1234', type: 'custom', name: 'Alpha', enabled: true, hasKey: true, keyMasked: 'sk-***', createdAt: now, updatedAt: now },
-              { id: 'beta5678', type: 'custom', name: 'Beta', enabled: true, hasKey: true, keyMasked: 'sk-***', createdAt: now, updatedAt: now },
-            ]);
-          }
-          if (request?.module === 'providers' && request.action === 'accountKeyInfo') {
-            return makeResponse(request.id, [
-              { accountId: 'alpha1234', hasKey: true, keyMasked: 'sk-***' },
-              { accountId: 'beta5678', hasKey: true, keyMasked: 'sk-***' },
-              { accountId: 'moonshot-api-key', hasKey: true, keyMasked: 'sk-***' },
-            ]);
-          }
-          if (request?.module === 'providers' && request.action === 'vendors') {
-            return makeResponse(request.id, [
-              { id: 'openai', name: 'OpenAI', supportedAuthModes: ['api_key', 'oauth_browser'] },
-              { id: 'moonshot', name: 'Moonshot', supportedAuthModes: ['api_key'] },
-            ]);
-          }
-          if (request?.module === 'providers' && request.action === 'getDefaultAccount') {
-            return makeResponse(request.id, { accountId: 'alpha1234' });
-          }
-
-          return originalHostInvoke?.(event, request) ?? makeResponse(request?.id, {});
+        ipcMain.handle('host:invoke', async (event, request) => {
+          requests.push(`${request.module}:${request.action}`);
+          const respond = (data: unknown) => ({ id: request.id, ok: true, data });
+          if (request.module === 'agents' && request.action === 'list') return respond(snapshot());
+          if (request.module === 'agents' && request.action === 'updateModel') { current = request.payload.modelRef; return respond(snapshot()); }
+          if (request.module === 'modelProviders' && request.action === 'list') return respond({ success: true, primary: current, fallbacks: [], providers: [
+            { key: providerKey, baseUrl: 'http://127.0.0.1:23456/v1', api: 'openai-completions', hasKey: true, models: [{ id: 'uuid-alpha', name: 'CCWork Alpha' }, { id: 'uuid-beta', name: 'CCWork Beta' }], primary: current },
+            { key: 'legacy', baseUrl: 'https://legacy.test/v1', api: 'openai-completions', hasKey: true, models: [{ id: 'old', name: 'Legacy Direct Model' }] },
+          ] });
+          if (request.module === 'account' && request.action === 'getModelConfig') return respond({ success: true, config: { baseUrl: 'http://127.0.0.1:23456/v1', primary: current, models: [{ id: 'uuid-alpha', name: 'CCWork Alpha' }, { id: 'uuid-beta', name: 'CCWork Beta' }] } });
+          if (request.module === 'providers' && ['accounts', 'accountKeyInfo', 'vendors'].includes(request.action)) return respond([]);
+          if (request.module === 'providers' && request.action === 'getDefaultAccount') return respond({ accountId: null });
+          if (request.module === 'gateway' && request.action === 'status') return respond({ state: 'running', port: 18789, pid: 12345, gatewayReady: true });
+          if (request.module === 'settings' && request.action === 'getAll') return respond({ language: 'en', setupComplete: true, chatWorkspacePath: workspace, recentWorkspacePaths: [workspace] });
+          if (request.module === 'files' && request.action === 'resolveWorkspaceContext') return respond({ ok: true, workspaceRoot: workspace, executionCwd: workspace });
+          if (request.module === 'chat' && request.action === 'loadAcpSession') return respond({ success: true, generation: 1 });
+          if (request.module === 'gateway' && request.action === 'rpc') return respond({ success: true, result: request.payload.method === 'sessions.list' ? { sessions: [{ key: 'agent:main:main', displayName: 'main' }] } : {} });
+          return original?.(event, request) ?? respond({});
         });
-
-        (globalThis as typeof globalThis & { __chatModelPickerRequests?: typeof hostRequests }).__chatModelPickerRequests = hostRequests;
-        (globalThis as typeof globalThis & {
-          __releaseChatModelProviders?: () => void;
-        }).__releaseChatModelProviders = releaseProviderAccounts;
-      }, { alphaModelRef, betaModelRef });
-
-      const page = await getStableWindow(app);
-      await page.reload();
+        (globalThis as unknown as { __ccworkPicker: { requests: string[]; model: () => string } }).__ccworkPicker = { requests, model: () => current };
+      }, BRAND.providerKey);
+      const page = await getStableWindow(app); await page.reload();
       await expect(page.getByTestId('main-layout')).toBeVisible();
-      await expect.poll(async () => app.evaluate(() => (
-        (globalThis as typeof globalThis & {
-          __chatModelPickerRequests?: Array<{ path: string }>;
-        }).__chatModelPickerRequests?.some((request) => request.path === 'providers:accounts') ?? false
-      ))).toBe(true);
-      expect(await app.evaluate(() => (
-        (globalThis as typeof globalThis & {
-          __chatModelPickerRequests?: Array<{ path: string }>;
-        }).__chatModelPickerRequests?.some((request) => request.path === 'agents:updateModel') ?? false
-      ))).toBe(false);
-      await app.evaluate(() => {
-        (globalThis as typeof globalThis & {
-          __releaseChatModelProviders?: () => void;
-        }).__releaseChatModelProviders?.();
-      });
-      await app.evaluate(({ BrowserWindow }) => {
-        const win = BrowserWindow.getAllWindows()[0];
-        win?.webContents.send('gateway:status-changed', { state: 'running', port: 18789, pid: 12345, gatewayReady: true });
-      });
-
-      await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/model-alpha/);
-      await expect(page.getByTestId('chat-model-picker-button')).not.toContainText('Alpha');
-      await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'fallback');
+      await expect(page.getByTestId('chat-model-picker-button')).toContainText('CCWork Alpha');
       await page.getByTestId('chat-model-picker-button').click();
-      await expect(page.getByTestId('chat-model-picker-menu')).toBeVisible();
-      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('provider/model-beta');
-      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('Beta');
-      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('provider/model-beta (Beta)');
-      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('gpt-5.6');
-      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('gpt-5.5');
-      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('openai/gpt-5.6');
-      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('kimi-k2.7');
-      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('kimi-k2.6');
-      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('moonshot/kimi-k2.7');
-      const gptOption = page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'gpt-5.6 OpenAI' });
-      await expect(gptOption.getByTestId('chat-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'openai');
-      const kimiOption = page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'kimi-k2.7 Moonshot' });
-      await expect(kimiOption.getByTestId('chat-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'kimi');
-      await gptOption.click();
-      await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/gpt-5.6/);
-      await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'openai');
-      await page.getByTestId('chat-model-picker-button').click();
-      await page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'provider/model-beta Beta' }).click();
-      await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/provider\/model-beta/);
-      await expect(page.getByTestId('chat-model-picker-button')).not.toContainText('Beta');
-      await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'fallback');
-
-      const requests = await app.evaluate(() => (
-        (globalThis as typeof globalThis & { __chatModelPickerRequests?: Array<{ path: string; method: string; body: unknown }> }).__chatModelPickerRequests ?? []
-      ));
-      expect(requests).toContainEqual({
-        path: '/api/agents/main/model',
-        method: 'PUT',
-        body: { modelRef: betaModelRef },
+      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('CCWork Beta');
+      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('Legacy');
+      await page.getByTestId('chat-model-picker-menu').getByRole('button', { name: /CCWork Beta/ }).click();
+      await expect(page.getByTestId('chat-model-picker-button')).toContainText('CCWork Beta');
+      const result = await app.evaluate(() => {
+        const state = (globalThis as unknown as { __ccworkPicker: { requests: string[]; model: () => string } }).__ccworkPicker;
+        return { requests: state.requests, model: state.model() };
       });
-      expect(requests.some((request) =>
-        request.path === '/api/gateway/restart'
-        || request.path === '/api/gateway/start'
-        || request.path === 'gateway:restart'
-        || request.path === 'gateway:start'
-        || request.path === 'gateway:config.patch'
-      )).toBe(false);
-
-    } finally {
-      await closeElectronApp(app);
-    }
+      expect(result.model).toBe(`${BRAND.providerKey}/uuid-beta`);
+      expect(result.requests).not.toContain('gateway:restart');
+      await page.getByTestId('sidebar-nav-agents').click();
+      await page.getByTestId('agent-card-main').getByRole('button', { name: 'Settings', exact: true }).click();
+      await page.getByRole('button', { name: /^Model / }).click();
+      await expect(page.locator('#agent-model-id')).toBeVisible();
+      await expect(page.locator('#agent-model-id option')).toHaveCount(3);
+      await expect(page.locator('#agent-model-id')).toContainText('CCWork Alpha');
+      await expect(page.locator('#agent-model-provider')).not.toContainText('Legacy');
+    } finally { await closeElectronApp(app); }
   });
 });

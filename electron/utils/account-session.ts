@@ -1,556 +1,150 @@
-/**
- * Account API session.
- *
- * Runs the HTTP login + model/token fetch against a Account-api server
- * (Go/Gin, default http://localhost:3000) inside the Electron main process.
- *
- * The server authenticates browsers with an HttpOnly `session` cookie which a
- * renderer cross-origin fetch cannot hold, so we keep the cookie (and the
- * logged-in user id) in main-process memory here. Protected endpoints also
- * require a `New-Api-User: <id>` header that must match the session user id,
- * even when the cookie is present (see Account-api middleware/auth.go).
- *
- * Transport note: we use Node's built-in `node:http`/`node:https` rather than
- * Electron's `net.fetch`. `net.fetch` runs through Chromium's network stack,
- * which treats `Cookie` as a forbidden header name and silently strips it — so
- * a manually managed session cookie never reaches the server. The Node core
- * client sends headers verbatim (which cookie-based auth needs) and, unlike
- * undici, is always available in the packaged app without bundling a dependency.
- */
-import http from 'node:http';
-import https from 'node:https';
-import { BRAND } from '@shared/brand';
-
-export interface AccountUser {
-  id: number;
-  username: string;
-  displayName: string;
-  role: number;
-  status: number;
-  group: string;
+/** ccwork JWT session. Tokens never leave Main except to the selected backend. */
+import type { AccountModelEntry, AccountUser } from '@shared/host-api/contract';
+export type { AccountUser } from '@shared/host-api/contract';
+export type SessionSnapshot = {
+  baseUrl: string; accessToken: string; refreshToken: string; expiresAt: number;
+  user: AccountUser; organizationId: string;
+};
+type AuthResponse = {
+  access_token: string; refresh_token: string; expires_in: number;
+  user?: { id: string; username?: string; email?: string; phone?: string; nickname?: string; is_staff?: boolean };
+};
+type CatalogModel = {
+  id: string; name: string; display_name?: string; context_window_tokens?: number;
+  max_output_tokens?: number; supports_vision?: boolean;
+  runtime_profile?: { thinking?: { supported?: boolean } };
+  wave_status?: string; routing_enabled?: boolean; can_set_as_user_default?: boolean;
+};
+export function normalizeCcworkUrl(value: string): string {
+  const url = new URL(value.trim());
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('Invalid ccwork service URL');
+  if (url.protocol === 'http:' && !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) throw new Error('ccwork requires HTTPS except on localhost');
+  return url.href.replace(/\/+$/, '').replace(/\/api$/, '');
 }
-
-export interface AccountToken {
-  id: number;
-  /** Token display name, e.g. the label set in the web console. */
-  name: string;
-  /** Token-level group override (empty string when it inherits the user group). */
-  group: string;
-  /** New-API token status (1 = enabled). */
-  status: number;
-}
-
-interface ApiEnvelope<T> {
-  success?: boolean;
-  message?: string;
-  data?: T;
-}
-
-/** A model entry from GET /api/pricing (new Account-api). */
-interface PricingModel {
-  model_name: string;
-  enable_groups?: string[];
-  supported_endpoint_types?: string[];
-}
-
-/** Full GET /api/pricing body (data + group gating live as siblings). */
-interface PricingResponse extends ApiEnvelope<PricingModel[]> {
-  usable_group?: Record<string, string>;
-}
-
-interface JsonResponse<T> {
-  status: number;
-  body: ApiEnvelope<T>;
-  raw: string;
-  setCookies: string[];
-}
-
-/** Strip a trailing slash so we can append `/api/...` paths uniformly. */
-function normalizeBaseUrl(input: string): string {
-  return input.trim().replace(/\/+$/, '');
-}
-
-/** Pull the `session=...` pair out of one or more Set-Cookie headers. */
-function extractSessionCookie(setCookies: string[]): string | null {
-  for (const cookie of setCookies) {
-    const match = /(?:^|;\s*)?(session=[^;]+)/.exec(cookie);
-    if (match) {
-      return match[1];
-    }
-  }
-  return null;
-}
-
-/** Truncate a raw body for inclusion in error/log messages. */
-function snippet(raw: string, max = 200): string {
-  const trimmed = raw.trim();
-  return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed;
-}
-
-/**
- * Ensure an API key carries the conventional `sk-` prefix.
- *
- * Account-api generations are inconsistent: some return the raw 48-char key
- * (frogclaw's GetTokenKey, and the inline key on token list/detail), others
- * prepend `sk-`. The relay's auth middleware trims `sk-` either way, but we
- * normalize to the prefixed form so callers always get a ready-to-use key.
- */
-function ensureSkPrefix(key: string): string {
-  const trimmed = key.trim();
-  return trimmed.startsWith('sk-') ? trimmed : `sk-${trimmed}`;
-}
-
-/**
- * Whether a key embedded in a list/detail envelope is the full secret rather
- * than a masked preview. Some forks mask inline keys (e.g. `sk-abc…xyz`); those
- * are unusable and must be fetched through a dedicated key endpoint instead.
- */
-function isFullKey(key: unknown): key is string {
-  return typeof key === 'string' && key.length > 0 && !/[*…]/.test(key) && !key.includes('...');
-}
-
-/** Issue a request via Node core http/https and parse a JSON envelope. */
-function rawRequest(
-  url: string,
-  init: { method?: string; headers?: Record<string, string>; body?: string },
-): Promise<{ status: number; raw: string; setCookies: string[] }> {
-  return new Promise((resolve, reject) => {
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      reject(new Error(`无效的服务地址: ${url}`));
-      return;
-    }
-    const transport = parsed.protocol === 'https:' ? https : http;
-    const headers: Record<string, string> = { ...init.headers };
-    if (init.body != null && headers['Content-Length'] == null && headers['content-length'] == null) {
-      headers['Content-Length'] = String(Buffer.byteLength(init.body));
-    }
-
-    const req = transport.request(
-      url,
-      { method: init.method ?? 'GET', headers },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk) => chunks.push(chunk as Buffer));
-        res.on('end', () => {
-          const setCookieHeader = res.headers['set-cookie'];
-          const setCookies = Array.isArray(setCookieHeader)
-            ? setCookieHeader
-            : setCookieHeader
-              ? [setCookieHeader]
-              : [];
-          resolve({
-            status: res.statusCode ?? 0,
-            raw: Buffer.concat(chunks).toString('utf-8'),
-            setCookies,
-          });
-        });
-      },
-    );
-    req.on('error', reject);
-    if (init.body != null) {
-      req.write(init.body);
-    }
-    req.end();
-  });
-}
-
 export class AccountSession {
-  private baseUrl: string | null = null;
-  private sessionCookie: string | null = null;
-  private user: AccountUser | null = null;
-
-  isLoggedIn(): boolean {
-    return Boolean(this.baseUrl && this.sessionCookie && this.user);
+  private state: SessionSnapshot | null = null;
+  private refreshFlight: Promise<void> | null = null;
+  private generation = 0;
+  onChange: (state: SessionSnapshot | null) => Promise<void> = async () => {};
+  isLoggedIn(): boolean { return !!this.state; }
+  getUser(): AccountUser | null { return this.state?.user ?? null; }
+  getBaseUrl(): string | null { return this.state?.baseUrl ?? null; }
+  getOrganizationId(): string | null { return this.state?.organizationId ?? null; }
+  restore(state: SessionSnapshot): void {
+    this.generation++;
+    this.state = { ...state, baseUrl: normalizeCcworkUrl(state.baseUrl) };
   }
-
-  getUser(): AccountUser | null {
-    return this.user;
+  private async json<T>(baseUrl: string, path: string, body?: unknown, token?: string): Promise<T> {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: body === undefined ? 'GET' : 'POST', redirect: 'error', signal: AbortSignal.timeout(30_000),
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const envelope = await response.json() as { success?: boolean; data?: T; message?: string; detail?: string };
+    if (!response.ok || envelope.success === false) throw Object.assign(new Error(envelope.message || envelope.detail || `ccwork HTTP ${response.status}`), { status: response.status });
+    return (envelope.data ?? envelope) as T;
   }
-
-  getBaseUrl(): string | null {
-    return this.baseUrl;
-  }
-
-  logout(): void {
-    this.baseUrl = null;
-    this.sessionCookie = null;
-    this.user = null;
-  }
-
-  /** Authenticated headers for protected endpoints (session cookie + user id). */
-  private authHeaders(extra?: Record<string, string>): Record<string, string> {
-    if (!this.sessionCookie || !this.user) {
-      throw new Error('尚未登录 Account');
-    }
-    return {
-      Cookie: this.sessionCookie,
-      'New-Api-User': String(this.user.id),
-      ...extra,
+  private async authenticate(baseUrl: string, path: string, body: unknown): Promise<AccountUser> {
+    const generation = ++this.generation;
+    this.state = null;
+    await this.onChange(null);
+    const normalized = normalizeCcworkUrl(baseUrl);
+    const data = await this.json<AuthResponse>(normalized, path, body);
+    if (!data.access_token || !data.refresh_token || !data.user?.id) throw new Error('Invalid ccwork login response');
+    const user: AccountUser = {
+      id: data.user.id, username: data.user.username || data.user.email || data.user.phone || '',
+      displayName: data.user.nickname || data.user.username || '', role: data.user.is_staff ? 10 : 1, status: 1, group: '',
     };
-  }
-
-  private url(path: string): string {
-    if (!this.baseUrl) {
-      throw new Error('Account 服务地址未设置');
-    }
-    return `${this.baseUrl}${path}`;
-  }
-
-  /** Issue a request and parse a JSON envelope, capturing status + raw body. */
-  private async requestJson<T>(
-    url: string,
-    init: { method?: string; headers?: Record<string, string>; body?: string },
-  ): Promise<JsonResponse<T>> {
-    const res = await rawRequest(url, init);
-    let body: ApiEnvelope<T>;
-    try {
-      body = res.raw ? (JSON.parse(res.raw) as ApiEnvelope<T>) : {};
-    } catch {
-      throw new Error(`服务返回非 JSON 响应 (HTTP ${res.status}): ${snippet(res.raw)}`);
-    }
-    return { status: res.status, body, raw: res.raw, setCookies: res.setCookies };
-  }
-
-  /** Build an error from a failed envelope, preferring the server's message. */
-  private envelopeError(action: string, res: JsonResponse<unknown>): Error {
-    const serverMsg = res.body.message?.trim();
-    if (serverMsg) {
-      return new Error(serverMsg);
-    }
-    return new Error(`${action}失败 (HTTP ${res.status})${res.raw ? `: ${snippet(res.raw)}` : ''}`);
-  }
-
-  /** POST /api/user/login — stores the session cookie + user on success. */
-  async login(baseUrl: string, username: string, password: string): Promise<AccountUser> {
-    const normalized = normalizeBaseUrl(baseUrl);
-    if (!normalized) {
-      throw new Error('服务地址不能为空');
-    }
-
-    const res = await this.requestJson<Record<string, unknown> & { require_2fa?: boolean }>(
-      `${normalized}/api/user/login`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      },
+    const organizations = await this.json<{ organizations: Array<{ id: string; type: string }> }>(
+      normalized, '/api/context/organizations?type=personal', undefined, data.access_token,
     );
-
-    if (!res.body.success) {
-      throw this.envelopeError('登录', res);
-    }
-    if (res.body.data?.require_2fa) {
-      throw new Error('该账号开启了两步验证，暂不支持，请使用未开启 2FA 的账号');
-    }
-
-    const cookie = extractSessionCookie(res.setCookies);
-    if (!cookie) {
-      throw new Error('登录失败：服务未返回会话凭证 (session cookie)');
-    }
-
-    const data = res.body.data ?? {};
-    const id = Number(data.id);
-    if (!Number.isFinite(id)) {
-      throw new Error('登录失败：服务未返回用户信息');
-    }
-
-    this.baseUrl = normalized;
-    this.sessionCookie = cookie;
-    this.user = {
-      id,
-      username: String(data.username ?? username),
-      displayName: String(data.display_name ?? data.username ?? username),
-      role: Number(data.role ?? 0),
-      status: Number(data.status ?? 0),
-      group: String(data.group ?? 'default'),
-    };
-    return this.user;
+    const personal = organizations.organizations.find((o) => o.type === 'personal');
+    if (!personal) throw new Error('ccwork personal organization is unavailable');
+    if (generation !== this.generation) throw new Error('Account session changed');
+    this.state = { baseUrl: normalized, accessToken: data.access_token, refreshToken: data.refresh_token,
+      expiresAt: Date.now() + data.expires_in * 1000, user, organizationId: personal.id };
+    await this.onChange(this.state);
+    return user;
   }
-
-  /**
-   * Fetch the model names usable by this account.
-   *
-   * Server generations expose the usable models differently, so we probe in
-   * order and fall back so both new and old newapi servers work:
-   *   1. GET /api/pricing — newer Account-api (new-api/frogclaw). Returns rich
-   *      entries with `enable_groups`; we keep models enabled for one of the
-   *      account's usable groups.
-   *   2. GET /api/user/self/models (or /api/user/models) — older newapi. Returns
-   *      a flat string array already filtered to the user's usable groups.
-   *
-   * Pricing is tried first because newer servers dropped the legacy endpoint
-   * (it 404s via the OpenAI relay's catch-all). A successful-but-empty pricing
-   * response is authoritative (no fallback); only a genuine failure (404 /
-   * non-JSON / explicit error) drops through to the legacy endpoints.
-   */
-  async fetchModels(): Promise<string[]> {
-    try {
-      return await this.fetchModelsFromPricing();
-    } catch (pricingError) {
-      // Older newapi has no /api/pricing — fall back to the legacy flat list.
-      try {
-        return await this.fetchModelsLegacy();
-      } catch {
-        // Surface the modern-path error as the primary failure.
-        throw pricingError;
-      }
-    }
+  login(baseUrl: string, username: string, password: string): Promise<AccountUser> {
+    return this.authenticate(baseUrl, '/api/auth/login', { username, password, remember_me: true });
   }
-
-  /** GET /api/pricing — the newer Account-api model list, group-filtered. */
-  private async fetchModelsFromPricing(): Promise<string[]> {
-    const res = await this.requestJson<PricingModel[]>(this.url('/api/pricing'), {
-      headers: this.authHeaders(),
+  register(baseUrl: string, identifier: string, password: string, verificationCode: string): Promise<AccountUser> {
+    return this.authenticate(baseUrl, '/api/auth/register', {
+      ...(identifier.includes('@') ? { email: identifier } : { phone: identifier }), password, verification_code: verificationCode,
     });
-    const pricing = res.body as PricingResponse;
-    // /api/pricing usually omits `success` on success; only treat an explicit
-    // `success: false` as an error.
-    if (pricing.success === false) {
-      throw this.envelopeError('获取模型列表', res);
-    }
-
-    const models = Array.isArray(pricing.data) ? pricing.data : [];
-    const usableGroups = new Set<string>(Object.keys(pricing.usable_group ?? {}));
-    if (this.user?.group) {
-      usableGroups.add(this.user.group);
-    }
-
-    const names = models
-      .filter((m) => {
-        if (!m || typeof m.model_name !== 'string' || !m.model_name) return false;
-        const groups = m.enable_groups;
-        // No group info, or no known usable groups → don't over-filter.
-        if (!Array.isArray(groups) || groups.length === 0 || usableGroups.size === 0) {
-          return true;
-        }
-        return groups.some((g) => usableGroups.has(g));
-      })
-      .map((m) => m.model_name);
-
-    // De-duplicate while preserving order.
-    return [...new Set(names)];
   }
-
-  /**
-   * GET /api/user/self/models — older newapi's usable-model list.
-   *
-   * The legacy endpoint returns a flat `data: string[]` already filtered to the
-   * account's usable groups, so no client-side group gating is needed. The exact
-   * path moved between versions, so we try the known variants in order.
-   */
-  private async fetchModelsLegacy(): Promise<string[]> {
-    const paths = ['/api/user/self/models', '/api/user/models'];
-    let lastError: Error | null = null;
-    for (const path of paths) {
+  async sendVerificationCode(baseUrl: string, username: string): Promise<void> {
+    await this.json(normalizeCcworkUrl(baseUrl), '/api/auth/send-verification-code', { username, code_type: 'register' });
+  }
+  private async refresh(): Promise<void> {
+    if (this.refreshFlight) return this.refreshFlight;
+    const state = this.state;
+    const generation = this.generation;
+    if (!state) throw new Error('Please log in to ccwork');
+    const flight = (async () => {
       try {
-        const res = await this.requestJson<unknown[]>(this.url(path), {
-          headers: this.authHeaders(),
-        });
-        if (res.body.success === false) {
-          // Endpoint exists but rejected the request — record it, try the next.
-          lastError = this.envelopeError('获取模型列表', res);
-          continue;
-        }
-        const data = Array.isArray(res.body.data) ? res.body.data : [];
-        const names = data.filter((m): m is string => typeof m === 'string' && m.length > 0);
-        return [...new Set(names)];
+        const data = await this.json<AuthResponse>(state.baseUrl, '/api/auth/refresh-token', { refresh_token: state.refreshToken });
+        if (!data.access_token || !data.refresh_token) throw new Error('Invalid ccwork refresh response');
+        if (generation !== this.generation) throw new Error('Account session changed');
+        this.state = { ...state, accessToken: data.access_token, refreshToken: data.refresh_token, expiresAt: Date.now() + data.expires_in * 1000 };
+        await this.onChange(this.state);
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
+        if ([401, 403, 404].includes((error as { status?: number }).status ?? 0) && generation === this.generation) {
+          this.state = null; await this.onChange(null);
+        }
+        throw error;
       }
-    }
-    throw lastError ?? new Error('获取模型列表失败 (旧版接口不可用)');
+    })();
+    this.refreshFlight = flight;
+    try { await flight; } finally { if (this.refreshFlight === flight) this.refreshFlight = null; }
   }
-
-  /**
-   * GET /api/user/self — the account's quota figures.
-   *
-   * New-API stores balances as integer "quota" units; dividing by the server's
-   * `quota_per_unit` (see {@link fetchStatus}) converts to a currency amount.
-   */
-  async fetchSelfQuota(): Promise<{ quota: number; usedQuota: number }> {
-    const res = await this.requestJson<Record<string, unknown>>(this.url('/api/user/self'), {
-      headers: this.authHeaders(),
+  async authorizedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+    if (!path.startsWith('/api/')) throw new Error('Invalid ccwork API path');
+    if (!this.state) throw new Error('Please log in to ccwork');
+    if (this.state.expiresAt <= Date.now() + 60_000) await this.refresh();
+    const state = this.state;
+    const generation = this.generation;
+    if (!state) throw new Error('Please log in to ccwork');
+    const request = (token: string) => fetch(`${state.baseUrl}${path}`, {
+      ...init, redirect: 'error', signal: init.signal ?? AbortSignal.timeout(30_000),
+      headers: { ...Object.fromEntries(new Headers(init.headers).entries()), Authorization: `Bearer ${token}`, 'X-TabTin-Organization-Id': state.organizationId },
     });
-    if (!res.body.success) {
-      throw this.envelopeError('获取账户信息', res);
+    let response = await request(state.accessToken);
+    if (response.status === 401) {
+      await response.body?.cancel();
+      if (this.state?.accessToken === state.accessToken) await this.refresh();
+      if (!this.state || generation !== this.generation) throw new Error('Account session changed');
+      response = await request(this.state.accessToken);
     }
-    const data = res.body.data ?? {};
-    return {
-      quota: Number(data.quota ?? 0),
-      usedQuota: Number(data.used_quota ?? 0),
-    };
+    return response;
   }
-
-  /**
-   * GET /api/status — server display options needed to render the balance:
-   * `quota_per_unit` (quota→currency divisor), whether to show a currency
-   * amount vs. raw quota, and the top-up page link.
-   *
-   * This endpoint is public (no auth needed) and omits `success` on success,
-   * mirroring /api/pricing, so only an explicit `success: false` is an error.
-   */
-  async fetchStatus(): Promise<{ quotaPerUnit: number; displayInCurrency: boolean; topUpLink: string }> {
-    const res = await this.requestJson<Record<string, unknown>>(this.url('/api/status'), {
-      headers: this.authHeaders(),
-    });
-    if (res.body.success === false) {
-      throw this.envelopeError('获取服务状态', res);
-    }
-    const data = res.body.data ?? {};
-    const quotaPerUnit = Number(data.quota_per_unit);
-    return {
-      quotaPerUnit: Number.isFinite(quotaPerUnit) && quotaPerUnit > 0 ? quotaPerUnit : 500000,
-      displayInCurrency: data.display_in_currency !== false,
-      topUpLink: typeof data.top_up_link === 'string' ? data.top_up_link : '',
-    };
+  async request<T>(path: string): Promise<T> {
+    const response = await this.authorizedFetch(path);
+    const data = await response.json() as { success?: boolean; data?: T; message?: string };
+    if (!response.ok || data.success === false) throw new Error(data.message || `ccwork HTTP ${response.status}`);
+    return (data.data ?? data) as T;
   }
-
-  /**
-   * Return a usable `sk-` API key, creating a token first if the account has
-   * none.
-   *
-   * Account-api generations differ in how they expose the secret:
-   *   - Newer frogclaw returns the full key inline on the token list/detail
-   *     (the rows are never `.Clean()`-ed), so we use it directly when present.
-   *   - Otherwise we fetch it through {@link fetchTokenKey}, which probes the
-   *     POST `/key` endpoint and falls back to GET detail for older backends.
-   */
-  async ensureApiKey(tokenId?: number): Promise<string> {
-    let token = await this.findUsableToken(tokenId);
-    // Only auto-create when the caller didn't pin a specific token — a missing
-    // pinned token is an error, not a cue to mint a new one.
-    if (token == null && tokenId == null) {
-      await this.createToken();
-      token = await this.findUsableToken();
-    }
-    if (token == null) {
-      throw new Error(
-        tokenId == null
-          ? '未找到可用的 API 令牌，且自动创建失败'
-          : `未找到指定的 API 令牌 (id ${tokenId})`,
-      );
-    }
-    // Newer backends hand back the full key inline — no extra round-trip needed.
-    if (isFullKey(token.key)) {
-      return ensureSkPrefix(token.key);
-    }
-    return this.fetchTokenKey(token.id);
-  }
-
-  /**
-   * List the account's API tokens for selection in the UI.
-   *
-   * Mirrors the New-API web console's token list. Tokens carry an optional
-   * `group` override; an empty group means the token inherits the user's group.
-   * The raw key is never returned here — it's fetched lazily per token via
-   * {@link ensureApiKey} once the user picks one.
-   */
-  async listTokens(): Promise<AccountToken[]> {
-    const items = await this.fetchTokenItems();
-    return items.map((t) => ({
-      id: Number(t.id),
-      name: typeof t.name === 'string' && t.name.trim() ? t.name : `令牌 #${t.id}`,
-      group: typeof t.group === 'string' ? t.group : '',
-      status: Number(t.status ?? 0),
+  async fetchModelEntries(): Promise<AccountModelEntry[]> {
+    const data = await this.request<{ models: CatalogModel[] }>(`/api/services/llm/organizations/${this.state?.organizationId}/models`);
+    return data.models.filter((m) => m.can_set_as_user_default === true && m.routing_enabled !== false && m.wave_status === 'ready').map((m) => ({
+      id: m.id, name: m.display_name || m.name, contextWindow: m.context_window_tokens,
+      maxTokens: m.max_output_tokens, input: m.supports_vision ? ['text', 'image'] : ['text'],
+      ...(m.runtime_profile?.thinking?.supported !== undefined ? { reasoning: m.runtime_profile.thinking.supported } : {}),
     }));
   }
-
-  /** GET /api/token/ — the raw token rows (id, name, group, status, inline key). */
-  private async fetchTokenItems(): Promise<
-    Array<{ id: number; status: number; key?: string; name?: string; group?: string }>
-  > {
-    const res = await this.requestJson<{
-      items?: Array<{ id: number; status: number; key?: string; name?: string; group?: string }>;
-    }>(this.url('/api/token/?p=0&size=100'), { headers: this.authHeaders() });
-    if (!res.body.success) {
-      throw this.envelopeError('获取令牌列表', res);
-    }
-    return res.body.data?.items ?? [];
+  async fetchModels(): Promise<string[]> { return (await this.fetchModelEntries()).map((m) => m.id); }
+  async fetchWallet(): Promise<{ available_credits_precise: string; credits_frozen_precise: string }> {
+    return this.request(`/api/wallet/organizations/${this.state?.organizationId}/wallet`);
   }
-
-  /**
-   * Resolve a usable token. With `tokenId` set, return that exact token (or null
-   * if it's gone); otherwise prefer the first enabled token, falling back to the
-   * first token of any status.
-   */
-  private async findUsableToken(tokenId?: number): Promise<{ id: number; key?: string } | null> {
-    const items = await this.fetchTokenItems();
-    const picked = tokenId != null
-      ? items.find((t) => Number(t.id) === tokenId)
-      : items.find((t) => Number(t.status) === 1) ?? items[0];
-    return picked ? { id: Number(picked.id), key: picked.key } : null;
+  async fetchTransactions(limit = 20, offset = 0): Promise<{ total: number; transactions: Array<{ id: string; description: string; amount_precise: string; created_at: string; transaction_type: string }> }> {
+    return this.request(`/api/wallet/organizations/${this.state?.organizationId}/transactions?transaction_type=consume&limit=${limit}&offset=${offset}`);
   }
-
-  private async createToken(): Promise<void> {
-    const res = await this.requestJson<unknown>(this.url('/api/token/'), {
-      method: 'POST',
-      headers: this.authHeaders({ 'content-type': 'application/json' }),
-      body: JSON.stringify({
-        name: BRAND.appName,
-        unlimited_quota: true,
-        expired_time: -1,
-        remain_quota: 0,
-      }),
-    });
-    if (!res.body.success) {
-      throw this.envelopeError('创建 API 令牌', res);
-    }
-  }
-
-  /**
-   * Fetch the full (unmasked) key for a token id.
-   *
-   * Backends disagree on where this lives, so we probe in order:
-   *   1. POST /api/token/{id}/key — the dedicated endpoint on newer frogclaw.
-   *      Added 2026-06-01; older builds 404 it through the OpenAI relay's
-   *      catch-all (`{"error":{"type":"invalid_request_error", ...}}`), which
-   *      is JSON but has no `success` field, so it drops to the fallback.
-   *   2. GET /api/token/{id} — the token detail, which embeds the full key
-   *      inline (this is the path frogclaw's own legacy frontend uses).
-   *
-   * The key is normalized to the `sk-` prefixed form regardless of which
-   * shape the backend returned.
-   */
-  private async fetchTokenKey(tokenId: number): Promise<string> {
-    const viaKeyEndpoint = await this.tryFetchTokenKeyViaPost(tokenId);
-    if (viaKeyEndpoint != null) {
-      return ensureSkPrefix(viaKeyEndpoint);
-    }
-    const viaDetail = await this.tryFetchTokenKeyViaDetail(tokenId);
-    if (viaDetail != null) {
-      return ensureSkPrefix(viaDetail);
-    }
-    throw new Error('获取令牌密钥失败：服务未提供可用的密钥接口');
-  }
-
-  /** POST /api/token/{id}/key — returns the raw key, or null if unsupported. */
-  private async tryFetchTokenKeyViaPost(tokenId: number): Promise<string | null> {
-    const res = await this.requestJson<{ key?: string }>(this.url(`/api/token/${tokenId}/key`), {
-      method: 'POST',
-      headers: this.authHeaders(),
-    });
-    // A relay catch-all 404 returns valid JSON without `success` — treat any
-    // non-affirmative envelope as "endpoint unavailable" and fall back.
-    if (res.body.success !== true) {
-      return null;
-    }
-    return isFullKey(res.body.data?.key) ? (res.body.data!.key as string) : null;
-  }
-
-  /** GET /api/token/{id} — reads the full key embedded in the token detail. */
-  private async tryFetchTokenKeyViaDetail(tokenId: number): Promise<string | null> {
-    const res = await this.requestJson<{ key?: string }>(this.url(`/api/token/${tokenId}`), {
-      headers: this.authHeaders(),
-    });
-    if (res.body.success !== true) {
-      return null;
-    }
-    return isFullKey(res.body.data?.key) ? (res.body.data!.key as string) : null;
+  async logout(): Promise<void> {
+    const state = this.state;
+    this.generation++; this.state = null;
+    await this.onChange(null);
+    if (state) await this.json(state.baseUrl, '/api/auth/logout', {}, state.accessToken).catch(() => {});
   }
 }
-
-/** Single shared session for the app lifetime. */
 export const accountSession = new AccountSession();

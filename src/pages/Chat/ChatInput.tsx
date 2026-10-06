@@ -24,6 +24,7 @@ import { useArtifactPanel } from '@/stores/artifact-panel';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import { useProviderStore } from '@/stores/providers';
 import { useModelProvidersStore } from '@/stores/modelProviders';
+import { BRAND } from '@shared/brand';
 import { buildConfiguredModelOptions, formatModelRefLabel, isConfiguredModelRefAvailable, resolveConfiguredModelRef, type ConfiguredModelOption } from '@/lib/model-options';
 import type { AgentSummary } from '@/types/agent';
 import type { QuickAccessSkill } from '@/types/skill';
@@ -396,8 +397,9 @@ export function ChatInput({
     const providerOptions: ConfiguredModelOption[] = modelProviders.flatMap((provider) =>
       provider.models.map((model) => ({
         modelRef: `${provider.key}/${model.id}`,
-        label: `${model.id} (${provider.key})`,
+        label: `${model.name} (${provider.key})`,
         modelId: model.id,
+        displayName: model.name,
         providerName: provider.key,
         runtimeProviderKey: provider.key,
         accountId: provider.key,
@@ -411,7 +413,7 @@ export function ChatInput({
         merged.push(option);
       }
     }
-    return merged;
+    return merged.filter((option) => option.runtimeProviderKey === BRAND.providerKey);
   }, [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors, modelProviders]);
   const configuredModelRef = useMemo(
     () => resolveConfiguredModelRef(currentAgent?.modelRef, defaultModelRef, modelOptions),
@@ -420,7 +422,7 @@ export function ChatInput({
   const effectiveModelRef = optimisticModelRef || configuredModelRef;
   const currentModelLabel = useMemo(() => {
     const matchedOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
-    return matchedOption?.modelId || formatModelRefLabel(effectiveModelRef);
+    return matchedOption?.displayName || matchedOption?.modelId || formatModelRefLabel(effectiveModelRef);
   }, [effectiveModelRef, modelOptions]);
   const mentionableAgents = useMemo(
     () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
@@ -1502,9 +1504,9 @@ export function ChatInput({
                           data-testid={`chat-model-picker-option-${option.label}`}
                         >
                           <span className="flex min-w-0 items-center gap-2">
-                            <ModelIcon modelName={option.modelId} testId="chat-model-picker-option-icon" />
+                            <ModelIcon modelName={option.displayName || option.modelId} testId="chat-model-picker-option-icon" />
                             <span className="min-w-0 truncate">
-                              <span>{option.modelId}</span>
+                                <span>{option.displayName || option.modelId}</span>
                               {option.providerName ? (
                                 <>
                                   {' '}

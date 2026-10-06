@@ -15,6 +15,8 @@ import { deleteChannelAccountConfig } from '../utils/channel-config';
 import { ensureDeepClawContext } from '../utils/openclaw-workspace';
 import { isRecord } from './payload-utils';
 import { syncAgentModelOverrideToRuntime, syncAllProviderAuthToRuntime } from './providers/provider-runtime-sync';
+import { BRAND } from '@shared/brand';
+import { readAccountModelConfig } from '../utils/openclaw-auth';
 
 type AgentsApiContext = {
   gatewayManager: GatewayManager;
@@ -51,6 +53,12 @@ export function createAgentsApi(_ctx: AgentsApiContext): CompleteHostServiceRegi
     updateModel: async (payload) => {
       const agentId = requireString(payload, 'id');
       const modelRef = isRecord(payload) && typeof payload.modelRef === 'string' ? payload.modelRef : null;
+      if (modelRef) {
+        const account = await readAccountModelConfig();
+        if (!account.models.some((model) => modelRef === `${BRAND.providerKey}/${model.id}`)) {
+          throw new Error('Select an available ccwork account model');
+        }
+      }
       const snapshot = await updateAgentModel(agentId, modelRef);
       await syncAllProviderAuthToRuntime();
       await syncAgentModelOverrideToRuntime(agentId);

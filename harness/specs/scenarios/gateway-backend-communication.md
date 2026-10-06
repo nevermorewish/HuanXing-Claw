@@ -62,6 +62,7 @@ conditionalProfiles:
       - Computer Use management wording, opt-in, managed Skill installation or selection, or exec/read image behavior changes
       - Voice dictation microphone permission detection or system-settings guidance changes
 requiredRules:
+  - ccwork-account-billing
   - openclaw-config-delivery
   - renderer-main-boundary
   - backend-communication-boundary

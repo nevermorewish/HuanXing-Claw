@@ -7,7 +7,7 @@
   "dataDirName": ".frogclaw",
   "instanceLockName": "frogclaw",
   "providerKey": "frogclaw",
-  "serviceUrl": "https://frogclaw.com/",
+  "serviceUrl": "https://ccwork.site",
   "recommendedModels": [
     "claude-opus-4-8",
     "claude-sonnet-4-6",
@@ -15,7 +15,7 @@
     "gemini-3.1-pro-preview",
     "deepseek-v4-pro"
   ],
-  "rechargeUrl": "https://frogclaw.com/topup",
+  "rechargeUrl": "https://ccwork.site",
   "updateFeedBaseUrl": "https://huanxing.ai/downloads/frogclaw",
   "copyright": "Copyright © 2026 FrogClaw",
   "vendor": "FrogClaw",

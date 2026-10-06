@@ -1,6 +1,7 @@
-import { ProvidersModelConfig } from '@/components/models/ProvidersModelConfig';
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { CcworkConsumption } from '@/components/account/CcworkConsumption';
+import { CcworkModels } from '@/components/account/CcworkModels';
 import { useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -8,7 +9,6 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
 import { hostApi } from '@/lib/host-api';
 import { trackUiEvent } from '@/lib/telemetry';
-import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
 import { ImageGenerationSettings } from '@/components/settings/ImageGenerationSettings';
 import { AsrSettings } from '@/components/settings/AsrSettings';
 import { FeedbackState } from '@/components/common/FeedbackState';
@@ -337,8 +337,7 @@ export function Models() {
               )}
             </TabsList>
             <TabsContent value="chat" className="mt-8">
-              <ProvidersSettings />
-              <ProvidersModelConfig />
+              <CcworkModels />
             </TabsContent>
             {devModeUnlocked && (
               <>
@@ -353,6 +352,7 @@ export function Models() {
           </Tabs>
 
           {(!devModeUnlocked || selectedManagementTab === 'chat') && <div>
+            <CcworkConsumption />
             <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight">
               {t('dashboard:recentTokenHistory.title', 'Token Usage History')}
             </h2>

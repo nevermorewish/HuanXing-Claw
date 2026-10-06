@@ -24,6 +24,9 @@ import {
 import { OPENCLAW_API_PROTOCOLS, type OpenClawApiProtocol } from '../shared/providers/types';
 import { listRemoteModels, testProviderModel } from './providers/provider-validation';
 import { logger } from '../utils/logger';
+import { BRAND } from '@shared/brand';
+import { accountSession } from '../utils/account-session';
+import { createAccountApi } from './account-api';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -40,6 +43,7 @@ function toApiProtocol(api: string): OpenClawApiProtocol {
 export function createModelProvidersApi(
   { gatewayManager }: { gatewayManager: GatewayManager },
 ): CompleteHostServiceRegistry['modelProviders'] {
+  const account = createAccountApi({ gatewayManager });
   /** Read the full provider list — the common success payload for mutations. */
   const snapshot = async () => {
     const { providers, primary, fallbacks } = await listAllProvidersConfig();
@@ -58,6 +62,7 @@ export function createModelProvidersApi(
 
     saveProvider: async (payload) => {
       try {
+        if (payload.key.trim() === BRAND.providerKey) return { success: false, error: 'Manage ccwork connection through account login' };
         if (!payload.key?.trim()) {
           return { success: false, error: '提供商标识不能为空' };
         }
@@ -89,6 +94,10 @@ export function createModelProvidersApi(
 
     setPrimary: async (payload) => {
       try {
+        if (payload.modelRef.startsWith(`${BRAND.providerKey}/`)) {
+          const result = await account.setPrimaryModel({ modelId: payload.modelRef.slice(BRAND.providerKey.length + 1) });
+          return result.success ? snapshot() : result;
+        }
         await setPrimaryModelRef(payload.modelRef);
 
         return await snapshot();
@@ -100,6 +109,11 @@ export function createModelProvidersApi(
 
     addModels: async (payload) => {
       try {
+        if (payload.key === BRAND.providerKey) {
+          const current = await readProviderModelConfig(payload.key);
+          const result = await account.saveModelConfig({ models: [...current.models, ...payload.models] });
+          return result.success ? snapshot() : result;
+        }
         const current = await readProviderModelConfig(payload.key);
         // Merge new models, de-duping by id (existing entries win, preserving names).
         const byId = new Map<string, ProviderModelEntry>();
@@ -122,6 +136,10 @@ export function createModelProvidersApi(
 
     deleteModel: async (payload) => {
       try {
+        if (payload.key === BRAND.providerKey) {
+          const result = await account.deleteModel({ modelId: payload.modelId });
+          return result.success ? snapshot() : result;
+        }
         const current = await readProviderModelConfig(payload.key);
         const remaining = current.models.filter((m) => m.id !== payload.modelId);
         if (remaining.length === 0) {
@@ -141,6 +159,7 @@ export function createModelProvidersApi(
 
     editModel: async (payload) => {
       try {
+        if (payload.key === BRAND.providerKey) return { success: false, error: 'ccwork model metadata is managed by the server' };
         const current = await readProviderModelConfig(payload.key);
         const next = current.models.map((m) => (m.id === payload.modelId ? payload.model : m));
         // If the edited id changed, the primary may need to follow it.
@@ -163,6 +182,7 @@ export function createModelProvidersApi(
 
     testModel: async (payload) => {
       try {
+        if (payload.key === BRAND.providerKey) return account.testModel({ modelId: payload.modelId });
         const config = await readProviderModelConfig(payload.key);
         if (!config.baseUrl) {
           return { success: false, error: '缺少服务地址' };
@@ -181,6 +201,7 @@ export function createModelProvidersApi(
 
     fetchRemoteModels: async (payload) => {
       try {
+        if (payload.key === BRAND.providerKey) return { success: true, models: await accountSession.fetchModelEntries() };
         const config = await readProviderModelConfig(payload.key);
         if (!config.baseUrl) {
           return { success: false, error: '缺少服务地址' };

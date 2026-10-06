@@ -1,0 +1,21 @@
+{
+  "id": "ccworkclaw",
+  "appName": "CCWorkClaw",
+  "productName": "CCWorkClaw",
+  "executableName": "ccworkclaw",
+  "appId": "site.ccwork.claw.desktop",
+  "dataDirName": ".ccworkclaw",
+  "instanceLockName": "ccworkclaw",
+  "providerKey": "ccworkclaw",
+  "serviceUrl": "https://ccwork.site",
+  "recommendedModels": [],
+  "rechargeUrl": "https://ccwork.site",
+  "updateFeedBaseUrl": "https://ccwork.site/downloads/ccworkclaw",
+  "copyright": "Copyright © 2026 CCWorkClaw",
+  "vendor": "CCWork",
+  "maintainer": "CCWork Team",
+  "linuxWMClass": "ccworkclaw",
+  "tagline": "AI Assistant",
+  "logoPng": "brands/ccworklogo.png",
+  "assetsDir": "resources/brands/ccworkclaw"
+}
