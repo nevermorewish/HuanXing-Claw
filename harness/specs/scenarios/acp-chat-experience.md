@@ -1,0 +1,73 @@
+---
+id: acp-chat-experience
+title: ACP Chat Experience
+type: user-visible-flow
+ownedPaths:
+  - shared/acp-chat/**
+  - shared/host-api/contract.ts
+  - shared/file-preview/**
+  - electron/services/acp-chat-service.ts
+  - electron/services/sessions-api.ts
+  - electron/services/acp-session-access-registry.ts
+  - electron/services/acp-trace.ts
+  - electron/services/attachment-access.ts
+  - electron/services/attachment-open-with.ts
+  - electron/services/files-api.ts
+  - electron/main/index.ts
+  - resources/scripts/attachment-open-with.ps1
+  - src/lib/acp/**
+  - src/lib/file-preview-client.ts
+  - src/lib/file-preview-capabilities.ts
+  - src/lib/generated-files.ts
+  - src/components/file-preview/**
+  - src/stores/acp-chat-session.ts
+  - src/pages/Chat/**
+  - tests/unit/acp-*.test.ts
+  - tests/unit/acp-*.test.tsx
+  - tests/unit/sessions-api-workspace.test.ts
+  - tests/unit/attachment-open-with.test.ts
+  - tests/unit/attachment-open-with-native.test.ts
+  - tests/e2e/chat-acp-inline-timeline.spec.ts
+  - tests/e2e/chat-acp-attachments.spec.ts
+  - tests/e2e/chat-run-state-events.spec.ts
+  - tests/e2e/chat-streamdown-rendering.spec.ts
+  - tests/e2e/chat-code-block-wrap.spec.ts
+  - tests/e2e/chat-latex-rendering.spec.ts
+  - tests/e2e/chat-assistant-markdown-plain.spec.ts
+  - tests/e2e/chat-table-header-light.spec.ts
+  - tests/e2e/hardware-acceleration.spec.ts
+  - tests/e2e/renderer-performance.spec.ts
+  - harness/specs/tasks/acp-session-plan-indicator.md
+  - tests/unit/acp-current-plan.test.ts
+  - tests/unit/acp-session-plan.test.tsx
+  - tests/unit/chat-input.test.tsx
+  - tests/unit/chat-acp-inline-timeline.test.tsx
+requiredProfiles:
+  - fast
+  - comms
+conditionalProfiles:
+  e2e:
+    - ACP timeline presentation changes
+    - Chat Markdown rendering, syntax highlighting, or animation changes
+    - send, cancel, permission, media, or history behavior changes
+requiredRules:
+  - renderer-main-boundary
+  - acp-chat-state-and-history
+  - acp-compatibility-content-safety
+  - attachment-access-safety
+  - diagnostics-trace-safety
+  - session-workspace-authority
+  - tool-derived-file-safety
+  - office-preview-safety
+  - ui-i18n-design-tokens
+  - markdown-rendering-safety-and-performance
+  - electron-rendering-performance
+  - comms-regression
+  - docs-sync
+---
+
+ACP Chat covers session load, prompt, cancel, permission, replay, timeline reduction, assistant-turn presentation and whole-turn duration, standard ACP attachments, bounded generated-media, confirmed internal-UI message-tool file delivery, OpenClaw MEDIA compatibility, and Chat-specific diagnostics. A live or replayed assistant `MEDIA:` line correlated with fresh image-generation context is hydrated in that assistant message and the raw directive is hidden; unrelated assistant `MEDIA:` prose remains ordinary text. Tool cards give every `write` call a localized Write label and Save icon, and every `sessions_spawn` call a localized Spawn subagent label and Bot icon regardless of runtime arguments. The active ACP timeline may also expose finite positive `usage_update` metadata as a compact composer-footer context-usage meter with a ring and visible localized percentage immediately to the left of the gateway connection status, not inside the input box; its progressbar semantics and hover/focus label report the bounded percentage and used/total token counts, while missing or malformed values stay hidden. When the active model changes, the used count remains ACP-owned but the meter immediately adopts the effective context window from the typed agent snapshot so an old usage update cannot leave the previous model's limit visible. The user-visible attachment flow includes attachment-scoped preview, system open, selected-application open, reveal actions, and a first-position built-in Preview action for eligible local HTML, with platform discovery limited to macOS and Windows. Native drag/drop and file-picker attachments reference their canonical source files without creating DeepClaw staging duplicates; native path-backed images stay ACP resource links instead of being rematerialized by OpenClaw under `media/inbound`, and source edits, moves, and deletion therefore follow live-reference semantics. Clipboard and other pathless bytes still use protected Main-owned staging and inline image blocks. Authorized local DOCX/PPTX attachments within the Office limit use scoped Preview; remote, legacy, and over-limit Office attachments retain scoped system/external-open behavior. User-selected directories remain system-open-only targets: Main may open the directory after session-scoped revalidation, but directory contents are not read, enumerated, previewed, or exposed to Open With.
+
+Main owns ACP transport, routing, transcript retrieval and timing extraction, workspace grants, and session/generation-scoped attachment authorization. Timing extraction treats trusted internal inter-session and restart-recovery user records as control metadata, not visible turn boundaries. Renderer owns the in-memory timeline, bounded compatibility and timing alignment, attachment presentation, and display grouping, including user-image thumbnails and user-selected source-path labels. The composer plan indicator is a Renderer-only projection of replayed structured `update_plan` `ToolCallItem.input` values in the active timeline. ACP replay remains authoritative for historical turns and content; transcript-derived timing may only annotate an unambiguously matched ACP turn. Standard ACP content remains preferred over compatibility projections, and incidental tool paths never enter the attachment pipeline.
+
+The durable architecture, exceptions, access boundary, file-activity separation, Office preview behavior, Markdown rendering, Electron rendering performance policy, and validation anchors are documented in `harness/reference/acp-chat.md`, `harness/reference/acp-generated-media-and-diagnostics.md`, `harness/reference/acp-attachment-access-control.md`, `harness/reference/openclaw-file-activity.md`, `harness/reference/office-document-preview.md`, `harness/reference/markdown-rendering.md`, and `harness/reference/electron-rendering-performance.md`.

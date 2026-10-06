@@ -102,15 +102,22 @@ function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig
   };
 }
 
-function createGateway(state: 'running' | 'stopped' = 'running'): Pick<GatewayManager, 'debouncedReload' | 'debouncedRestart' | 'getStatus'> {
+function createGateway(state: 'running' | 'stopped' = 'running') {
   return {
     debouncedReload: vi.fn(),
     debouncedRestart: vi.fn(),
+    restart: vi.fn(),
     getStatus: vi.fn(() => ({ state } as ReturnType<GatewayManager['getStatus']>)),
   };
 }
 
-describe('provider-runtime-sync refresh strategy', () => {
+function expectNoGatewayLifecycleCalls(gateway: ReturnType<typeof createGateway>): void {
+  expect(gateway.debouncedReload).not.toHaveBeenCalled();
+  expect(gateway.debouncedRestart).not.toHaveBeenCalled();
+  expect(gateway.restart).not.toHaveBeenCalled();
+}
+
+describe('provider-runtime-sync config delivery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getProviderAccount.mockResolvedValue(null);
@@ -138,20 +145,69 @@ describe('provider-runtime-sync refresh strategy', () => {
     mocks.listAgentsSnapshot.mockResolvedValue({ agents: [] });
   });
 
-  it('uses debouncedReload after saving provider config', async () => {
+  it('delivers a Google account to the runtime from its backend preset', async () => {
+    mocks.getProviderConfig.mockReturnValue({
+      api: 'google-generative-ai',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      apiKeyEnv: 'GEMINI_API_KEY',
+    });
+
+    await syncSavedProviderToRuntime(
+      createProvider({
+        id: 'google-02b76419',
+        name: 'Google',
+        type: 'google',
+        model: 'gemini-3.8-flash',
+      }),
+      'AIza-test',
+    );
+
+    expect(mocks.saveProviderKeyToOpenClaw).toHaveBeenCalledWith('google', 'AIza-test');
+    expect(mocks.syncProviderConfigToOpenClaw).toHaveBeenCalledWith(
+      'google',
+      'gemini-3.8-flash',
+      expect.objectContaining({
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        api: 'google-generative-ai',
+        apiKeyEnv: 'GEMINI_API_KEY',
+      }),
+    );
+  });
+
+  it('drops every runtime write for a hosted provider that ships no backend preset', async () => {
+    // The failure mode `providers.test.ts` guards against: with no preset there
+    // is no api protocol, so the account never reaches OpenClaw at all -- not
+    // even its key.
+    mocks.getProviderConfig.mockReturnValue(undefined);
+
+    await syncSavedProviderToRuntime(
+      createProvider({ id: 'google-1', type: 'google', model: 'gemini-3.8-flash' }),
+      'AIza-test',
+    );
+
+    expect(mocks.saveProviderKeyToOpenClaw).not.toHaveBeenCalled();
+    expect(mocks.syncProviderConfigToOpenClaw).not.toHaveBeenCalled();
+  });
+
+  it('does not schedule an independent reload or restart after saving provider config', async () => {
     const gateway = createGateway('running');
     await syncSavedProviderToRuntime(createProvider(), undefined, gateway as GatewayManager);
 
-    expect(gateway.debouncedReload).toHaveBeenCalledTimes(1);
-    expect(gateway.debouncedRestart).not.toHaveBeenCalled();
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
-  it('uses debouncedRestart after deleting provider config', async () => {
+  it('propagates per-agent model registry sync failures after saving provider config', async () => {
+    mocks.listAgentsSnapshot.mockRejectedValueOnce(new Error('models.json sync unavailable'));
+
+    await expect(syncSavedProviderToRuntime(createProvider(), undefined))
+      .rejects.toThrow('models.json sync unavailable');
+  });
+
+  it('does not schedule an independent reload or restart after deleting provider config', async () => {
     const gateway = createGateway('running');
     await syncDeletedProviderToRuntime(createProvider(), 'moonshot', gateway as GatewayManager);
 
-    expect(gateway.debouncedRestart).toHaveBeenCalledTimes(1);
-    expect(gateway.debouncedReload).not.toHaveBeenCalled();
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
   it('removes both runtime and stored account keys when deleting a custom provider', async () => {
@@ -167,7 +223,7 @@ describe('provider-runtime-sync refresh strategy', () => {
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('custom-moonshot');
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('moonshot-cn');
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledTimes(2);
-    expect(gateway.debouncedRestart).toHaveBeenCalledTimes(1);
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
   it('also removes bare openai config when deleting Codex OAuth without an API key', async () => {
@@ -203,7 +259,7 @@ describe('provider-runtime-sync refresh strategy', () => {
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('openai');
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('openai-oauth-1');
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('openai');
-    expect(gateway.debouncedRestart).toHaveBeenCalledTimes(1);
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
   it('only clears the api-key profile when deleting a provider api key', async () => {
@@ -218,23 +274,21 @@ describe('provider-runtime-sync refresh strategy', () => {
     expect(mocks.removeProviderFromOpenClaw).not.toHaveBeenCalled();
   });
 
-  it('uses debouncedReload after switching default provider when gateway is running', async () => {
+  it('does not schedule an independent reload or restart after switching the default provider', async () => {
     const gateway = createGateway('running');
     await syncDefaultProviderToRuntime('moonshot', gateway as GatewayManager);
 
-    expect(gateway.debouncedReload).toHaveBeenCalledTimes(1);
-    expect(gateway.debouncedRestart).not.toHaveBeenCalled();
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
   it('skips refresh after switching default provider when gateway is stopped', async () => {
     const gateway = createGateway('stopped');
     await syncDefaultProviderToRuntime('moonshot', gateway as GatewayManager);
 
-    expect(gateway.debouncedReload).not.toHaveBeenCalled();
-    expect(gateway.debouncedRestart).not.toHaveBeenCalled();
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
-  it('uses gpt-5.5 as the browser OAuth default model for OpenAI', async () => {
+  it('uses gpt-5.6-sol as the browser OAuth default model for OpenAI', async () => {
     mocks.getProvider.mockResolvedValue(
       createProvider({
         id: 'openai-personal',
@@ -257,12 +311,86 @@ describe('provider-runtime-sync refresh strategy', () => {
 
     expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledWith(
       'openai',
-      'openai/gpt-5.5',
+      'openai/gpt-5.6-sol',
       {
         baseUrl: 'https://chatgpt.com/backend-api/codex',
         api: 'openai-chatgpt-responses',
       },
       expect.any(Array),
+    );
+  });
+
+  it('normalizes a provider-prefixed model before updating OpenAI runtime config', async () => {
+    const openaiProvider = createProvider({
+      id: 'openai-personal',
+      type: 'openai',
+      model: 'openai/gpt-5.6',
+    });
+    mocks.getProviderAccount.mockResolvedValue({ authMode: 'oauth_browser' });
+    mocks.getDefaultProvider.mockResolvedValue(openaiProvider.id);
+    mocks.getProviderConfig.mockReturnValue({
+      api: 'openai-responses',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKeyEnv: 'OPENAI_API_KEY',
+    });
+
+    await syncUpdatedProviderToRuntime(openaiProvider, undefined);
+
+    expect(mocks.syncProviderConfigToOpenClaw).toHaveBeenCalledWith(
+      'openai',
+      'gpt-5.6',
+      expect.objectContaining({
+        api: 'openai-responses',
+        baseUrl: 'https://api.openai.com/v1',
+      }),
+    );
+    expect(mocks.setOpenClawDefaultModel).toHaveBeenCalledWith(
+      'openai',
+      'openai/gpt-5.6',
+      [],
+    );
+  });
+
+  it('forces DeepClaw attribution onto TokenDance global and agent provider configs', async () => {
+    const tokendance = createProvider({
+      id: 'tokendance-account',
+      type: 'tokendance',
+      baseUrl: 'https://tokendance.space/gateway/v1',
+      model: 'qwen3.8-max',
+      headers: { 'x-app-url': 'https://incorrect.example', 'X-Custom': 'kept' },
+    });
+    mocks.getProviderConfig.mockReturnValue({
+      api: 'openai-completions',
+      baseUrl: 'https://tokendance.space/gateway/v1',
+      apiKeyEnv: 'TOKENDANCE_API_KEY',
+      headers: { 'X-App-URL': 'https://deepclaw.com.cn' },
+    });
+    mocks.getAllProviders.mockResolvedValue([tokendance]);
+    mocks.listAgentsSnapshot.mockResolvedValue({
+      agents: [{ id: 'main', modelRef: 'tokendance/qwen3.8-max' }],
+    });
+
+    await syncSavedProviderToRuntime(tokendance, 'td-secret');
+
+    expect(mocks.syncProviderConfigToOpenClaw).toHaveBeenCalledWith(
+      'tokendance',
+      'qwen3.8-max',
+      expect.objectContaining({
+        headers: {
+          'X-App-URL': 'https://deepclaw.com.cn',
+          'X-Custom': 'kept',
+        },
+      }),
+    );
+    expect(mocks.updateSingleAgentModelProvider).toHaveBeenCalledWith(
+      'main',
+      'tokendance',
+      expect.objectContaining({
+        headers: {
+          'X-App-URL': 'https://deepclaw.com.cn',
+          'X-Custom': 'kept',
+        },
+      }),
     );
   });
 
@@ -310,6 +438,44 @@ describe('provider-runtime-sync refresh strategy', () => {
     );
   });
 
+  it('writes registered context metadata to an agent model entry', async () => {
+    const moonshot = createProvider({ model: 'kimi-k3' });
+    mocks.getAllProviders.mockResolvedValue([moonshot]);
+    mocks.getProviderConfig.mockReturnValue({
+      api: 'openai-completions',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      apiKeyEnv: 'MOONSHOT_API_KEY',
+      models: [{
+        id: 'kimi-k3',
+        name: 'Kimi K3',
+        reasoning: true,
+        input: ['text', 'image'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 1_000_000,
+        maxTokens: 131_072,
+      }],
+    });
+    mocks.listAgentsSnapshot.mockResolvedValue({
+      agents: [{ id: 'main', modelRef: 'moonshot/kimi-k3' }],
+    });
+
+    await syncSavedProviderToRuntime(moonshot, 'sk-test');
+
+    expect(mocks.updateSingleAgentModelProvider).toHaveBeenCalledWith(
+      'main',
+      'moonshot',
+      expect.objectContaining({
+        models: [expect.objectContaining({
+          id: 'kimi-k3',
+          reasoning: true,
+          input: ['text', 'image'],
+          contextWindow: 1_000_000,
+          maxTokens: 131_072,
+        })],
+      }),
+    );
+  });
+
   it('syncs Ollama provider config to runtime without adding model prefix', async () => {
     const ollamaProvider = createProvider({
       id: 'ollamafd',
@@ -333,7 +499,7 @@ describe('provider-runtime-sync refresh strategy', () => {
         api: 'openai-completions',
       }),
     );
-    expect(gateway.debouncedReload).toHaveBeenCalledTimes(1);
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
   it('syncs Ollama as default provider with correct baseUrl and api protocol', async () => {
@@ -391,7 +557,7 @@ describe('provider-runtime-sync refresh strategy', () => {
     );
     // Should NOT call the non-override path
     expect(mocks.setOpenClawDefaultModel).not.toHaveBeenCalled();
-    expect(gateway.debouncedReload).toHaveBeenCalledTimes(1);
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
   it('removes Ollama provider from runtime on delete', async () => {
@@ -408,6 +574,14 @@ describe('provider-runtime-sync refresh strategy', () => {
 
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('ollama-ollamafd');
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('ollamafd');
-    expect(gateway.debouncedRestart).toHaveBeenCalledTimes(1);
+    expectNoGatewayLifecycleCalls(gateway);
+  });
+
+  it('does not schedule an independent reload or restart after updating provider config', async () => {
+    const gateway = createGateway('running');
+
+    await syncUpdatedProviderToRuntime(createProvider(), undefined, gateway as GatewayManager);
+
+    expectNoGatewayLifecycleCalls(gateway);
   });
 });

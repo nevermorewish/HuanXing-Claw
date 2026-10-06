@@ -3,6 +3,7 @@ export const PROVIDER_TYPES = [
   'openai',
   'google',
   'openrouter',
+  'tokendance',
   'ark',
   'moonshot',
   'moonshot-global',
@@ -10,6 +11,8 @@ export const PROVIDER_TYPES = [
   'deepseek',
   'minimax-portal',
   'minimax-portal-cn',
+  'zai',
+  'zai-global',
   'modelstudio',
   'ollama',
   'custom',
@@ -20,6 +23,7 @@ export const BUILTIN_PROVIDER_TYPES = [
   'openai',
   'google',
   'openrouter',
+  'tokendance',
   'ark',
   'moonshot',
   'moonshot-global',
@@ -27,6 +31,8 @@ export const BUILTIN_PROVIDER_TYPES = [
   'deepseek',
   'minimax-portal',
   'minimax-portal-cn',
+  'zai',
+  'zai-global',
   'modelstudio',
   'ollama',
 ] as const;
@@ -59,7 +65,7 @@ export const OPENCLAW_API_PROTOCOLS = [
 
 export type OpenClawApiProtocol = (typeof OPENCLAW_API_PROTOCOLS)[number];
 
-/** Legacy api values ClawX previously wrote that OpenClaw no longer accepts. */
+/** Legacy api values DeepClaw previously wrote that OpenClaw no longer accepts. */
 export const LEGACY_OPENCLAW_API_PROTOCOL_MIGRATIONS = {
   'openai-codex-responses': 'openai-chatgpt-responses',
 } as const satisfies Record<string, OpenClawApiProtocol>;

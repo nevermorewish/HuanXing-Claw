@@ -1,20 +1,17 @@
+import { getOpenClawConfigDir } from './paths';
 /**
  * Skill Config Utilities
- * Direct read/write access to skill configuration in ~/.openclaw/openclaw.json
- * This bypasses the Gateway RPC for faster and more reliable config updates.
- *
- * All file I/O uses async fs/promises to avoid blocking the main thread.
+ * Skill configuration reads and coordinated mutations for openclaw.json.
  */
-import { readFile, writeFile, access, mkdir, readdir, rm } from 'fs/promises';
+import { readFile, writeFile, mkdir, readdir, rm, lstat, mkdtemp, rename } from 'fs/promises';
+import { createHash } from 'crypto';
 import { existsSync } from 'fs';
-import { constants } from 'fs';
 import { join } from 'path';
-import { getOpenClawDir, getOpenClawResolvedDir, getResourcesDir, getOpenClawConfigDir, getDefaultOpenClawConfigDir } from './paths';
+import { getOpenClawResolvedDir, getResourcesDir } from './paths';
 import { logger } from './logger';
 import { cpAsyncSafe } from './plugin-install';
-import { withConfigLock } from './config-mutex';
+import { mutateOpenClawConfig, readOpenClawConfigSnapshot } from '../gateway/config-delivery';
 
-const OPENCLAW_CONFIG_PATH = join(getDefaultOpenClawConfigDir(), 'openclaw.json');
 const BUNDLED_OPENCLAW_SKILL_ALLOWLIST = new Set(['skill-creator']);
 
 export interface SkillConfigUpdates {
@@ -59,52 +56,35 @@ interface PreinstalledMarker {
     installedAt: string;
 }
 
-async function fileExists(p: string): Promise<boolean> {
-    try { await access(p, constants.F_OK); return true; } catch { return false; }
-}
-
 /**
  * Read the current OpenClaw config
  */
 async function readConfig(): Promise<OpenClawConfig> {
-    if (!(await fileExists(OPENCLAW_CONFIG_PATH))) {
-        return {};
-    }
     try {
-        const raw = await readFile(OPENCLAW_CONFIG_PATH, 'utf-8');
-        return JSON.parse(raw);
+        return (await readOpenClawConfigSnapshot()).config as OpenClawConfig;
     } catch (err) {
         console.error('Failed to read openclaw config:', err);
         return {};
     }
 }
 
-/**
- * Write the OpenClaw config
- */
-async function writeConfig(config: OpenClawConfig): Promise<void> {
-    const json = JSON.stringify(config, null, 2);
-    await writeFile(OPENCLAW_CONFIG_PATH, json, 'utf-8');
-}
-
 async function setSkillsEnabled(skillKeys: string[], enabled: boolean): Promise<void> {
     if (skillKeys.length === 0) {
         return;
     }
-    return withConfigLock(async () => {
-        const config = await readConfig();
-        if (!config.skills) {
-            config.skills = {};
+    await mutateOpenClawConfig((config) => {
+        const skillConfig = config as OpenClawConfig;
+        if (!skillConfig.skills) {
+            skillConfig.skills = {};
         }
-        if (!config.skills.entries) {
-            config.skills.entries = {};
+        if (!skillConfig.skills.entries) {
+            skillConfig.skills.entries = {};
         }
         for (const skillKey of skillKeys) {
-            const entry = config.skills.entries[skillKey] || {};
+            const entry = skillConfig.skills.entries[skillKey] || {};
             entry.enabled = enabled;
-            config.skills.entries[skillKey] = entry;
+            skillConfig.skills.entries[skillKey] = entry;
         }
-        await writeConfig(config);
     });
 }
 
@@ -208,12 +188,10 @@ export async function updateSkillConfigs(
     updates: Array<{ skillKey: string } & SkillConfigUpdates>,
 ): Promise<{ success: boolean; error?: string }> {
     try {
-        return await withConfigLock(async () => {
-            const config = await readConfig();
-            await applySkillConfigUpdates(config, updates);
-            await writeConfig(config);
-            return { success: true };
+        await mutateOpenClawConfig(async (config) => {
+            await applySkillConfigUpdates(config as OpenClawConfig, updates);
         });
+        return { success: true };
     } catch (err) {
         console.error('Failed to update skill config:', err);
         return { success: false, error: String(err) };
@@ -226,25 +204,25 @@ export async function removeSkillConfig(skillKey: string): Promise<{ success: bo
 
 export async function removeSkillConfigs(skillKeys: string[]): Promise<{ success: boolean; removed: number; error?: string }> {
     try {
-        return await withConfigLock(async () => {
-            const config = await readConfig();
-            const existingEntries = config.skills?.entries || {};
-            const normalizedSkillKeys = skillKeys
-                .map((skillKey) => skillKey.trim())
-                .filter(Boolean);
-            const removed = normalizedSkillKeys.filter((skillKey) => Object.prototype.hasOwnProperty.call(existingEntries, skillKey)).length;
+        const normalizedSkillKeys = skillKeys
+            .map((skillKey) => skillKey.trim())
+            .filter(Boolean);
+        let removed = 0;
 
+        await mutateOpenClawConfig(async (config) => {
+            const skillConfig = config as OpenClawConfig;
+            const existingEntries = skillConfig.skills?.entries || {};
+            removed = normalizedSkillKeys.filter((skillKey) => Object.prototype.hasOwnProperty.call(existingEntries, skillKey)).length;
             if (removed === 0) {
-                return { success: true, removed: 0 };
+                return;
             }
 
             await applySkillConfigUpdates(
-                config,
+                skillConfig,
                 normalizedSkillKeys.map((skillKey) => ({ skillKey, remove: true })),
             );
-            await writeConfig(config);
-            return { success: true, removed };
         });
+        return { success: true, removed };
     } catch (err) {
         console.error('Failed to remove skill configs:', err);
         return { success: false, removed: 0, error: String(err) };
@@ -316,42 +294,96 @@ export async function trimBundledOpenClawSkillsAndConfigs(
 
 /**
  * Built-in skills bundled with DeepClaw that should be pre-deployed to
- * ~/.openclaw/skills/ on first launch.  These come from the openclaw package's
- * extensions directory and are available in both dev and packaged builds.
+ * ~/.openclaw/skills/ on first launch. First-party sources live in resources/skills
+ * and ship unchanged in both dev and packaged builds, without network fetching.
  */
-const BUILTIN_SKILLS = [] as const;
+const BUILTIN_SKILLS = ['computer-use'] as const;
+
+async function computerUseBundleHash(directory: string): Promise<string | undefined> {
+    try {
+        // The shipped bundle is flat. Links or additional directories cannot match it.
+        if (!(await lstat(directory)).isDirectory()) return undefined;
+        const entries = await readdir(directory, { withFileTypes: true });
+        if (entries.some((entry) => !entry.isFile())) return undefined;
+        const hash = createHash('sha256');
+        for (const name of entries.map((entry) => entry.name).sort()) {
+            const bytes = await readFile(join(directory, name));
+            hash.update(`${name}\0${createHash('sha256').update(bytes).digest('hex')}\n`);
+        }
+        return hash.digest('hex');
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+        throw error;
+    }
+}
 
 /**
  * Ensure built-in skills are deployed to ~/.openclaw/skills/<slug>/.
- * Skips any skill that already has a SKILL.md present (idempotent).
+ * computer-use is fully managed: same-name edits and extras are replaced by the bundle.
  * Runs at app startup; all errors are logged and swallowed so they never
  * block the normal startup flow.
  */
 export async function ensureBuiltinSkillsInstalled(): Promise<void> {
     const skillsRoot = join(getOpenClawConfigDir(), 'skills');
 
-    for (const { slug, sourceExtension } of BUILTIN_SKILLS) {
+    for (const slug of BUILTIN_SKILLS) {
         const targetDir = join(skillsRoot, slug);
-        const targetManifest = join(targetDir, 'SKILL.md');
 
-        if (existsSync(targetManifest)) {
-            continue; // already installed
-        }
-
-        const openclawDir = getOpenClawDir();
-        const sourceDir = join(openclawDir, 'extensions', sourceExtension, 'skills', slug);
+        const sourceDir = join(getResourcesDir(), 'skills', slug);
 
         if (!existsSync(join(sourceDir, 'SKILL.md'))) {
             logger.warn(`Built-in skill source not found, skipping: ${sourceDir}`);
             continue;
         }
 
+        let stagingDir: string | undefined;
         try {
-            await mkdir(targetDir, { recursive: true });
-            await cpAsyncSafe(sourceDir, targetDir);
+            const sourceHash = await computerUseBundleHash(sourceDir);
+            if (!sourceHash) throw new Error('Invalid bundled computer-use directory');
+            if (await computerUseBundleHash(targetDir) === sourceHash) continue;
+
+            await mkdir(skillsRoot, { recursive: true });
+            // Stage outside discovery for fresh installs as well as replacements.
+            stagingDir = await mkdtemp(join(skillsRoot, '..', '.computer-use-'));
+            const stagedBundle = join(stagingDir, 'bundle');
+            const previous = join(stagingDir, 'previous');
+            await cpAsyncSafe(sourceDir, stagedBundle);
+            if (await computerUseBundleHash(stagedBundle) !== sourceHash) {
+                throw new Error('Staged computer-use bundle integrity mismatch');
+            }
+            let movedPrevious = false;
+            try {
+                // Rename the entry itself, including dangling links, without following it.
+                await rename(targetDir, previous);
+                movedPrevious = true;
+            } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+            }
+            try {
+                await rename(stagedBundle, targetDir);
+            } catch (error) {
+                if (movedPrevious) await rename(previous, targetDir);
+                throw error;
+            }
+            if (movedPrevious) await rm(previous, { recursive: true, force: true });
             logger.info(`Installed built-in skill: ${slug} -> ${targetDir}`);
         } catch (error) {
             logger.warn(`Failed to install built-in skill ${slug}:`, error);
+        } finally {
+            if (stagingDir) {
+                // Never delete the old bundle if publication rollback also failed.
+                const hasPrevious = await lstat(join(stagingDir, 'previous')).then(
+                    () => true,
+                    (error: NodeJS.ErrnoException) => error.code !== 'ENOENT',
+                );
+                if (hasPrevious) {
+                    logger.warn(`Retained previous built-in skill for recovery: ${stagingDir}`);
+                } else {
+                    await rm(stagingDir, { recursive: true, force: true }).catch((error) => {
+                        logger.warn(`Failed to remove built-in skill staging directory ${stagingDir}:`, error);
+                    });
+                }
+            }
         }
     }
 }

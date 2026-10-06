@@ -1,8 +1,12 @@
 import { openSync, closeSync, fstatSync, readSync } from 'node:fs';
+import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import { stripAcpWorkingDirectoryPrefix } from '@shared/chat/session-title';
+import { isOpenClawHeartbeatPollText } from '@shared/chat/openclaw-internal';
 import type { RawMessage } from '@shared/chat/types';
-import { getOpenClawConfigDir } from '../utils/paths';
+import type { SessionTurnTimingCandidate } from '@shared/host-api/contract';
+import { resolveOpenClawStateDir } from '../utils/paths';
 import { logger } from '../utils/logger';
 import {
   removeSessionEntry,
@@ -20,13 +24,23 @@ type SessionSummary = {
   sessionKey: string;
   firstUserText: string | null;
   lastTimestamp: number | null;
+  workspacePath: string | null;
+  heartbeatOnly?: boolean;
 };
 
 type TranscriptMessage = RawMessage;
 
 type ParsedTranscriptLine = {
   type?: string;
+  id?: unknown;
+  timestamp?: unknown;
   message?: TranscriptMessage;
+};
+
+type TranscriptMessageRecord = {
+  id?: string;
+  timestamp?: unknown;
+  message: TranscriptMessage;
 };
 
 type SessionPayload = {
@@ -51,7 +65,8 @@ function extractMessageText(content: unknown): string {
 }
 
 function cleanSummaryUserText(text: string): string {
-  return text
+  const textAfterInitialPrefix = stripAcpWorkingDirectoryPrefix(text);
+  const cleaned = textAfterInitialPrefix
     .replace(/^Sender\s*\([^)]*\)\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
     .replace(/^Sender\s*\([^)]*\)\s*:\s*\{[\s\S]*?\}\s*/i, '')
     .replace(/^Sender\s*\([^)]*\)\s*:[^\n]*(?:\n\s*)*/i, '')
@@ -66,10 +81,14 @@ function cleanSummaryUserText(text: string): string {
     .replace(/^Conversation info\s*\([^)]*\):\s*\{[\s\S]*?\}\s*/i, '')
     .replace(/^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, '')
     .trim();
+  const stripCwdExposedByCleanup = !textAfterInitialPrefix.startsWith('[Working directory: ')
+    && cleaned.startsWith('[Working directory: ');
+  return (stripCwdExposedByCleanup ? stripAcpWorkingDirectoryPrefix(cleaned) : cleaned).trim();
 }
 
 function isInternalSummaryText(text: string): boolean {
   if (!text) return true;
+  if (isOpenClawHeartbeatPollText(text)) return true;
   if (/^\s*System\s*\(untrusted\)\s*:/i.test(text)) return true;
   if (
     /An async command you ran earlier has completed/i.test(text)
@@ -91,39 +110,196 @@ function normalizeTimestamp(value: unknown): number | null {
   return value < 1e12 ? value * 1000 : value;
 }
 
-function parseMessageLine(line: string): TranscriptMessage | null {
-  try {
-    const entry = JSON.parse(line) as ParsedTranscriptLine;
-    if (entry.type !== 'message' || !entry.message || typeof entry.message !== 'object') {
-      return null;
+function normalizeTranscriptTimestamp(value: unknown): number | null {
+  if (typeof value === 'number') return normalizeTimestamp(value);
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function transcriptRecordTimestamp(record: TranscriptMessageRecord): number | null {
+  return normalizeTranscriptTimestamp(record.timestamp)
+    ?? normalizeTranscriptTimestamp(record.message.timestamp);
+}
+
+function normalizeTurnUserText(message: TranscriptMessage): string {
+  return stripAcpWorkingDirectoryPrefix(extractMessageText(message.content))
+    .replace(/\r\n/g, '\n')
+    .trim();
+}
+
+function isInternalTranscriptUser(message: TranscriptMessage): boolean {
+  const provenance = (message as TranscriptMessage & { provenance?: unknown }).provenance;
+  if (provenance && typeof provenance === 'object' && !Array.isArray(provenance)) {
+    const kind = (provenance as Record<string, unknown>).kind;
+    if (
+      typeof kind === 'string'
+      && (kind.toLowerCase() === 'inter_session' || kind.toLowerCase() === 'internal_system')
+    ) {
+      return true;
     }
-    return entry.message;
+  }
+  return /^\[Inter-session message\]\s/.test(extractMessageText(message.content));
+}
+
+function extractTranscriptTurnTimings(records: TranscriptMessageRecord[]): SessionTurnTimingCandidate[] {
+  const turns: Array<{
+    normalizedUserText: string;
+    startedAt: number | null;
+    completedAt: number | null;
+  }> = [];
+  let current: (typeof turns)[number] | null = null;
+
+  for (const record of records) {
+    const role = typeof record.message.role === 'string' ? record.message.role.toLowerCase() : '';
+    if (role === 'user') {
+      // OpenClaw persists restart-recovery control instructions as role=user with
+      // internal_system provenance. They continue the interrupted visible turn and
+      // must not truncate its timing at the last pre-restart tool result.
+      if (isInternalTranscriptUser(record.message)) continue;
+      current = {
+        normalizedUserText: normalizeTurnUserText(record.message),
+        startedAt: transcriptRecordTimestamp(record),
+        completedAt: null,
+      };
+      turns.push(current);
+      continue;
+    }
+
+    if (!current || (role !== 'assistant' && role !== 'toolresult' && role !== 'tool_result')) continue;
+    const timestamp = transcriptRecordTimestamp(record);
+    if (timestamp != null && (current.completedAt == null || timestamp > current.completedAt)) {
+      current.completedAt = timestamp;
+    }
+  }
+
+  const occurrences = new Map<string, number>();
+  const candidates = new Array<SessionTurnTimingCandidate | null>(turns.length).fill(null);
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index]!;
+    const userOccurrenceFromTail = (occurrences.get(turn.normalizedUserText) ?? 0) + 1;
+    occurrences.set(turn.normalizedUserText, userOccurrenceFromTail);
+    if (turn.startedAt == null || turn.completedAt == null || turn.completedAt < turn.startedAt) continue;
+    candidates[index] = {
+      normalizedUserText: turn.normalizedUserText,
+      userOccurrenceFromTail,
+      durationMs: turn.completedAt - turn.startedAt,
+    };
+  }
+  return candidates.filter((candidate): candidate is SessionTurnTimingCandidate => candidate != null);
+}
+
+type SqliteDatabaseLike = {
+  prepare: (sql: string) => {
+    get: (...params: unknown[]) => unknown;
+  };
+};
+
+function normalizeCwdValue(value: unknown): string | null {
+  const cwd = typeof value === 'string' ? value.trim() : '';
+  return cwd || null;
+}
+
+function parseRuntimeOptionsCwd(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return normalizeCwdValue((parsed as Record<string, unknown>).cwd);
   } catch {
     return null;
   }
 }
 
-function parseRecentMessagesFromTailChunk(chunk: string, readStart: number, limit: number): TranscriptMessage[] {
+function readAcpReplayCwd(db: SqliteDatabaseLike, sessionKey: string): string | null {
+  try {
+    const row = db.prepare(
+      'SELECT cwd FROM acp_replay_sessions WHERE session_key = ? ORDER BY updated_at DESC, session_id ASC LIMIT 1',
+    ).get(sessionKey) as { cwd?: unknown } | undefined;
+    return normalizeCwdValue(row?.cwd);
+  } catch {
+    return null;
+  }
+}
+
+function readAcpRuntimeMetaCwd(db: SqliteDatabaseLike, sessionKey: string): string | null {
+  try {
+    const row = db.prepare('SELECT * FROM acp_sessions WHERE session_key = ?').get(sessionKey) as {
+      runtime_options_json?: unknown;
+      cwd?: unknown;
+    } | undefined;
+    return parseRuntimeOptionsCwd(row?.runtime_options_json) ?? normalizeCwdValue(row?.cwd);
+  } catch {
+    return null;
+  }
+}
+
+async function readOpenClawAcpSessionCwds(sessionKeys: string[]): Promise<Map<string, string>> {
+  const normalizedKeys = Array.from(new Set(sessionKeys.map((sessionKey) => sessionKey.trim()).filter(Boolean)));
+  const workspaceByKey = new Map<string, string>();
+  if (normalizedKeys.length === 0) return workspaceByKey;
+
+  const databasePath = join(resolveOpenClawStateDir(), 'state', 'openclaw.sqlite');
+  try {
+    await access(databasePath);
+    const sqliteSpecifier = 'node:sqlite';
+    const { DatabaseSync } = await import(/* @vite-ignore */ sqliteSpecifier);
+    const db = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      for (const sessionKey of normalizedKeys) {
+        const cwd = readAcpReplayCwd(db, sessionKey) ?? readAcpRuntimeMetaCwd(db, sessionKey);
+        if (cwd) workspaceByKey.set(sessionKey, cwd);
+      }
+      return workspaceByKey;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return new Map();
+  }
+}
+
+function parseMessageRecordLine(line: string): TranscriptMessageRecord | null {
+  try {
+    const entry = JSON.parse(line) as ParsedTranscriptLine;
+    if (entry.type !== 'message' || !entry.message || typeof entry.message !== 'object') {
+      return null;
+    }
+    return {
+      ...(typeof entry.id === 'string' ? { id: entry.id } : {}),
+      timestamp: entry.timestamp,
+      message: entry.message,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseMessageLine(line: string): TranscriptMessage | null {
+  return parseMessageRecordLine(line)?.message ?? null;
+}
+
+function parseRecentRecordsFromTailChunk(chunk: string, readStart: number, limit: number): TranscriptMessageRecord[] {
   const lines = chunk.split(/\r?\n/);
   if (readStart > 0) lines.shift();
 
-  const collected: TranscriptMessage[] = [];
+  const collected: TranscriptMessageRecord[] = [];
   let scanned = 0;
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
     if (!line?.trim()) continue;
     scanned += 1;
     if (scanned > RECENT_TRANSCRIPT_MAX_SCAN_LINES) break;
-    const message = parseMessageLine(line);
-    if (message) {
-      collected.push(message);
+    const record = parseMessageRecordLine(line);
+    if (record) {
+      collected.push(record);
       if (collected.length >= limit) break;
     }
   }
   return collected.reverse();
 }
 
-function readRecentTranscriptMessages(transcriptPath: string, limit: number): TranscriptMessage[] {
+function readRecentTranscriptRecords(transcriptPath: string, limit: number): TranscriptMessageRecord[] {
   const boundedLimit = Math.max(1, Math.min(Math.floor(limit), 1000));
   let fd: number | null = null;
   try {
@@ -137,13 +313,13 @@ function readRecentTranscriptMessages(transcriptPath: string, limit: number): Tr
       const readLen = size - readStart;
       const buffer = Buffer.allocUnsafe(readLen);
       readSync(fd, buffer, 0, readLen, readStart);
-      const messages = parseRecentMessagesFromTailChunk(buffer.toString('utf8'), readStart, boundedLimit);
+      const records = parseRecentRecordsFromTailChunk(buffer.toString('utf8'), readStart, boundedLimit);
       if (
-        messages.length >= boundedLimit
+        records.length >= boundedLimit
         || readStart === 0
         || readBytes >= RECENT_TRANSCRIPT_MAX_READ_BYTES
       ) {
-        return messages;
+        return records;
       }
       readBytes = Math.min(size, readBytes * 2);
     }
@@ -151,6 +327,10 @@ function readRecentTranscriptMessages(transcriptPath: string, limit: number): Tr
   } finally {
     if (fd !== null) closeSync(fd);
   }
+}
+
+function readRecentTranscriptMessages(transcriptPath: string, limit: number): TranscriptMessage[] {
+  return readRecentTranscriptRecords(transcriptPath, limit).map((record) => record.message);
 }
 
 async function readAllTranscriptMessages(transcriptPath: string): Promise<TranscriptMessage[]> {
@@ -162,9 +342,14 @@ async function readAllTranscriptMessages(transcriptPath: string): Promise<Transc
   });
 }
 
-function summarizeTranscriptMessages(sessionKey: string, messages: TranscriptMessage[]): SessionSummary {
+function summarizeTranscriptMessages(
+  sessionKey: string,
+  messages: TranscriptMessage[],
+  workspacePath: string | null,
+): SessionSummary {
   let firstUserText: string | null = null;
   let lastTimestamp: number | null = null;
+  let sawHeartbeatPollText = false;
 
   for (const message of messages) {
     const normalizedTs = normalizeTimestamp(message.timestamp);
@@ -173,13 +358,24 @@ function summarizeTranscriptMessages(sessionKey: string, messages: TranscriptMes
     }
     if (firstUserText == null && message.role === 'user') {
       const text = cleanSummaryUserText(extractMessageText(message.content));
-      if (text && !isInternalSummaryText(text)) {
+      if (text && isInternalSummaryText(text)) {
+        if (isOpenClawHeartbeatPollText(text)) {
+          sawHeartbeatPollText = true;
+        }
+      } else if (text) {
         firstUserText = text;
       }
     }
   }
 
-  return { sessionKey, firstUserText, lastTimestamp };
+  const heartbeatOnly = firstUserText == null && sawHeartbeatPollText;
+  return {
+    sessionKey,
+    firstUserText,
+    lastTimestamp,
+    workspacePath,
+    ...(heartbeatOnly ? { heartbeatOnly: true } : {}),
+  };
 }
 
 function parseSessionKey(sessionKey: string): { agentId: string; suffix: string } | null {
@@ -209,7 +405,7 @@ function getLimit(payload: unknown, fallback = 200): number {
 
 async function readSessionsJson(agentId: string): Promise<Record<string, unknown>> {
   const fsP = await import('node:fs/promises');
-  const sessionsJsonPath = join(getOpenClawConfigDir(), 'agents', agentId, 'sessions', 'sessions.json');
+  const sessionsJsonPath = join(resolveOpenClawStateDir(), 'agents', agentId, 'sessions', 'sessions.json');
   const raw = await fsP.readFile(sessionsJsonPath, 'utf8');
   return JSON.parse(raw) as Record<string, unknown>;
 }
@@ -264,38 +460,60 @@ function resolveSessionTranscriptPathByKey(
   return resolvedSrcPath ?? null;
 }
 
-async function loadSessionSummary(sessionKey: string): Promise<SessionSummary> {
+async function loadSessionSummary(sessionKey: string, workspacePath: string | null): Promise<SessionSummary> {
   const parsed = parseSessionKey(sessionKey);
   if (!parsed) {
-    return { sessionKey, firstUserText: null, lastTimestamp: null };
+    return { sessionKey, firstUserText: null, lastTimestamp: null, workspacePath };
   }
 
   try {
-    const sessionsDir = join(getOpenClawConfigDir(), 'agents', parsed.agentId, 'sessions');
+    const sessionsDir = join(resolveOpenClawStateDir(), 'agents', parsed.agentId, 'sessions');
     const sessionsJson = await readSessionsJson(parsed.agentId);
     const transcriptPath = resolveSessionTranscriptPathByKey(sessionKey, sessionsDir, sessionsJson);
     if (!transcriptPath) {
-      return { sessionKey, firstUserText: null, lastTimestamp: null };
+      return { sessionKey, firstUserText: null, lastTimestamp: null, workspacePath };
     }
 
     const messages = await readAllTranscriptMessages(transcriptPath);
-    return summarizeTranscriptMessages(sessionKey, messages);
+    return summarizeTranscriptMessages(sessionKey, messages, workspacePath);
   } catch {
-    return { sessionKey, firstUserText: null, lastTimestamp: null };
+    return { sessionKey, firstUserText: null, lastTimestamp: null, workspacePath };
   }
 }
 
-async function loadSessionTranscriptByKey(sessionKey: string, limit: number): Promise<RawMessage[] | null> {
+export async function loadSessionTranscriptByKey(sessionKey: string, limit: number): Promise<RawMessage[] | null> {
   const parsed = parseSessionKey(sessionKey);
   if (!parsed) return null;
 
   try {
-    const sessionsDir = join(getOpenClawConfigDir(), 'agents', parsed.agentId, 'sessions');
+    const sessionsDir = join(resolveOpenClawStateDir(), 'agents', parsed.agentId, 'sessions');
     const sessionsJson = await readSessionsJson(parsed.agentId);
     const transcriptPath = resolveSessionTranscriptPathByKey(sessionKey, sessionsDir, sessionsJson);
     if (!transcriptPath) return null;
 
     return readRecentTranscriptMessages(transcriptPath, limit);
+  } catch {
+    return null;
+  }
+}
+
+async function loadSessionTurnTimingsByKey(
+  sessionKey: string,
+  limit: number,
+): Promise<SessionTurnTimingCandidate[] | null> {
+  const parsed = parseSessionKey(sessionKey);
+  if (!parsed) return null;
+
+  try {
+    const sessionsDir = join(resolveOpenClawStateDir(), 'agents', parsed.agentId, 'sessions');
+    const sessionsJson = await readSessionsJson(parsed.agentId);
+    const transcriptPath = resolveSessionTranscriptPathByKey(sessionKey, sessionsDir, sessionsJson);
+    if (!transcriptPath) return null;
+
+    // ACP session/load is authoritative for history content, but its updates omit the
+    // original timestamps needed to calculate a whole-turn duration. Read only bounded
+    // transcript timing metadata here; this must never become a second history source.
+    return extractTranscriptTurnTimings(readRecentTranscriptRecords(transcriptPath, limit));
   } catch {
     return null;
   }
@@ -314,7 +532,7 @@ async function deleteSession(sessionKey: string): Promise<{ success: boolean; er
     return { success: false, error: `Invalid agentId: ${agentId}` };
   }
 
-  const sessionsDir = join(getOpenClawConfigDir(), 'agents', agentId, 'sessions');
+  const sessionsDir = join(resolveOpenClawStateDir(), 'agents', agentId, 'sessions');
   const sessionsJsonPath = join(sessionsDir, 'sessions.json');
   logger.info(`[session:delete] key=${sessionKey} agentId=${agentId}`);
   logger.info(`[session:delete] sessionsJson=${sessionsJsonPath}`);
@@ -325,6 +543,10 @@ async function deleteSession(sessionKey: string): Promise<{ success: boolean; er
     const raw = await fsP.readFile(sessionsJsonPath, 'utf8');
     sessionsJson = JSON.parse(raw) as Record<string, unknown>;
   } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
+      logger.info(`[session:delete] Session index already absent for "${sessionKey}"`);
+      return { success: true };
+    }
     logger.warn(`[session:delete] Could not read sessions.json: ${String(error)}`);
     return { success: false, error: `Could not read sessions.json: ${String(error)}` };
   }
@@ -332,8 +554,8 @@ async function deleteSession(sessionKey: string): Promise<{ success: boolean; er
   const resolution = resolveSessionTranscriptPath(sessionsJson, sessionsDir, sessionKey);
   if (!resolution.ok) {
     if (resolution.failure.kind === 'not-found') {
-      logger.warn(`[session:delete] Cannot resolve file for "${sessionKey}". Raw value: ${JSON.stringify(sessionsJson[sessionKey])}`);
-      return { success: false, error: `Cannot resolve file for session: ${sessionKey}` };
+      logger.info(`[session:delete] Session entry already absent for "${sessionKey}"`);
+      return { success: true };
     }
     logger.warn(`[session:delete] Refusing to delete out-of-scope path for "${sessionKey}": ${resolution.failure.resolvedPath}`);
     return {
@@ -382,7 +604,7 @@ async function renameSession(sessionKey: string, label: string): Promise<{ succe
     return { success: false, error: `Invalid agentId in sessionKey: ${agentId}` };
   }
 
-  const sessionsJsonPath = join(getOpenClawConfigDir(), 'agents', agentId, 'sessions', 'sessions.json');
+  const sessionsJsonPath = join(resolveOpenClawStateDir(), 'agents', agentId, 'sessions', 'sessions.json');
   const fsP = await import('node:fs/promises');
   const raw = await fsP.readFile(sessionsJsonPath, 'utf8');
   const json = JSON.parse(raw) as Record<string, unknown>;
@@ -429,9 +651,12 @@ export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
         ? body.sessionKeys.filter((value): value is string => typeof value === 'string' && value.startsWith('agent:'))
         : [];
       if (sessionKeys.length === 0) return { success: true, summaries: [] };
+      const workspaceByKey = await readOpenClawAcpSessionCwds(sessionKeys);
       return {
         success: true,
-        summaries: await Promise.all(sessionKeys.map((sessionKey) => loadSessionSummary(sessionKey))),
+        summaries: await Promise.all(sessionKeys.map((sessionKey) => (
+          loadSessionSummary(sessionKey, workspaceByKey.get(sessionKey.trim()) ?? null)
+        ))),
       };
     },
     history: async (payload) => {
@@ -454,7 +679,7 @@ export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
       }
 
       try {
-        const transcriptPath = join(getOpenClawConfigDir(), 'agents', agentId, 'sessions', `${sessionId}.jsonl`);
+        const transcriptPath = join(resolveOpenClawStateDir(), 'agents', agentId, 'sessions', `${sessionId}.jsonl`);
         return { success: true, messages: readRecentTranscriptMessages(transcriptPath, limit) };
       } catch (error) {
         if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
@@ -462,6 +687,14 @@ export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
         }
         return { success: false, error: 'Failed to load transcript' };
       }
+    },
+    turnTimings: async (payload) => {
+      const body = isRecord(payload) ? payload as SessionPayload : {};
+      const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey.trim() : '';
+      if (!sessionKey) return { success: false, error: 'sessionKey is required' };
+      const timings = await loadSessionTurnTimingsByKey(sessionKey, getLimit(payload, 1000));
+      if (!timings) return { success: false, error: 'Transcript not found' };
+      return { success: true, timings };
     },
   };
 }

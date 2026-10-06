@@ -1,19 +1,19 @@
+import { getOpenClawConfigDir } from './paths';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
+import { readOpenClawConfigSnapshot } from '../gateway/config-delivery';
 import { normalizeOpenClawAccountId } from './channel-alias';
 import { resolveOpenClawRuntimeModulePath } from './runtime-package-resolution';
-import { getDefaultOpenClawConfigDir } from './paths';
 
 export const DEFAULT_WECHAT_BASE_URL = 'https://ilinkai.weixin.qq.com';
 const DEFAULT_ILINK_BOT_TYPE = '3';
 const ACTIVE_LOGIN_TTL_MS = 5 * 60_000;
 const QR_POLL_TIMEOUT_MS = 35_000;
 const MAX_QR_REFRESH_COUNT = 3;
-const OPENCLAW_DIR = getDefaultOpenClawConfigDir();
+const OPENCLAW_DIR = getOpenClawConfigDir();
 const WECHAT_STATE_DIR = join(OPENCLAW_DIR, 'openclaw-weixin');
 const WECHAT_ACCOUNT_INDEX_FILE = join(WECHAT_STATE_DIR, 'accounts.json');
 const WECHAT_ACCOUNTS_DIR = join(WECHAT_STATE_DIR, 'accounts');
@@ -209,18 +209,9 @@ function isLoginFresh(login: ActiveLogin): boolean {
   return Date.now() - login.startedAt < ACTIVE_LOGIN_TTL_MS;
 }
 
-function resolveConfigPath(): string {
-  const envPath = process.env.OPENCLAW_CONFIG?.trim();
-  if (envPath) return envPath;
-  return join(OPENCLAW_DIR, 'openclaw.json');
-}
-
-function loadWeChatRouteTag(accountId?: string): string | undefined {
+async function loadWeChatRouteTag(accountId?: string): Promise<string | undefined> {
   try {
-    const configPath = resolveConfigPath();
-    if (!existsSync(configPath)) return undefined;
-    const raw = readFileSync(configPath, 'utf-8');
-    const parsed = JSON.parse(raw) as {
+    const parsed = (await readOpenClawConfigSnapshot()).config as {
       channels?: Record<string, {
         routeTag?: string | number;
         accounts?: Record<string, { routeTag?: string | number }>;
@@ -246,7 +237,7 @@ async function fetchWeChatQrCode(apiBaseUrl: string, accountId?: string, botType
   const base = apiBaseUrl.endsWith('/') ? apiBaseUrl : `${apiBaseUrl}/`;
   const url = new URL(`ilink/bot/get_bot_qrcode?bot_type=${encodeURIComponent(botType)}`, base);
   const headers: Record<string, string> = {};
-  const routeTag = loadWeChatRouteTag(accountId);
+  const routeTag = await loadWeChatRouteTag(accountId);
   if (routeTag) {
     headers.SKRouteTag = routeTag;
   }
@@ -265,7 +256,7 @@ async function pollWeChatQrStatus(apiBaseUrl: string, qrcode: string, accountId?
   const headers: Record<string, string> = {
     'iLink-App-ClientVersion': '1',
   };
-  const routeTag = loadWeChatRouteTag(accountId);
+  const routeTag = await loadWeChatRouteTag(accountId);
   if (routeTag) {
     headers.SKRouteTag = routeTag;
   }

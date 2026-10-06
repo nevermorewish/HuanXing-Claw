@@ -2,9 +2,10 @@
  * Electron Main Process Entry
  * Manages window creation, system tray, and IPC handlers
  */
-import { app, BrowserWindow, nativeImage, session, shell } from 'electron';
+import { app, BrowserWindow, nativeImage, session, shell, type Session } from 'electron';
 import { join } from 'path';
 import { GatewayManager } from '../gateway/manager';
+import { registerOpenClawConfigCoordinator } from '../gateway/config-delivery';
 import { registerIpcHandlers } from './ipc-handlers';
 import { HostApiRegistry } from './ipc/host-invoke';
 import { createTray } from './tray';
@@ -29,10 +30,14 @@ import {
 import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToProfile } from '../utils/openclaw-cli';
 import { isQuitting, setQuitting } from './app-state';
 import { getMacTrafficLightPosition, syncMacTrafficLightPosition } from './traffic-light-layout';
-import { getSetting } from '../utils/store';
+import { getSetting, registerComputerUsePreferenceHandler } from '../utils/store';
+import { repairUtf8BomJsonFiles } from '../utils/json-bom-recovery';
 import { setOpenClawConfigDirOverride, getBrandIconPath } from '../utils/paths';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
+import { syncNativeThemeFromStore } from './native-theme';
+import { WebBrowserGuestRegistry, installWebBrowserGuestPolicy } from './web-browser-policy';
+import { configureWebBrowserSession } from './web-browser-session';
 import {
   clearPendingSecondInstanceFocus,
   consumeMainWindowReady,
@@ -46,11 +51,15 @@ import {
 } from './quit-lifecycle';
 import { createSignalQuitHandler } from './signal-quit';
 import { acquireProcessInstanceFileLock } from './process-instance-lock';
+import { getActiveAcpChatService } from '../services/acp-chat-service';
 import { ensureBuiltinSkillsInstalled, ensurePreinstalledSkillsInstalled, trimBundledOpenClawSkillsAndConfigs } from '../utils/skill-config';
+import { createDefaultCuaRuntimeManager, type CuaRuntimeManager } from '../utils/cua-runtime';
+import { createComputerUseApi, type ComputerUseApi } from '../services/computer-use-api';
 
 import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
+import { cancelDingTalkDwsOAuth } from '../utils/dingtalk-dws';
 import { syncAllProviderAuthToRuntime } from '../services/providers/provider-runtime-sync';
 import { BRAND } from '@shared/brand';
 
@@ -66,22 +75,6 @@ if (requestedRemoteDebuggingPort) {
 if (isE2EMode && requestedUserDataDir) {
   app.setPath('userData', requestedUserDataDir);
 }
-
-// Disable GPU hardware acceleration globally for maximum stability across
-// all GPU configurations (no GPU, integrated, discrete).
-//
-// Rationale (following VS Code's philosophy):
-// - Page/file loading is async data fetching — zero GPU dependency.
-// - The original per-platform GPU branching was added to avoid CPU rendering
-//   competing with sync I/O on Windows, but all file I/O is now async
-//   (fs/promises), so that concern no longer applies.
-// - Software rendering is deterministic across all hardware; GPU compositing
-//   behaviour varies between vendors (Intel, AMD, NVIDIA, Apple Silicon) and
-//   driver versions, making it the #1 source of rendering bugs in Electron.
-//
-// Users who want GPU acceleration can pass `--enable-gpu` on the CLI or
-// set `"disable-hardware-acceleration": false` in the app config (future).
-app.disableHardwareAcceleration();
 
 // On Linux, set CHROME_DESKTOP so Chromium can find the correct .desktop file.
 // On Wayland this maps the running window to the brand-specific .desktop file
@@ -133,8 +126,12 @@ const gotTheLock = gotElectronLock && gotFileLock;
 // Global references
 let mainWindow: BrowserWindow | null = null;
 let gatewayManager!: GatewayManager;
+let cuaRuntimeManager!: CuaRuntimeManager;
+let computerUseApi!: ComputerUseApi;
 let clawHubService!: ClawHubService;
 const hostApiRegistry = new HostApiRegistry();
+const webBrowserGuestRegistry = new WebBrowserGuestRegistry();
+let webBrowserSession!: Session;
 const mainWindowFocusState = createMainWindowFocusState();
 const quitLifecycleState = createQuitLifecycleState();
 
@@ -166,8 +163,6 @@ function createWindow(): BrowserWindow {
   const isMac = process.platform === 'darwin';
   const isWindows = process.platform === 'win32';
   const useCustomTitleBar = isWindows;
-  const shouldSkipSetupForE2E = process.env.DEEPCLAW_E2E_SKIP_SETUP === '1';
-
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -189,6 +184,11 @@ function createWindow(): BrowserWindow {
     show: false,
   });
 
+  installWebBrowserGuestPolicy(win.webContents, {
+    browserSession: webBrowserSession,
+    registry: webBrowserGuestRegistry,
+  });
+
   registerZoomShortcuts(win);
 
   // Handle external links — only allow safe protocols to prevent arbitrary
@@ -207,7 +207,12 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' };
   });
 
-  // Load the app
+  return win;
+}
+
+function loadMainWindow(win: BrowserWindow): void {
+  const shouldSkipSetupForE2E = process.env.DEEPCLAW_E2E_SKIP_SETUP === '1';
+
   if (process.env.VITE_DEV_SERVER_URL) {
     const rendererUrl = new URL(process.env.VITE_DEV_SERVER_URL);
     if (shouldSkipSetupForE2E) {
@@ -224,8 +229,6 @@ function createWindow(): BrowserWindow {
         : undefined,
     });
   }
-
-  return win;
 }
 
 function focusWindow(win: BrowserWindow): void {
@@ -309,6 +312,28 @@ async function initialize(): Promise<void> {
     logger.warn('Failed to apply custom OpenClaw config dir on startup:', err);
   }
 
+  // Older or external Windows tooling can rewrite JSON as UTF-8 with BOM.
+  // Repair those files before settings, provider stores, or extensions parse them.
+  try {
+    const bomRepair = await repairUtf8BomJsonFiles(app.getPath('userData'));
+    if (bomRepair.repairedFiles.length > 0) {
+      logger.warn('Repaired UTF-8 BOM in local JSON files', {
+        files: bomRepair.repairedFiles,
+      });
+    }
+    for (const failure of bomRepair.failures) {
+      logger.warn(`Failed to repair UTF-8 BOM in ${failure.fileName}: ${failure.error}`);
+    }
+  } catch (error) {
+    // Local recovery is best-effort and must never make startup less reliable.
+    logger.warn('Failed to scan local JSON files for UTF-8 BOM:', error);
+  }
+
+  webBrowserSession = configureWebBrowserSession({
+    registry: webBrowserGuestRegistry,
+    getMainWindow: () => mainWindow,
+  });
+
   if (!isE2EMode) {
     // Warm up network optimization (non-blocking)
     void warmupNetworkOptimization();
@@ -326,13 +351,13 @@ async function initialize(): Promise<void> {
   // Set application menu
   await createMenu();
 
+  // Align native widget rendering (select popups, scrollbars, dialogs) with
+  // the persisted theme before the window is created so the window and its
+  // first popups never flash with a mismatched scheme.
+  await syncNativeThemeFromStore();
+
   // Create the main window
   const window = createMainWindow();
-
-  // Create system tray
-  if (!isE2EMode) {
-    createTray(window);
-  }
 
   // Override security headers ONLY for the OpenClaw Gateway Control UI.
   // The URL filter ensures this callback only fires for gateway requests,
@@ -358,7 +383,26 @@ async function initialize(): Promise<void> {
   );
 
   // Register IPC handlers
-  registerIpcHandlers(gatewayManager, clawHubService, window, hostApiRegistry);
+  hostApiRegistry.registerCoreServices({ computerUse: {
+    status: computerUseApi.status,
+    setEnabled: computerUseApi.setEnabled,
+    requestPermissions: computerUseApi.requestPermissions,
+  } });
+  registerIpcHandlers(
+    gatewayManager,
+    clawHubService,
+    window,
+    hostApiRegistry,
+    webBrowserSession,
+    webBrowserGuestRegistry,
+  );
+
+  loadMainWindow(window);
+
+  // Create system tray
+  if (!isE2EMode) {
+    createTray(window);
+  }
 
   // Initialize extension system
   await extensionRegistry.initialize({
@@ -400,13 +444,11 @@ async function initialize(): Promise<void> {
     });
   }
 
-  // Pre-deploy built-in skills (feishu-doc, feishu-drive, feishu-perm, feishu-wiki)
-  // to ~/.openclaw/skills/ so they are immediately available without manual install.
-  if (!isE2EMode) {
-    void ensureBuiltinSkillsInstalled().catch((error) => {
-      logger.warn('Failed to install built-in skills:', error);
-    });
-  }
+  // Local-only first-party skills also install into the isolated E2E home so
+  // picker tests exercise real startup discovery without downloads or OS input.
+  void ensureBuiltinSkillsInstalled().catch((error) => {
+    logger.warn('Failed to install built-in skills:', error);
+  });
 
   // Keep community builds aligned with DeepClaw-biz by physically trimming
   // bundled OpenClaw consumer skills on startup (dev + packaged), keeping only
@@ -516,6 +558,14 @@ async function initialize(): Promise<void> {
     sendMainWindowEvent('channel:whatsapp-error', error);
   });
 
+  if (!isE2EMode) {
+    try {
+      await computerUseApi.initialize();
+    } catch (error) {
+      logger.warn('Local CUA runtime failed to start; continuing with Gateway startup:', error);
+    }
+  }
+
   // Start Gateway automatically (this seeds missing bootstrap files with full templates)
   const gatewayAutoStart = await getSetting('gatewayAutoStart');
   if (!isE2EMode && gatewayAutoStart) {
@@ -578,6 +628,12 @@ if (gotTheLock) {
   }
 
   gatewayManager = new GatewayManager();
+  cuaRuntimeManager = createDefaultCuaRuntimeManager();
+  computerUseApi = createComputerUseApi(cuaRuntimeManager);
+  registerComputerUsePreferenceHandler(async (enabled) => {
+    await computerUseApi.setEnabled({ enabled });
+  });
+  registerOpenClawConfigCoordinator(gatewayManager);
   clawHubService = new ClawHubService();
 
   // Register builtin extensions and load manifest
@@ -605,16 +661,24 @@ if (gotTheLock) {
   });
 
   // Application lifecycle
-  app.whenReady().then(() => {
-    void initialize().catch((error) => {
+  app.whenReady().then(async () => {
+    try {
+      await initialize();
+    } catch (error) {
       logger.error('Application initialization failed:', error);
-    });
+      return;
+    }
 
-    // Register activate handler AFTER app is ready to prevent
-    // "Cannot create BrowserWindow before app is ready" on macOS.
+    // Register only after initialization so activation cannot race the initial
+    // window or claim the single browser guest before host handlers are ready.
     app.on('activate', () => {
+      if (!isE2EMode) {
+        void computerUseApi.refresh().catch((error) => {
+          logger.warn('Failed to refresh local CUA permissions:', error);
+        });
+      }
       if (BrowserWindow.getAllWindows().length === 0) {
-        createMainWindow();
+        loadMainWindow(createMainWindow());
       } else {
         focusMainWindow();
       }
@@ -629,6 +693,7 @@ if (gotTheLock) {
 
   app.on('before-quit', (event) => {
     setQuitting();
+    cancelDingTalkDwsOAuth();
     const action = requestQuitLifecycleAction(quitLifecycleState);
 
     if (action === 'allow-quit') {
@@ -644,9 +709,31 @@ if (gotTheLock) {
 
     void extensionRegistry.teardownAll();
 
-    const stopPromise = gatewayManager.stop().catch((err) => {
-      logger.warn('gatewayManager.stop() error during quit:', err);
-    });
+    const stopPromise = Promise.all([
+      (async () => {
+        // Stop ACP before Gateway so the child cannot reconnect and outlive the app.
+        // Computer Use cleanup runs independently of this ordered pair.
+        try {
+          await getActiveAcpChatService()?.stop();
+        } catch (err) {
+          logger.warn('AcpChatService.stop() error during quit:', err);
+        }
+        try {
+          await gatewayManager.stop();
+        } catch (err) {
+          logger.warn('gatewayManager.stop() error during quit:', err);
+        }
+      })(),
+      (async () => {
+        if (!isE2EMode) {
+          try {
+            await computerUseApi.stop();
+          } catch (err) {
+            logger.warn('cuaRuntimeManager.stop() error during quit:', err);
+          }
+        }
+      })(),
+    ]);
     const timeoutPromise = new Promise<'timeout'>((resolve) => {
       setTimeout(() => resolve('timeout'), 5000);
     });

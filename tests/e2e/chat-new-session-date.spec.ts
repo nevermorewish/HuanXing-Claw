@@ -1,11 +1,26 @@
+import type { ElectronApplication } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
-const DAY_MS = 24 * 60 * 60 * 1000;
+const CANONICAL_LIST_BARRIER_KEY = 'agent:main:canonical-list-barrier';
+const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
+const DEFAULT_WORKSPACE_SEGMENT = '~%2F.openclaw%2Fworkspace';
 const SESSIONS_LIST_PAYLOAD = {
   includeDerivedTitles: true,
   includeLastMessage: true,
 };
+
+function defaultWorkspaceSessionGroupTestId(): string {
+  return `workspace-session-group-${DEFAULT_WORKSPACE_SEGMENT}`;
+}
+
+function defaultWorkspaceSessionGroupToggleTestId(): string {
+  return `workspace-session-group-toggle-${DEFAULT_WORKSPACE_SEGMENT}`;
+}
+
+function defaultWorkspaceSessionLoadMoreTestId(): string {
+  return `workspace-session-load-more-${DEFAULT_WORKSPACE_SEGMENT}`;
+}
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -16,16 +31,113 @@ function stableStringify(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
-test.describe('DeepClaw chat session date grouping', () => {
-  test('shows four collapsible history buckets with only recent buckets expanded', async ({ launchElectronApp }) => {
+async function installDynamicAcpPromptMocks(app: ElectronApplication): Promise<void> {
+  await app.evaluate(async ({ app: _app }, keys) => {
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+    };
+    type HostHandler = (event: unknown, request: HostRequest) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, HostHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    const globals = globalThis as unknown as {
+      __newChatSessionKey?: string;
+      __resolveNewChatLoad?: () => void;
+    };
+
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostRequest) => {
+      if (
+        request.module === 'gateway'
+        && request.action === 'rpc'
+        && request.payload?.method === 'sessions.list'
+        && globals.__newChatSessionKey
+      ) {
+        const now = Date.now();
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            ts: now,
+            sessions: [
+              {
+                key: globals.__newChatSessionKey,
+                displayName: 'ACP',
+                updatedAt: now,
+                status: 'running',
+              },
+              {
+                key: keys.barrierKey,
+                displayName: 'Canonical list applied',
+                updatedAt: now - 500,
+              },
+              { key: keys.mainSessionKey, displayName: 'main', updatedAt: now - 1000 },
+            ],
+          },
+        };
+      }
+      if (request.module === 'chat' && (request.action === 'loadAcpSession' || request.action === 'sendAcpPrompt')) {
+        const sessionKey = typeof request.payload?.sessionKey === 'string' ? request.payload.sessionKey : '';
+        if (sessionKey) {
+          globals.__newChatSessionKey = sessionKey;
+        }
+        if (request.action === 'loadAcpSession' && request.payload?.createIfMissing === true) {
+          return await new Promise((resolve) => {
+            globals.__resolveNewChatLoad = () => {
+              globals.__resolveNewChatLoad = undefined;
+              resolve({ id: request.id, ok: true, data: { success: true, generation: 1 } });
+            };
+          });
+        }
+        return { id: request.id, ok: true, data: { success: true, generation: 1 } };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request.id, ok: true, data: {} };
+    });
+  }, { mainSessionKey: MAIN_SESSION_KEY, barrierKey: CANONICAL_LIST_BARRIER_KEY });
+}
+
+async function getNewChatSessionKey(app: ElectronApplication): Promise<string> {
+  return await app.evaluate(async () => (
+    (globalThis as unknown as { __newChatSessionKey?: string }).__newChatSessionKey ?? ''
+  ));
+}
+
+async function releaseNewChatLoad(app: ElectronApplication): Promise<void> {
+  await app.evaluate(async () => {
+    (globalThis as unknown as { __resolveNewChatLoad?: () => void }).__resolveNewChatLoad?.();
+  });
+}
+
+async function emitAcpSessionDisplayName(app: ElectronApplication, sessionKey: string): Promise<void> {
+  await app.evaluate(async ({ app: _app }, key) => {
+    const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('gateway:notification', {
+        method: 'sessions.changed',
+        params: {
+          sessionKey: key,
+          reason: 'message',
+          ts: Date.now(),
+          displayName: 'ACP',
+          updatedAt: Date.now(),
+        },
+      });
+    }
+  }, sessionKey);
+}
+
+test.describe('DeepClaw chat workspace session list', () => {
+  test('shows the first five default workspace sessions, loads more, and collapses all groups', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const nowMs = Date.now();
-    const sessions = [
-      { key: MAIN_SESSION_KEY, displayName: 'Today conversation', updatedAt: nowMs - 60 * 60 * 1000 },
-      { key: `agent:main:session-${nowMs - 2 * DAY_MS}`, displayName: 'Week conversation', updatedAt: nowMs - 2 * DAY_MS },
-      { key: `agent:main:session-${nowMs - 10 * DAY_MS}`, displayName: 'Month conversation', updatedAt: nowMs - 10 * DAY_MS },
-      { key: `agent:main:session-${nowMs - 40 * DAY_MS}`, displayName: 'Older conversation', updatedAt: nowMs - 40 * DAY_MS },
-    ];
+    const sessions = Array.from({ length: 6 }, (_entry, index) => ({
+      key: index === 0 ? MAIN_SESSION_KEY : `agent:main:session-${nowMs - index}`,
+      displayName: `Workspace conversation ${index + 1}`,
+      updatedAt: nowMs - index,
+    }));
 
     try {
       await installIpcMocks(app, {
@@ -34,14 +146,6 @@ test.describe('DeepClaw chat session date grouping', () => {
           [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: {
             success: true,
             result: { sessions },
-          },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: [] },
-          },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: [] },
           },
         },
         hostApi: {
@@ -61,6 +165,10 @@ test.describe('DeepClaw chat session date grouping', () => {
               json: { success: true, agents: [{ id: 'main', name: 'Main' }] },
             },
           },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
         },
       });
 
@@ -73,33 +181,40 @@ test.describe('DeepClaw chat session date grouping', () => {
         }
       }
 
-      await expect(page.getByTestId('session-bucket-toggle-today')).toHaveAttribute('aria-expanded', 'true');
-      await expect(page.getByTestId('session-bucket-toggle-withinWeek')).toHaveAttribute('aria-expanded', 'true');
-      await expect(page.getByTestId('session-bucket-toggle-withinMonth')).toHaveAttribute('aria-expanded', 'false');
-      await expect(page.getByTestId('session-bucket-toggle-older')).toHaveAttribute('aria-expanded', 'false');
-      await expect(page.getByTestId('session-bucket-today').getByText('Today conversation')).toBeVisible();
-      await expect(page.getByTestId('session-bucket-withinWeek').getByText('Week conversation')).toBeVisible();
-      await expect(page.getByText('Month conversation')).toHaveCount(0);
-      await expect(page.getByText('Older conversation')).toHaveCount(0);
+      const defaultWorkspaceGroup = page.getByTestId(defaultWorkspaceSessionGroupTestId());
+      const defaultWorkspaceToggle = page.getByTestId(defaultWorkspaceSessionGroupToggleTestId());
+      const toggleAllButton = page.getByTestId('session-list-toggle-all');
 
-      await page.getByTestId('session-bucket-toggle-withinMonth').click();
-      await page.getByTestId('session-bucket-toggle-older').click();
+      await expect(defaultWorkspaceToggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(toggleAllButton).toHaveAttribute('aria-label', 'Collapse all');
+      await expect(toggleAllButton).toHaveAttribute('title', 'Collapse all');
+      for (let index = 1; index <= 5; index += 1) {
+        await expect(defaultWorkspaceGroup.getByText(`Workspace conversation ${index}`)).toBeVisible();
+      }
+      await expect(defaultWorkspaceGroup.getByText('Workspace conversation 6')).toHaveCount(0);
 
-      await expect(page.getByTestId('session-bucket-withinMonth').getByText('Month conversation')).toBeVisible();
-      await expect(page.getByTestId('session-bucket-older').getByText('Older conversation')).toBeVisible();
+      await page.getByTestId(defaultWorkspaceSessionLoadMoreTestId()).click();
+      await expect(defaultWorkspaceGroup.getByText('Workspace conversation 6')).toBeVisible();
+      await expect(page.getByTestId(defaultWorkspaceSessionLoadMoreTestId())).toHaveCount(0);
+
+      await toggleAllButton.click();
+      await expect(defaultWorkspaceToggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(toggleAllButton).toHaveAttribute('aria-label', 'Expand all');
+      await expect(toggleAllButton).toHaveAttribute('title', 'Expand all');
+      await expect(defaultWorkspaceGroup.getByText('Workspace conversation 1')).toHaveCount(0);
+
+      await toggleAllButton.click();
+      await expect(defaultWorkspaceToggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(defaultWorkspaceGroup.getByText('Workspace conversation 1')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
   });
 
-  test('new chat appears in the Today session bucket', async ({ launchElectronApp }) => {
+  test('new chat uses a placeholder header until its first prompt becomes the title', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const oldTimestampMs = Date.now() - 35 * 24 * 60 * 60 * 1000;
-    const seededHistory = [
-      { role: 'user', content: 'Existing conversation', timestamp: oldTimestampMs },
-      { role: 'assistant', content: 'Existing reply', timestamp: oldTimestampMs + 1000 },
-    ];
-
+    const prompt = 'Investigate the sidebar title race';
     try {
       await installIpcMocks(app, {
         gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
@@ -113,14 +228,6 @@ test.describe('DeepClaw chat session date grouping', () => {
                 updatedAt: oldTimestampMs,
               }],
             },
-          },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: seededHistory },
-          },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: seededHistory },
           },
         },
         hostApi: {
@@ -140,8 +247,13 @@ test.describe('DeepClaw chat session date grouping', () => {
               json: { success: true, agents: [{ id: 'main', name: 'Main' }] },
             },
           },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
         },
       });
+      await installDynamicAcpPromptMocks(app);
 
       const page = await getStableWindow(app);
       try {
@@ -152,12 +264,132 @@ test.describe('DeepClaw chat session date grouping', () => {
         }
       }
 
-      await expect(page.getByText('Existing conversation')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByTestId(defaultWorkspaceSessionGroupTestId())).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('sidebar-new-chat')).toBeVisible();
 
       await page.getByTestId('sidebar-new-chat').click();
 
-      await expect(page.getByTestId('session-bucket-today').getByText(/agent:main:session-/)).toBeVisible();
-      await expect(page.getByTestId('session-bucket-older')).toBeVisible();
+      await expect(page.getByTestId(defaultWorkspaceSessionGroupTestId()).getByText(/agent:main:session-/)).toHaveCount(0);
+      await expect(page.getByTestId(defaultWorkspaceSessionGroupToggleTestId())).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      if (process.platform === 'win32') {
+        await expect(page.getByTestId('chat-session-title')).toHaveText('New conversation');
+      }
+      await page.getByTestId('chat-composer-input').fill(prompt);
+      await page.getByTestId('chat-composer-send').click();
+
+      await expect.poll(() => getNewChatSessionKey(app)).not.toBe('');
+      const sessionKey = await getNewChatSessionKey(app);
+      const sessionRow = page.getByTestId(`sidebar-session-${sessionKey}`);
+      await page.evaluate((key) => {
+        const state = { sawAcpTitle: false };
+        const inspect = () => {
+          const row = document.querySelector(`[data-testid="sidebar-session-${key}"]`);
+          if (row?.textContent?.includes('ACP')) state.sawAcpTitle = true;
+        };
+        const observer = new MutationObserver(inspect);
+        observer.observe(document.body, { childList: true, characterData: true, subtree: true });
+        (globalThis as unknown as {
+          __newChatTitleObservation?: { observer: MutationObserver; state: typeof state };
+        }).__newChatTitleObservation = { observer, state };
+        inspect();
+      }, sessionKey);
+      await emitAcpSessionDisplayName(app, sessionKey);
+      await expect(page.getByTestId(`sidebar-session-${CANONICAL_LIST_BARRIER_KEY}`)).toBeVisible();
+      await expect(sessionRow).toHaveCount(0);
+      await releaseNewChatLoad(app);
+
+      await expect(sessionRow).toContainText(prompt);
+      await expect(sessionRow).not.toContainText('ACP');
+      if (process.platform === 'win32') {
+        await expect(page.getByTestId('chat-session-title')).toHaveText(prompt);
+      }
+      const sawAcpTitle = await page.evaluate(() => {
+        const observation = (globalThis as unknown as {
+          __newChatTitleObservation?: { observer: MutationObserver; state: { sawAcpTitle: boolean } };
+        }).__newChatTitleObservation;
+        observation?.observer.disconnect();
+        return observation?.state.sawAcpTitle ?? false;
+      });
+      expect(sawAcpTitle).toBe(false);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('cold-start heartbeat replacement uses its first prompt as the initial title', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const nowMs = Date.now();
+    const prompt = 'Tell me a startup joke';
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: {
+            success: true,
+            result: {
+              ts: nowMs,
+              sessions: [
+                {
+                  key: MAIN_SESSION_KEY,
+                  displayName: 'DeepClaw',
+                  lastMessagePreview: '[OpenClaw heartbeat poll]',
+                  updatedAt: nowMs,
+                },
+                {
+                  key: 'agent:main:session-history',
+                  displayName: 'Existing conversation',
+                  derivedTitle: 'Existing conversation',
+                  updatedAt: nowMs - 1000,
+                },
+              ],
+            },
+          },
+        },
+        hostApi: {
+          [stableStringify(['/api/gateway/status', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+            },
+          },
+          [stableStringify(['/api/agents', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { success: true, agents: [{ id: 'main', name: 'Main' }] },
+            },
+          },
+        },
+      });
+      await installDynamicAcpPromptMocks(app);
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
+      }
+
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('chat-composer-input').fill(prompt);
+      await page.getByTestId('chat-composer-send').click();
+
+      await expect.poll(() => getNewChatSessionKey(app)).not.toBe('');
+      const sessionKey = await getNewChatSessionKey(app);
+      const sessionRow = page.getByTestId(`sidebar-session-${sessionKey}`);
+      await expect(sessionRow).toHaveCount(0);
+
+      await releaseNewChatLoad(app);
+      await expect(sessionRow).toContainText(prompt);
+      await emitAcpSessionDisplayName(app, sessionKey);
+      await expect(sessionRow).toContainText(prompt);
+      await expect(sessionRow).not.toContainText('ACP');
     } finally {
       await closeElectronApp(app);
     }

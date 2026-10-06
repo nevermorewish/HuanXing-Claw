@@ -7,6 +7,12 @@ import { persist } from 'zustand/middleware';
 import i18n from '@/i18n';
 import { hostApi } from '@/lib/host-api';
 import { resolveSupportedLanguage } from '@shared/language';
+import { DEFAULT_WORKSPACE_CWD, MAX_RECENT_WORKSPACES } from '@shared/workspace';
+import {
+  getWorkspaceDisplayLabel,
+  isDefaultWorkspacePath,
+  normalizeWorkspacePath,
+} from '@/lib/workspace-context';
 
 type Theme = 'light' | 'dark' | 'system';
 type UpdateChannel = 'stable' | 'beta' | 'dev';
@@ -37,6 +43,9 @@ interface SettingsState {
   sidebarCollapsed: boolean;
   sidebarWidth: number;
   devModeUnlocked: boolean;
+  chatWorkspacePath: string;
+  recentWorkspacePaths: string[];
+  workspaceLabels: Record<string, string>;
 
   // Setup
   setupComplete: boolean;
@@ -61,6 +70,9 @@ interface SettingsState {
   setSidebarCollapsed: (value: boolean) => void;
   setSidebarWidth: (value: number) => void;
   setDevModeUnlocked: (value: boolean) => void;
+  setChatWorkspacePath: (workspacePath: string) => void;
+  setWorkspaceLabel: (workspacePath: string, label: string) => void;
+  removeWorkspace: (workspacePath: string, aliases?: readonly string[]) => Promise<void>;
   markSetupComplete: () => void;
   resetSettings: () => void;
 }
@@ -84,6 +96,9 @@ const defaultSettings = {
   sidebarCollapsed: false,
   sidebarWidth: 280,
   devModeUnlocked: false,
+  chatWorkspacePath: DEFAULT_WORKSPACE_CWD,
+  recentWorkspacePaths: [DEFAULT_WORKSPACE_CWD],
+  workspaceLabels: {},
   setupComplete: false,
 };
 
@@ -161,6 +176,78 @@ export const useSettingsStore = create<SettingsState>()(
       setDevModeUnlocked: (devModeUnlocked) => {
         set({ devModeUnlocked });
         void hostApi.settings.set('devModeUnlocked', devModeUnlocked).catch(() => { });
+      },
+      setChatWorkspacePath: (chatWorkspacePath) => {
+        const normalized = normalizeWorkspacePath(chatWorkspacePath) ?? DEFAULT_WORKSPACE_CWD;
+        set((state) => {
+          const recentWorkspacePaths = [
+            normalized,
+            ...state.recentWorkspacePaths.filter((entry) => normalizeWorkspacePath(entry) !== normalized),
+          ].slice(0, MAX_RECENT_WORKSPACES);
+          const existingLabel = state.workspaceLabels[normalized]?.trim()
+            || state.workspaceLabels[chatWorkspacePath.trim()]?.trim();
+          const workspaceLabels = !isDefaultWorkspacePath(normalized) && !existingLabel
+            ? {
+              ...state.workspaceLabels,
+              [normalized]: getWorkspaceDisplayLabel(
+                normalized,
+                '',
+                state.workspaceLabels,
+                [...state.recentWorkspacePaths, normalized],
+              ),
+            }
+            : state.workspaceLabels;
+          void hostApi.settings.setMany({
+            chatWorkspacePath: normalized,
+            recentWorkspacePaths,
+            ...(workspaceLabels !== state.workspaceLabels ? { workspaceLabels } : {}),
+          }).catch(() => { });
+          return { chatWorkspacePath: normalized, recentWorkspacePaths, workspaceLabels };
+        });
+      },
+      setWorkspaceLabel: (workspacePath, label) => {
+        const normalizedPath = workspacePath.trim();
+        const normalizedLabel = label.trim();
+        if (!normalizedPath || !normalizedLabel) return;
+        set((state) => {
+          const workspaceLabels = {
+            ...state.workspaceLabels,
+            [normalizedPath]: normalizedLabel,
+          };
+          void hostApi.settings.setMany({ workspaceLabels }).catch(() => { });
+          return { workspaceLabels };
+        });
+      },
+      removeWorkspace: async (workspacePath, aliases = []) => {
+        const targets = new Set(
+          [workspacePath, ...aliases]
+            .map((path) => normalizeWorkspacePath(path))
+            .filter((path): path is string => Boolean(path)),
+        );
+        if (targets.size === 0) return;
+        const isTarget = (candidate: string) => {
+          const normalized = normalizeWorkspacePath(candidate);
+          return normalized ? targets.has(normalized) : false;
+        };
+        const state = useSettingsStore.getState();
+        const resetsGlobalWorkspace = isTarget(state.chatWorkspacePath);
+        const recentWorkspacePaths = state.recentWorkspacePaths.filter((entry) => !isTarget(entry));
+        if (
+          resetsGlobalWorkspace
+          && !recentWorkspacePaths.some((entry) => normalizeWorkspacePath(entry) === DEFAULT_WORKSPACE_CWD)
+        ) {
+          recentWorkspacePaths.unshift(DEFAULT_WORKSPACE_CWD);
+        }
+        const workspaceLabels = Object.fromEntries(
+          Object.entries(state.workspaceLabels).filter(([path]) => !isTarget(path)),
+        );
+        const patch = {
+          chatWorkspacePath: resetsGlobalWorkspace ? DEFAULT_WORKSPACE_CWD : state.chatWorkspacePath,
+          recentWorkspacePaths,
+          workspaceLabels,
+        };
+        set(patch);
+        await hostApi.settings.setMany(patch);
       },
       markSetupComplete: () => set({ setupComplete: true }),
       resetSettings: () => set(defaultSettings),

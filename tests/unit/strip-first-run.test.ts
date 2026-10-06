@@ -175,7 +175,7 @@ describe('ensureDeepClawIdentityFile', () => {
 
     await ensureDeepClawIdentityFile(workspaceDir);
 
-    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain('DeepClaw');
+    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain(BRAND.appName);
   });
 
   it('replaces the untouched OpenClaw identity template but preserves custom identities', async () => {
@@ -202,7 +202,7 @@ describe('ensureDeepClawIdentityFile', () => {
     );
 
     await ensureDeepClawIdentityFile(workspaceDir);
-    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain('DeepClaw');
+    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain(BRAND.appName);
     await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.not.toContain('pick something you like');
 
     await writeFile(join(workspaceDir, 'IDENTITY.md'), '# IDENTITY.md\n\n- **Name:** Paisley\n', 'utf-8');
@@ -218,7 +218,7 @@ describe('ensureDeepClawIdentityFile', () => {
     await ensureDeepClawIdentityFile(workspaceDir);
 
     await expect(access(join(workspaceDir, 'BOOTSTRAP.md'))).rejects.toThrow();
-    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain('DeepClaw');
+    await expect(readFile(join(workspaceDir, 'IDENTITY.md'), 'utf-8')).resolves.toContain(BRAND.appName);
   });
 });
 
@@ -226,7 +226,7 @@ describe('ensureDeepClawDefaultIdentity', () => {
   it('creates the default workspace and seeds IDENTITY.md for startup-owned workspaces', async () => {
     await ensureDeepClawDefaultIdentity();
 
-    await expect(readFile(join(testHome, BRAND.dataDirName, 'workspace', 'IDENTITY.md'), 'utf-8')).resolves.toContain('DeepClaw');
+    await expect(readFile(join(testHome, BRAND.dataDirName, 'workspace', 'IDENTITY.md'), 'utf-8')).resolves.toContain(BRAND.appName);
   });
 });
 

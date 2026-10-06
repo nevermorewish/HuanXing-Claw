@@ -1,4 +1,8 @@
-import type { ChatSession } from './types';
+import {
+  isAcpWorkingDirectoryTruncatedTitle,
+  isOpenClawSessionIdFallbackTitle,
+} from '@shared/chat/session-title';
+import { DEFAULT_SESSION_KEY, type ChatSession } from './types';
 
 export const LABEL_FETCH_CONCURRENCY = 5;
 export const LABEL_FETCH_RETRY_DELAYS_MS = [2_000, 5_000, 10_000] as const;
@@ -16,9 +20,14 @@ type SessionLabelHydrationRecord = {
   outcome: SessionLabelHydrationOutcome;
 };
 
+type SessionLabelHydrationCandidateOptions = {
+  includeWorkspacePath?: boolean;
+};
+
 const sessionLabelHydrationInFlight = new Map<string, string>();
 const sessionLabelHydrationHandled = new Map<string, SessionLabelHydrationRecord>();
 const sessionLabelHydrationReadyByRuntime = new Set<string>();
+const sessionLabelHydrationIncarnation = new Map<string, number>();
 
 function normalizeLabelValue(value: string | undefined): string | null {
   if (typeof value !== 'string') return null;
@@ -39,27 +48,63 @@ export function isSessionLabelHydrationReady(runtimeKey: string, fallbackReady =
 }
 
 export function getSessionLabelHydrationVersion(
-  session: Pick<ChatSession, 'key' | 'updatedAt' | 'label' | 'displayName' | 'derivedTitle'>,
+  session: Pick<ChatSession, 'key' | 'sessionId' | 'updatedAt' | 'label' | 'displayName' | 'derivedTitle'>,
   sessionLastActivity: Record<string, number>,
 ): string {
+  const incarnation = sessionLabelHydrationIncarnation.get(session.key) ?? 0;
   const activityVersion = session.updatedAt ?? sessionLastActivity[session.key] ?? 'none';
   const backendLabel = normalizeLabelValue(session.label) ?? normalizeLabelValue(session.derivedTitle) ?? '';
-  return `${activityVersion}|${backendLabel}`;
+  return `${incarnation}|${activityVersion}|${backendLabel}`;
+}
+
+export function isSessionLabelHydrationVersionCurrent(sessionKey: string, version: string): boolean {
+  const incarnation = sessionLabelHydrationIncarnation.get(sessionKey) ?? 0;
+  return version.startsWith(`${incarnation}|`);
 }
 
 export function getSessionLabelHydrationCandidate(
-  session: Pick<ChatSession, 'key' | 'updatedAt' | 'label' | 'displayName' | 'derivedTitle'>,
+  session: Pick<ChatSession, 'key' | 'sessionId' | 'updatedAt' | 'label' | 'displayName' | 'derivedTitle' | 'workspacePath' | 'createdLocally'>,
   sessionLabels: Record<string, string>,
   sessionLastActivity: Record<string, number>,
+  options: SessionLabelHydrationCandidateOptions = {},
 ): { sessionKey: string; version: string } | null {
-  if (session.key.endsWith(':main')) return null;
-  if (normalizeLabelValue(sessionLabels[session.key])) return null;
-
   const version = getSessionLabelHydrationVersion(session, sessionLastActivity);
-  const backendLabel = normalizeLabelValue(session.label) ?? normalizeLabelValue(session.derivedTitle);
+  const hasWorkspacePath = normalizeLabelValue(session.workspacePath) != null;
+  const isDefaultMainSession = session.key === DEFAULT_SESSION_KEY;
+  const displayName = normalizeLabelValue(session.displayName);
+  const isLocalOrGhostDefaultMainSession = isDefaultMainSession
+    && (session.createdLocally || (typeof session.updatedAt !== 'number' && (!displayName || displayName === session.key)));
+
+  const sidebarLabel = normalizeLabelValue(sessionLabels[session.key]);
+  const hasSidebarLabel = sidebarLabel != null
+    && !isOpenClawSessionIdFallbackTitle(sidebarLabel, session.sessionId);
+  const hasSyntheticExplicitLabel = isOpenClawSessionIdFallbackTitle(
+    session.label || '',
+    session.sessionId,
+  );
+  const explicitLabel = hasSyntheticExplicitLabel ? null : normalizeLabelValue(session.label);
+  const hasSyntheticDerivedTitle = isAcpWorkingDirectoryTruncatedTitle(session.derivedTitle || '')
+    || isOpenClawSessionIdFallbackTitle(session.derivedTitle || '', session.sessionId);
+  const derivedTitle = hasSyntheticDerivedTitle ? null : normalizeLabelValue(session.derivedTitle);
+  const backendLabel = explicitLabel ?? derivedTitle;
+  const needsWorkspacePath = options.includeWorkspacePath === true && !hasWorkspacePath;
+  const needsLabel = !hasSidebarLabel && !backendLabel;
+  const needsSyntheticTitleRepair = needsLabel
+    && (hasSyntheticExplicitLabel || hasSyntheticDerivedTitle);
+
+  if (isLocalOrGhostDefaultMainSession) return null;
+  if (
+    isDefaultMainSession
+    && (hasWorkspacePath || !options.includeWorkspacePath)
+    && !needsSyntheticTitleRepair
+  ) return null;
+  if (!needsWorkspacePath && !needsLabel) return null;
+
   if (backendLabel) {
-    sessionLabelHydrationHandled.set(session.key, { version, outcome: 'backend-label' });
-    return null;
+    if (!needsWorkspacePath) {
+      sessionLabelHydrationHandled.set(session.key, { version, outcome: 'backend-label' });
+      return null;
+    }
   }
 
   if (sessionLabelHydrationInFlight.get(session.key) === version) return null;
@@ -69,6 +114,7 @@ export function getSessionLabelHydrationCandidate(
 }
 
 export function beginSessionLabelHydration(sessionKey: string, version: string): boolean {
+  if (!isSessionLabelHydrationVersionCurrent(sessionKey, version)) return false;
   if (sessionLabelHydrationInFlight.get(sessionKey) === version) return false;
   if (sessionLabelHydrationHandled.get(sessionKey)?.version === version) return false;
   sessionLabelHydrationInFlight.set(sessionKey, version);
@@ -80,9 +126,8 @@ export function finishSessionLabelHydration(
   version: string,
   outcome: SessionLabelHydrationOutcome,
 ): void {
-  if (sessionLabelHydrationInFlight.get(sessionKey) === version) {
-    sessionLabelHydrationInFlight.delete(sessionKey);
-  }
+  if (sessionLabelHydrationInFlight.get(sessionKey) !== version) return;
+  sessionLabelHydrationInFlight.delete(sessionKey);
   sessionLabelHydrationHandled.set(sessionKey, { version, outcome });
 }
 
@@ -93,6 +138,8 @@ export function abandonSessionLabelHydration(sessionKey: string, version: string
 }
 
 export function clearSessionLabelHydrationTracking(sessionKey: string): void {
+  const incarnation = sessionLabelHydrationIncarnation.get(sessionKey) ?? 0;
+  sessionLabelHydrationIncarnation.set(sessionKey, incarnation + 1);
   sessionLabelHydrationInFlight.delete(sessionKey);
   sessionLabelHydrationHandled.delete(sessionKey);
 }

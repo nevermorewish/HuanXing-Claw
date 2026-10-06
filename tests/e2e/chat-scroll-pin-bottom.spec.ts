@@ -1,7 +1,11 @@
+import type { ElectronApplication } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const SESSION_KEY = 'agent:main:main';
-const RUN_ID = 'run-pin-e2e';
+const MAIN_WORKSPACE = '/workspace';
+const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
+
+type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -19,10 +23,60 @@ const seededHistory = Array.from({ length: 40 }, (_, idx) => ({
   timestamp: Date.now() + idx,
 }));
 
+const seededUpdates: AcpSessionUpdate[] = seededHistory.map((message, index) => ({
+  sessionUpdate: message.role === 'user' ? 'user_message' : 'agent_message',
+  messageId: `pin-history-${index + 1}`,
+  content: [{ type: 'text', text: message.content }],
+}));
+
 // Build a streaming assistant text of `paragraphs` markdown paragraphs so each
 // delta grows the rendered height deterministically.
 function streamingText(paragraphs: number): string {
   return Array.from({ length: paragraphs }, (_, idx) => `Streaming paragraph ${idx + 1}.`).join('\n\n');
+}
+
+async function emitAcpSessionUpdates(
+  app: ElectronApplication,
+  updates: AcpSessionUpdate[],
+  historical = false,
+) {
+  await app.evaluate(
+    async ({ app: _app }, payload) => {
+      const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+      for (const update of payload.updates) {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('chat:acp-session-update', {
+            sessionKey: payload.sessionKey,
+            generation: 1,
+            ...(payload.historical ? { historical: true } : {}),
+            notification: {
+              sessionId: payload.sessionKey,
+              update,
+            },
+          });
+        }
+      }
+    },
+    { sessionKey: SESSION_KEY, updates, historical },
+  );
+}
+
+async function keepAcpPromptPending(app: ElectronApplication) {
+  await app.evaluate(async ({ app: _app }) => {
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostInvokeHandler = (event: unknown, request: { module?: string; action?: string }) => Promise<unknown>;
+    const currentHostInvoke = (ipcMain as unknown as {
+      _invokeHandlers?: Map<string, HostInvokeHandler>;
+    })._invokeHandlers?.get('host:invoke');
+
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: { module?: string; action?: string }) => {
+      if (request?.module === 'chat' && request.action === 'sendAcpPrompt') {
+        return await new Promise(() => {});
+      }
+      return currentHostInvoke?.(event, request) ?? { ok: true, data: {} };
+    });
+  });
 }
 
 test.describe('DeepClaw chat scroll pin-to-bottom during runs', () => {
@@ -36,18 +90,26 @@ test.describe('DeepClaw chat scroll pin-to-bottom during runs', () => {
           // Null-arg fallbacks match regardless of the exact request payload.
           [stableStringify(['sessions.list', null])]: {
             success: true,
-            result: { sessions: [{ key: SESSION_KEY, displayName: 'main' }] },
-          },
-          [stableStringify(['chat.history', null])]: {
-            success: true,
-            result: { messages: seededHistory },
-          },
-          [stableStringify(['chat.send', null])]: {
-            success: true,
-            result: { runId: RUN_ID },
+            result: { sessions: [{ key: SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE }] },
           },
         },
         hostApi: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: {
+            success: true,
+            generation: 1,
+          },
           [stableStringify(['/api/gateway/status', 'GET'])]: {
             ok: true,
             data: {
@@ -61,11 +123,12 @@ test.describe('DeepClaw chat scroll pin-to-bottom during runs', () => {
             data: {
               status: 200,
               ok: true,
-              json: { success: true, agents: [{ id: 'main', name: 'main' }] },
+              json: { success: true, agents: [{ id: 'main', name: 'main', workspace: MAIN_WORKSPACE, mainSessionKey: SESSION_KEY }] },
             },
           },
         },
       });
+      await keepAcpPromptPending(app);
 
       const page = await getStableWindow(app);
       try {
@@ -77,22 +140,15 @@ test.describe('DeepClaw chat scroll pin-to-bottom during runs', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await emitAcpSessionUpdates(app, seededUpdates, true);
       await expect(page.getByText('Chat history message 40')).toBeVisible({ timeout: 30_000 });
 
       const scrollContainer = page.getByTestId('chat-scroll-container');
 
-      // Emit a runtime streaming event for the active run.
-      const emitDelta = async (message: Record<string, unknown>) => {
-        await app.evaluate(({ BrowserWindow }, payload) => {
-          BrowserWindow.getAllWindows()[0]?.webContents.send('gateway:notification', {
-            method: 'agent',
-            params: {
-              runId: payload.runId,
-              sessionKey: payload.sessionKey,
-              data: { state: 'delta', message: payload.message },
-            },
-          });
-        }, { runId: RUN_ID, sessionKey: SESSION_KEY, message });
+      // Emit ACP streaming updates for the active run.
+      const emitDelta = async (update: AcpSessionUpdate) => {
+        await emitAcpSessionUpdates(app, [update]);
       };
 
       // Assert the scrollbar is glued to the very bottom (within a small epsilon
@@ -112,51 +168,64 @@ test.describe('DeepClaw chat scroll pin-to-bottom during runs', () => {
 
       // Start a run so pinning becomes active (sending === true).
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
-      await page.getByTestId('chat-composer-input').fill('do a multi-tool task');
-      await page.getByTestId('chat-composer-send').click();
-      await expect(page.getByTestId('chat-composer-send')).toHaveAttribute('title', 'Stop');
-
-      // Growing text stream -> height keeps increasing; bar must stay at bottom.
-      await emitDelta({ role: 'assistant', content: [{ type: 'text', text: streamingText(3) }] });
-      await expectPinnedToBottom();
-
-      await emitDelta({ role: 'assistant', content: [{ type: 'text', text: streamingText(8) }] });
-      await expectPinnedToBottom();
-
-      // Tool round -> layout oscillates (bubble/graph/tool-status churn); the
-      // bar must still snap to the bottom rather than jitter upward.
-      await emitDelta({
-        role: 'assistant',
-        content: [
-          { type: 'text', text: streamingText(8) },
-          { type: 'toolCall', id: 'tool-1', name: 'exec', arguments: { command: 'ls -la' } },
-        ],
-      });
-      await expectPinnedToBottom();
-
-      // Back to text growth after the tool round.
-      await emitDelta({ role: 'assistant', content: [{ type: 'text', text: streamingText(14) }] });
-      await expectPinnedToBottom();
-
-      // Manual scroll-up while the run is live: pinning must yield to the user
-      // and surface the "scroll to latest" affordance.
       await scrollContainer.evaluate((el) => {
         const element = el as HTMLElement;
         element.scrollTop = 0;
         element.dispatchEvent(new Event('scroll', { bubbles: true }));
       });
+      await expect(page.getByTestId('chat-scroll-to-latest')).toBeVisible();
+      await page.getByTestId('chat-composer-input').fill('do a multi-tool task');
+      await page.getByTestId('chat-composer-send').click();
+      await expect(page.getByTestId('chat-composer-send')).toHaveAttribute('title', 'Stop');
+      await expect(page.getByText('do a multi-tool task')).toBeInViewport();
+      await expectPinnedToBottom();
 
-      const jumpButton = page.getByTestId('chat-scroll-to-latest');
-      await expect(jumpButton).toBeVisible();
+      // Growing text stream -> height keeps increasing; bar must stay at bottom.
+      await emitDelta({ sessionUpdate: 'agent_message', messageId: 'streaming-assistant', content: [{ type: 'text', text: streamingText(3) }] });
+      await expectPinnedToBottom();
+
+      await emitDelta({ sessionUpdate: 'agent_message', messageId: 'streaming-assistant', content: [{ type: 'text', text: streamingText(8) }] });
+      await expectPinnedToBottom();
+
+      // Tool round -> layout oscillates (bubble/graph/tool-status churn); the
+      // bar must still snap to the bottom rather than jitter upward.
+      await emitDelta({
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tool-1',
+        title: 'exec',
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'text', text: 'ls -la' } }],
+        locations: [],
+      });
+      await expectPinnedToBottom();
+
+      // Back to text growth after the tool round.
+      await emitDelta({ sessionUpdate: 'agent_message', messageId: 'streaming-assistant', content: [{ type: 'text', text: streamingText(14) }] });
+      await expectPinnedToBottom();
+
+      // Even a small manual scroll-up while the run is live must pause pinning.
+      // This starts inside the library's "near bottom" zone, where a streaming
+      // resize used to pull the viewport straight back to the latest output.
+      const readingPosition = await scrollContainer.evaluate((el) => {
+        const element = el as HTMLElement;
+        element.scrollTop = element.scrollHeight - element.clientHeight - 24;
+        element.dispatchEvent(new Event('scroll', { bubbles: true }));
+        return element.scrollTop;
+      });
 
       // Further growth must NOT yank the user back down while they've escaped.
-      await emitDelta({ role: 'assistant', content: [{ type: 'text', text: streamingText(20) }] });
+      await emitDelta({ sessionUpdate: 'agent_message', messageId: 'streaming-assistant', content: [{ type: 'text', text: streamingText(20) }] });
+      const jumpButton = page.getByTestId('chat-scroll-to-latest');
       await expect(jumpButton).toBeVisible();
-      const distanceFromBottom = await scrollContainer.evaluate((el) => {
+      const scrollState = await scrollContainer.evaluate((el) => {
         const element = el as HTMLElement;
-        return Math.round(element.scrollHeight - element.clientHeight - element.scrollTop);
+        return {
+          top: element.scrollTop,
+          distanceFromBottom: Math.round(element.scrollHeight - element.clientHeight - element.scrollTop),
+        };
       });
-      expect(distanceFromBottom).toBeGreaterThan(8);
+      expect(Math.abs(scrollState.top - readingPosition)).toBeLessThanOrEqual(2);
+      expect(scrollState.distanceFromBottom).toBeGreaterThan(8);
 
       // Clicking the affordance returns to the bottom.
       await jumpButton.click();

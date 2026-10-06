@@ -79,6 +79,9 @@ jobs:
       - name: Download agent-browser binaries for Windows
         run: pnpm run agent-browser:download:win
 
+      - name: Download CUA driver for Windows
+        run: pnpm run cua-driver:download:win
+
       - name: Download Node.js binaries for Windows
         run: pnpm run node:download:win
 

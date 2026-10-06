@@ -3,7 +3,7 @@
  * Cross-platform path resolution helpers
  */
 import { createRequire } from 'node:module';
-import { join, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
 import { BRAND } from '@shared/brand';
@@ -107,6 +107,20 @@ export function getOpenClawConfigDir(): string {
  */
 export function isOpenClawConfigDirCustom(): boolean {
   return openClawConfigDirOverride !== null;
+}
+
+export function resolveOpenClawStateDir(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.OPENCLAW_STATE_DIR?.trim();
+  return resolve(expandPath(configured || getOpenClawConfigDir()));
+}
+
+export function resolveOpenClawConfigPath(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.OPENCLAW_CONFIG_PATH?.trim();
+  return resolve(expandPath(configured || join(resolveOpenClawStateDir(env), 'openclaw.json')));
+}
+
+export function resolveOpenClawConfigDir(env: NodeJS.ProcessEnv = process.env): string {
+  return dirname(resolveOpenClawConfigPath(env));
 }
 
 /**

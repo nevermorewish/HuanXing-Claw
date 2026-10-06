@@ -34,6 +34,7 @@ type ProviderPayload<Action extends keyof HostApiContract['providers']> =
 type ValidationOptions = {
   baseUrl?: string;
   apiProtocol?: string;
+  modelId?: string;
 };
 
 function hasObjectChanges<T extends Record<string, unknown>>(
@@ -180,9 +181,11 @@ async function validateKey(payload: ProviderPayload<'validateKey'>): Promise<{ v
     const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
     const resolvedBaseUrl = options?.baseUrl || account?.baseUrl || legacyProvider?.baseUrl || registryBaseUrl;
     const resolvedProtocol = options?.apiProtocol || account?.apiProtocol || legacyProvider?.apiProtocol;
+    const resolvedModelId = options?.modelId || account?.model || legacyProvider?.model;
     return await validateApiKeyWithProvider(providerType, apiKey, {
       baseUrl: resolvedBaseUrl,
       apiProtocol: resolvedProtocol,
+      modelId: resolvedModelId,
     });
   } catch (error) {
     return { valid: false, error: String(error) };
@@ -213,8 +216,8 @@ async function deleteProvider(payload: ProviderPayload<'delete'>, gatewayManager
   const providerId = getProviderId(payload, 'delete');
   try {
     const existing = await providerService._getProviderInternal(providerId);
-    await providerService._deleteProviderInternal(providerId);
     await syncDeletedProviderToRuntime(existing, providerId, gatewayManager);
+    await providerService._deleteProviderInternal(providerId);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -369,12 +372,12 @@ async function deleteAccount(
       ? 'openai'
       : undefined;
     if (apiKeyOnly) {
-      await providerService._deleteProviderApiKeyInternal(accountId);
       await syncDeletedProviderApiKeyToRuntime(
         existing ? providerAccountToConfig(existing) : null,
         accountId,
         runtimeProviderKey,
       );
+      await providerService._deleteProviderApiKeyInternal(accountId);
       return { success: true };
     }
     const currentDefaultAccountId = await providerService.getDefaultAccountId();
@@ -382,10 +385,9 @@ async function deleteAccount(
       ? selectReplacementDefaultAccount(await providerService.listAccounts(), accountId)
       : undefined;
 
-    await providerService.deleteAccount(accountId);
     if (replacementDefault) {
-      await providerService.setDefaultAccount(replacementDefault.id);
       await syncDefaultProviderToRuntime(replacementDefault.id);
+      await providerService.setDefaultAccount(replacementDefault.id);
     }
     await syncDeletedProviderToRuntime(
       existing ? providerAccountToConfig(existing) : null,
@@ -393,6 +395,7 @@ async function deleteAccount(
       gatewayManager,
       runtimeProviderKey,
     );
+    await providerService.deleteAccount(accountId);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -427,7 +430,7 @@ async function requestOAuth(payload: ProviderPayload<'requestOAuth'>) {
     label: typeof body.label === 'string' ? body.label : undefined,
   };
   try {
-    if (provider === 'openai') {
+    if (provider === 'openai' || provider === 'tokendance') {
       await browserOAuthManager.startFlow(provider as BrowserOAuthProviderType, options);
     } else {
       await deviceOAuthManager.startFlow(provider as OAuthProviderType, region, options);
@@ -467,7 +470,6 @@ async function submitOAuth(payload: ProviderPayload<'submitOAuth'>) {
 export function createProvidersApi(ctx: ProvidersApiContext): CompleteHostServiceRegistry['providers'] {
   const providerService = getProviderService();
   deviceOAuthManager.setWindow(ctx.mainWindow);
-  browserOAuthManager.setWindow(ctx.mainWindow);
 
   return {
     list: async () => providerService._listProvidersWithKeyInfoInternal(),

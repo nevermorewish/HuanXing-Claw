@@ -53,10 +53,11 @@
       "replaceApiKeyHelp": "現在保存されている API キーをそのまま使う場合は、この欄を空のままにしてください。",
       "baseUrl": "ベース URL",
       "modelId": "モデル ID",
+      "modelIdEditDisabled": "モデル ID は作成後に変更できません。別のモデル ID を使用するには、このプロバイダーを削除して再度追加してください。",
       "codePlanPreset": "Code Plan プリセット",
       "codePlanMode": "Code Plan",
       "useCodePlanPreset": "Ark Code Plan プリセットを使用",
-      "codePlanPresetDesc": "Code Plan は https://ark.cn-beijing.volces.com/api/coding/v3 と model ark-code-latest を使います。Code Plan 通信に /api/v3 を使わないでください。",
+      "codePlanPresetDesc": "Code Plan は {{baseUrl}} と model {{modelId}} を使います。Code Plan 通信に一般 API エンドポイントを使わないでください。",
       "codePlanDoc": "Code Plan ドキュメント",
       "protocol": "プロトコル",
       "advancedConfig": "詳細設定",
@@ -104,7 +105,8 @@
       "failedUpdate": "プロバイダーの更新に失敗しました",
       "invalidKey": "無効な API キー",
       "modelRequired": "モデル ID が必要です",
-      "minimaxConflict": "MiniMax (Global) と MiniMax (CN) は同時に追加できません。"
+      "minimaxConflict": "MiniMax (Global) と MiniMax (CN) は同時に追加できません。",
+      "zaiConflict": "Z.AI (Global) と Z.AI (CN) は同時に追加できません。"
     },
     "oauth": {
       "loginMode": "OAuthログイン",
@@ -124,7 +126,22 @@
       "step1": "以下の認証コードをコピーしてください。",
       "step2": "ブラウザでログインページを開いてください。",
       "step3": "コードを貼り付けてアクセスを承認してください。",
-      "requestingCode": "セキュアログインコードを取得中..."
+      "requestingCode": "セキュアログインコードを取得中...",
+      "completeBrowserLogin": "ブラウザでログインを完了",
+      "manualCallbackHelp": "認証ページを開いてログインを完了し、コールバック URL または認証コードを貼り付けてください。",
+      "openAuthorizationPage": "認証ページを開く",
+      "callbackPlaceholder": "コールバック URL またはコードを貼り付け",
+      "submitCode": "コードを送信",
+      "tokenDanceCancelled": "TokenDance の認証はキャンセルされました。",
+      "tokenDanceCallbackUnavailable": "TokenDance 用の安全なローカルコールバックを開始できませんでした。",
+      "tokenDanceTimedOut": "TokenDance の認証がタイムアウトしました。もう一度お試しください。",
+      "tokenDanceExchangeFailed": "TokenDance で認証コードを交換できませんでした（HTTP {{status}}）。",
+      "tokenDanceMissingKey": "TokenDance の認証は完了しましたが、API キーが返されませんでした。再認証してください。"
+    },
+    "recovery": {
+      "topUpBalance": "TokenDance の残高が不足しています。チャージしてから再試行してください。",
+      "reauthorizeApiKey": "TokenDance キーは無効です。このプロバイダーを削除し、TokenDance を再認証してください。",
+      "apiKeyQuota": "TokenDance キーが期間上限に達しました。上限のリセットを待つか、TokenDance を再認証してください。"
     }
   },
   "gateway": {
@@ -211,6 +228,9 @@
     "consoleNote": "ゲートウェイトークンを注入して Control UI を開きます",
     "gatewayToken": "ゲートウェイトークン",
     "gatewayTokenDesc": "Control UI の設定に求められた場合、これを貼り付けてください",
+    "compactionReserve": "コンパクション予約下限",
+    "compactionReserveDesc": "明示されたコンテキストウィンドウの25%を使用し、未設定の場合は50,000トークンを使用します。",
+    "compactionReserveUnavailable": "適用済みの予約値を取得できません",
     "tokenUnavailable": "トークンが利用できません",
     "tokenCopied": "ゲートウェイトークンをコピーしました",
     "cli": "OpenClaw CLI",
@@ -256,6 +276,49 @@
     "installMessage": "\"openclaw\" コマンドをインストールしますか？",
     "installDetail": "~/.local/bin/openclaw が作成されます。グローバルに実行するには ~/.local/bin が PATH に含まれていることを確認してください。"
   },
+  "support": {
+    "title": "サポート"
+  },
+  "issueReport": {
+    "actionTitle": "問題調査レポートをエクスポート",
+    "actionDescription": "トラブルシューティングとサポート用の診断 ZIP をデスクトップに作成します。",
+    "open": "内容を確認してエクスポート",
+    "dialogTitle": "問題調査レポートをエクスポート",
+    "dialogDescription": "含まれる内容を確認し、必要に応じて会話を選択してください。ZIP はデスクトップに保存されます。",
+    "contentsTitle": "ZIP に含まれる内容",
+    "contents": {
+      "transcripts": {
+        "title": "会話トランスクリプト",
+        "description": "会話を選択した場合、その完全な JSONL ファイル。"
+      },
+      "config": {
+        "title": "OpenClaw 設定",
+        "description": "認証情報を除去した openclaw.json のコピー。"
+      },
+      "logs": {
+        "title": "診断ログ",
+        "description": "利用可能な DeepClaw と OpenClaw のログ。"
+      },
+      "manifest": {
+        "title": "マニフェスト",
+        "description": "含まれるファイルと取得できなかったファイルの一覧。"
+      }
+    },
+    "sessionsTitle": "会話（任意）",
+    "selectAll": "すべて選択（{{count}}）",
+    "selectedCount": "{{count}} 件の会話を選択中",
+    "noSessions": "利用可能な会話はありません。設定とログは引き続きエクスポートできます。",
+    "export": "ZIP を作成（{{count}}）",
+    "exportWithoutConversations": "会話なしで ZIP を作成",
+    "exporting": "ZIP を作成中...",
+    "exportSucceeded": "問題調査レポートをエクスポートしました",
+    "skippedSessions": "ローカル記録を利用できない {{count}} 件の会話をスキップし、利用可能な診断情報をエクスポートしました。",
+    "exportFailed": "問題調査レポートをエクスポートできませんでした",
+    "completeTitle": "問題調査レポートの準備ができました",
+    "completeDescription": "ZIP は以下のパスに保存されました。",
+    "showInFolder": "フォルダーに表示",
+    "revealFailed": "問題調査レポートをフォルダーに表示できませんでした"
+  },
   "about": {
     "title": "バージョン情報",
     "appName": "$t(brand:appName)",
@@ -265,5 +328,45 @@
     "docs": "公式サイト",
     "github": "GitHub",
     "faq": "よくある質問"
+  },
+  "asr": {
+    "title": "音声入力",
+    "description": "入力欄での音声入力に使う音声認識プロバイダーを設定します。OpenAI Audio Transcriptions または Chat Completions プロトコル互換のエンドポイントに対応しています。",
+    "protocol": {
+      "label": "API タイプ",
+      "transcriptions": "OpenAI Audio Transcriptions",
+      "chat": "OpenAI Chat Completions"
+    },
+    "presets": {
+      "label": "プロバイダー",
+      "openai": "OpenAI",
+      "groq": "Groq",
+      "siliconflow": "SiliconFlow",
+      "bailian": "Alibaba Cloud Model Studio",
+      "custom": "カスタム"
+    },
+    "baseUrl": "APIベースURL",
+    "hints": {
+      "bailianDialectPrefix": "Alibaba Cloud Model Studio の API は input_audio に純 Base64 ではなく Data URI を必要とします（",
+      "bailianDialectLinkText": "ドキュメント",
+      "bailianDialectSuffix": "を参照）。DeepClaw が自動的に対応します。",
+      "bailianWorkspace": "<WorkspaceId> を Model Studio のワークスペース ID に置き換え、必要に応じてリージョンのドメインを調整してください。"
+    },
+    "model": "モデル",
+    "language": "言語",
+    "languageAuto": "自動検出（推奨）",
+    "apiKey": "APIキー",
+    "apiKeyConfiguredPlaceholder": "このプロバイダーには API キーが設定済みです。変更しない場合は空のままにしてください。",
+    "apiKeyLink": "APIキーを取得",
+    "apiKeyLinkTitle": "プロバイダーのコンソールで API キーを取得",
+    "save": "保存",
+    "toast": {
+      "saved": "音声認識の設定を保存しました。"
+    },
+    "errors": {
+      "invalidBaseUrl": "ベースURLは http:// または https:// で始まる必要があります。",
+      "modelRequired": "モデル名を入力してください。",
+      "request": "保存できませんでした。もう一度お試しください。"
+    }
   }
 }

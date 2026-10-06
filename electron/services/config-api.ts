@@ -1,3 +1,5 @@
+import JSON5 from 'json5';
+import { mutateOpenClawConfig } from '../gateway/config-delivery';
 /**
  * Config Management API
  *
@@ -51,6 +53,15 @@ const KNOWN_UI_FIELDS = [
 
 const CALIBRATION_LAST_TOUCHED_VERSION = '2026.1.1';
 
+
+async function replaceActiveConfig(next: unknown): Promise<void> {
+  if (!isRecord(next) || Array.isArray(next)) throw new Error('Invalid OpenClaw config');
+  await mutateOpenClawConfig((config) => {
+    for (const key of Object.keys(config)) delete config[key];
+    Object.assign(config, next);
+  });
+}
+
 // ── Path helpers ──────────────────────────────────────────────────
 
 function configPath(): string {
@@ -81,7 +92,7 @@ function fixCommonJsonErrors(content: string): string {
 
 function parseJsonRelaxed(content: string): JsonValue | undefined {
   try {
-    return JSON.parse(content);
+    return JSON5.parse(content);
   } catch {
     try {
       return JSON.parse(fixCommonJsonErrors(content));
@@ -428,7 +439,7 @@ export function createConfigApi(
       const content = typeof body.content === 'string' ? body.content : '';
       // Validate JSON before touching disk.
       try {
-        JSON.parse(stripBom(content));
+        JSON5.parse(stripBom(content));
       } catch (err) {
         const loc = jsonErrorLocation(content, err);
         return { success: false, error: `JSON 语法错误 (行: ${loc.line}, 列: ${loc.column})` };
@@ -445,7 +456,7 @@ export function createConfigApi(
         } else {
           await mkdir(getOpenClawConfigDir(), { recursive: true });
         }
-        await writeFile(path, content, 'utf8');
+        await replaceActiveConfig(JSON5.parse(stripBom(content)));
         return { success: true };
       } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : String(err) };
@@ -488,7 +499,6 @@ export function createConfigApi(
           const providers = (models as JsonObject).providers as JsonObject;
           for (const [providerName, provider] of Object.entries(providers)) {
             if (isRecord(provider) && Array.isArray((provider as JsonObject).models)) {
-              (provider as JsonObject).models as JsonValue[];
               ((provider as JsonObject).models as JsonValue[]).forEach((model, idx) => {
                 if (isRecord(model)) {
                   for (const field of ['lastTestAt', 'latency', 'testStatus', 'testError']) {
@@ -560,7 +570,7 @@ export function createConfigApi(
       const json = JSON.stringify(finalConfig, null, 2);
 
       try {
-        await writeFile(cfgPath, json, 'utf8');
+        await replaceActiveConfig(finalConfig);
         await writeFile(bakPath, json, 'utf8');
       } catch (err) {
         return {
@@ -629,7 +639,7 @@ export function createConfigApi(
             logger.warn('[config-api] pre-restore backup failed:', err);
           }
         }
-        await copyFile(backupPath, target);
+        await replaceActiveConfig(JSON5.parse(stripBom(await readFile(backupPath, 'utf8'))));
         return { success: true };
       } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : String(err) };

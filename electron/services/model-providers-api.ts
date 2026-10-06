@@ -68,7 +68,7 @@ export function createModelProvidersApi(
           models: payload.models,
           primaryModelId: payload.primaryModelId ?? null,
         });
-        gatewayManager.debouncedReload();
+
         return await snapshot();
       } catch (error) {
         logger.error('modelProviders.saveProvider failed', error);
@@ -90,7 +90,7 @@ export function createModelProvidersApi(
     setPrimary: async (payload) => {
       try {
         await setPrimaryModelRef(payload.modelRef);
-        gatewayManager.debouncedReload();
+
         return await snapshot();
       } catch (error) {
         logger.error('modelProviders.setPrimary failed', error);
@@ -112,7 +112,7 @@ export function createModelProvidersApi(
           api: current.api,
           models: [...byId.values()],
         });
-        gatewayManager.debouncedReload();
+
         return await snapshot();
       } catch (error) {
         logger.error('modelProviders.addModels failed', error);
@@ -130,7 +130,7 @@ export function createModelProvidersApi(
           gatewayManager.debouncedRestart();
         } else {
           await removeModelFromProvider(payload.key, payload.modelId);
-          gatewayManager.debouncedReload();
+
         }
         return await snapshot();
       } catch (error) {
@@ -153,7 +153,7 @@ export function createModelProvidersApi(
           models: next,
           primaryModelId: primaryId,
         });
-        gatewayManager.debouncedReload();
+
         return await snapshot();
       } catch (error) {
         logger.error('modelProviders.editModel failed', error);

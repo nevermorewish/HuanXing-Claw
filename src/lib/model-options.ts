@@ -3,6 +3,8 @@ import type { ProviderAccount, ProviderVendorInfo, ProviderWithKeyInfo } from '@
 export interface ConfiguredModelOption {
   modelRef: string;
   label: string;
+  modelId: string;
+  providerName: string;
   runtimeProviderKey: string;
   accountId: string;
 }
@@ -21,6 +23,14 @@ export function resolveRuntimeProviderKey(account: ProviderAccount): string {
   }
 
   if (account.vendorId === 'custom' || account.vendorId === 'ollama') {
+    const prefix = `${account.vendorId}-`;
+    if (account.id.startsWith(prefix)) {
+      const tail = account.id.slice(prefix.length);
+      if (tail.length === 8 && !tail.includes('-')) {
+        return account.id;
+      }
+    }
+
     const suffix = account.id.replace(/-/g, '').slice(0, 8);
     return `${account.vendorId}-${suffix}`;
   }
@@ -41,6 +51,15 @@ export function splitModelRef(modelRef: string | null | undefined): { providerKe
     providerKey: value.slice(0, separatorIndex),
     modelId: value.slice(separatorIndex + 1),
   };
+}
+
+export function normalizeModelIdForRuntimeProvider(
+  modelId: string | null | undefined,
+  runtimeProviderKey: string,
+): string {
+  const value = (modelId || '').trim();
+  const prefix = `${runtimeProviderKey}/`;
+  return value.startsWith(prefix) ? value.slice(prefix.length) : value;
 }
 
 export function formatModelRefLabel(modelRef: string | null | undefined): string {
@@ -138,7 +157,11 @@ export function buildConfiguredModelOptions(
   const vendorMap = new Map<string, ProviderVendorInfo>(safeVendors.map((vendor) => [vendor.id, vendor]));
   const statusById = new Map<string, ProviderWithKeyInfo>(safeStatuses.map((status) => [status.id, status]));
   const entries = safeAccounts
-    .filter((account) => account.enabled && account.model?.trim() && hasConfiguredProviderCredentials(account, statusById))
+    .filter((account) => {
+      const hasModel = Boolean(account.model?.trim())
+        || Boolean(account.metadata?.customModels?.some((modelId) => modelId.trim()));
+      return account.enabled && hasModel && hasConfiguredProviderCredentials(account, statusById);
+    })
     .sort((left, right) => {
       if (left.id === providerDefaultAccountId) return -1;
       if (right.id === providerDefaultAccountId) return 1;
@@ -148,18 +171,31 @@ export function buildConfiguredModelOptions(
   const deduped = new Map<string, ConfiguredModelOption>();
   for (const account of entries) {
     const runtimeProviderKey = resolveRuntimeProviderKey(account);
-    const modelId = account.model!.startsWith(`${runtimeProviderKey}/`)
-      ? account.model!.slice(runtimeProviderKey.length + 1)
-      : account.model!.trim();
-    if (!modelId) continue;
-    const modelRef = `${runtimeProviderKey}/${modelId}`;
-    if (deduped.has(modelRef)) continue;
-    deduped.set(modelRef, {
-      modelRef,
-      label: formatConfiguredModelLabel(modelId, account, vendorMap),
-      runtimeProviderKey,
-      accountId: account.id,
-    });
+    const modelIds = (() => {
+      const selectedModelId = normalizeModelIdForRuntimeProvider(account.model, runtimeProviderKey);
+      const supportsMultipleModels = account.vendorId === 'custom' || account.vendorId === 'ollama';
+      if (!supportsMultipleModels && selectedModelId) {
+        return [selectedModelId];
+      }
+      const configured = (account.metadata?.customModels ?? [])
+        .map((modelId) => normalizeModelIdForRuntimeProvider(modelId, runtimeProviderKey))
+        .filter(Boolean);
+      if (configured.length > 0) return configured;
+      return selectedModelId ? [selectedModelId] : [];
+    })();
+    for (const modelId of modelIds) {
+      const modelRef = `${runtimeProviderKey}/${modelId}`;
+      if (deduped.has(modelRef)) continue;
+      const providerName = formatProviderDisplayName(account, vendorMap);
+      deduped.set(modelRef, {
+        modelRef,
+        label: formatConfiguredModelLabel(modelId, account, vendorMap),
+        modelId,
+        providerName,
+        runtimeProviderKey,
+        accountId: account.id,
+      });
+    }
   }
 
   return [...deduped.values()];

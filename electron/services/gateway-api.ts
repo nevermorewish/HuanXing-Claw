@@ -1,18 +1,14 @@
 import type { GatewayManager } from '../gateway/manager';
-import type { GatewayRpcBackpressure } from '../gateway/rpc-backpressure';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { PORTS } from '../utils/config';
-import { scheduleControlUiDeviceAutoApproval } from '../utils/control-ui-device-pairing';
+import { approvePendingLocalDeviceRequests } from '../utils/control-ui-device-pairing';
+import { logger } from '../utils/logger';
 import { buildOpenClawControlUiUrl } from '../utils/openclaw-control-ui';
 import { getSetting } from '../utils/store';
 import { isRecord } from './payload-utils';
 
 type HealthPayload = {
   probe?: unknown;
-};
-
-type ControlUiPayload = {
-  view?: unknown;
 };
 
 type RpcPayload = {
@@ -29,10 +25,7 @@ function parseTimeoutMs(timeoutMs: unknown): number | undefined {
   return timeoutMs;
 }
 
-export function createGatewayApi(
-  gatewayManager: GatewayManager,
-  gatewayRpcBackpressure: GatewayRpcBackpressure,
-): CompleteHostServiceRegistry['gateway'] {
+export function createGatewayApi(gatewayManager: GatewayManager): CompleteHostServiceRegistry['gateway'] {
   return {
     status: () => gatewayManager.getStatus(),
     start: async () => {
@@ -51,14 +44,14 @@ export function createGatewayApi(
       const body = isRecord(payload) ? payload as HealthPayload : {};
       return gatewayManager.checkHealth({ probe: body.probe === true });
     },
-    controlUi: async (payload) => {
-      const body = isRecord(payload) ? payload as ControlUiPayload : {};
+    controlUi: async () => {
       const status = gatewayManager.getStatus();
       const token = await getSetting('gatewayToken');
       const port = status.port || PORTS.OPENCLAW_GATEWAY;
-      const view = body.view === 'dreams' ? 'dreams' : undefined;
-      const url = buildOpenClawControlUiUrl(port, token, { view });
-      scheduleControlUiDeviceAutoApproval(gatewayManager);
+      const url = buildOpenClawControlUiUrl(port, token);
+      void approvePendingLocalDeviceRequests(gatewayManager).catch((error) => {
+        logger.debug(`[gateway] Control UI device auto-approve skipped: ${String(error)}`);
+      });
       return { success: true, url, token, port };
     },
     rpc: async (payload) => {
@@ -67,13 +60,11 @@ export function createGatewayApi(
       if (!method) {
         throw new Error('Invalid gateway RPC method');
       }
+      if (method.startsWith('talk.')) {
+        throw new Error('Talk Gateway RPCs are not supported');
+      }
       const timeoutMs = parseTimeoutMs(body.timeoutMs);
-      return gatewayRpcBackpressure.run(
-        method,
-        body.params,
-        timeoutMs,
-        (rpcMethod, rpcParams, rpcTimeoutMs) => gatewayManager.rpc(rpcMethod, rpcParams, rpcTimeoutMs),
-      );
+      return gatewayManager.rpc(method, body.params, timeoutMs);
     },
   };
 }

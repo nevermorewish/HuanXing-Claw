@@ -1,10 +1,13 @@
+import { BRAND } from '@shared/brand';
+// @vitest-environment node
+
 import { existsSync } from 'fs';
 import { mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { testHome } = vi.hoisted(() => ({
-  testHome: `/tmp/clawx-auth-sqlite-${Math.random().toString(36).slice(2)}`,
+  testHome: `/tmp/deepclaw-auth-sqlite-${Math.random().toString(36).slice(2)}`,
 }));
 
 vi.mock('os', async () => {
@@ -20,7 +23,7 @@ vi.mock('os', async () => {
 });
 
 async function writeJsonStore(agentId: string, store: Record<string, unknown>): Promise<void> {
-  const dir = join(testHome, '.openclaw', 'agents', agentId, 'agent');
+  const dir = join(testHome, BRAND.dataDirName, 'agents', agentId, 'agent');
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'auth-profiles.json'), JSON.stringify(store, null, 2), 'utf8');
 }
@@ -83,7 +86,7 @@ describe('openclaw-auth-sqlite', () => {
     });
 
     const json = JSON.parse(
-      await readFile(join(testHome, '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json'), 'utf8'),
+      await readFile(join(testHome, BRAND.dataDirName, 'agents', 'main', 'agent', 'auth-profiles.json'), 'utf8'),
     ) as Record<string, unknown>;
     expect((json.profiles as Record<string, unknown>)['custom-customc7:default']).toMatchObject({
       key: 'sk-runtime-key',

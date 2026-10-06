@@ -1,7 +1,7 @@
 import { hostApi } from '@/lib/host-api';
 import { formatFileSize } from './format';
 
-export const DIRECT_OPEN_FALLBACK_EXTS = new Set(['.pdf', '.xls', '.xlsx']);
+export const DIRECT_OPEN_FALLBACK_EXTS = new Set(['.pdf', '.xls', '.xlsx', '.docx', '.pptx']);
 export const DIRECT_OPEN_FALLBACK_MIN_BYTES = 2 * 1024 * 1024;
 
 export function isDirectOpenFallbackExt(ext?: string | null): boolean {
@@ -53,8 +53,10 @@ export async function confirmAndOpenFile(params: {
   if (result?.response !== 1) return false;
 
   const openResult = await hostApi.shell.openPath(filePath);
-  if (openResult) {
-    throw new Error(openResult);
-  }
+  if (openResult) throw new Error(openResult);
   return true;
+}
+
+export async function revealFile(target: { filePath: string }): Promise<void> {
+  await hostApi.shell.showItemInFolder(target.filePath);
 }

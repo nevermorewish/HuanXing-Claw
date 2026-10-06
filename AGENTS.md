@@ -21,12 +21,16 @@ Standard dev commands are in `package.json` scripts and `README.md`. Key ones:
 | Comms baseline refresh | `pnpm run comms:baseline` |
 | Comms regression compare | `pnpm run comms:compare` |
 | E2E tests (Playwright) | `pnpm run test:e2e` |
+| Chat performance profiles | `pnpm run perf:chat` |
+| Electron Main inspector | `pnpm run profile:main` |
 | Build frontend only | `pnpm run build:vite` |
 
 ### Non-obvious caveats
 
 - **pnpm version**: The exact pnpm version is pinned via `packageManager` in `package.json`. Use `corepack enable && corepack prepare` to activate the correct version before installing.
 - **Electron on headless Linux**: The dbus errors (`Failed to connect to the bus`) are expected and harmless in a headless/cloud environment. The app still runs fine with `$DISPLAY` set (e.g., `:1` via Xvfb/VNC).
+- **Performance profiling**: `pnpm run perf:chat` writes synthetic Renderer/Main CPU profiles and versioned metrics under ignored Playwright `test-results/`. For live Renderer CDP use `DEEPCLAW_REMOTE_DEBUGGING_PORT=9223 pnpm dev`; for live Main inspection use `pnpm run profile:main` and port 9229.
+- **E2E parallel isolation**: Functional Electron specs run concurrently with `DEEPCLAW_E2E_WORKERS=2` by default. Keep tests parallel-safe and test-scoped; apply `E2E_EXCLUSIVE_TAG` from `tests/e2e/parallel-policy.ts` to tests that use the real clipboard or other OS-global state, and `E2E_PERFORMANCE_TAG` to host performance profiles. Extend `tests/unit/e2e-parallel-policy.test.ts` for recognizable new global APIs.
 - **`pnpm run lint` race condition**: If `pnpm run uv:download` was recently run, ESLint may fail with `ENOENT: no such file or directory, scandir '/workspace/temp_uv_extract'` because the temp directory was created and removed during download. Simply re-run lint after the download script finishes.
 - **Build scripts warning**: `pnpm install` may warn about ignored build scripts for `@discordjs/opus` and `koffi`. These are optional messaging-channel dependencies and the warnings are safe to ignore.
 - **`pnpm run init`**: This is a convenience script that runs `pnpm install` followed by `pnpm run uv:download`. Either run `pnpm run init` or run the two steps separately.
@@ -48,3 +52,4 @@ Standard dev commands are in `package.json` scripts and `README.md`. Key ones:
 - **Spec-driven harness rule**: AI Coding tasks that touch backend communication must start from a task spec under `harness/specs/tasks/` and reference `gateway-backend-communication` when the change involves renderer/Main/host-api/api-client/Gateway/OpenClaw runtime paths. Run `pnpm harness validate --spec <task-spec>` before implementation review, and `pnpm harness run --spec <task-spec>` or `--dry-run` when checking the selected validation flow.
 - **Spec/rule growth rule**: When adding a new feature, user-visible OpenClaw scenario, or recurring AI Coding constraint, add or update the relevant harness scenario spec and rule spec in the same PR so future AI work can validate the behavior instead of relying on tribal knowledge.
 - **Harness CI/local parity**: Run `pnpm run harness:ci` to exercise the same baseline harness checks used by GitHub Actions. Real task specs should be validated without `--no-diff`; `--no-diff` is only for structural checks of checked-in examples.
+- **Harness reference docs**: Keep durable, non-executable architecture and compatibility details under `harness/reference/`. Link them from the relevant scenario, rule, and task specs, but do not pass reference documents to `harness validate` or `harness run`.

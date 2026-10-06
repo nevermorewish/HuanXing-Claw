@@ -6,18 +6,14 @@ import { create } from 'zustand';
 import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import type { GatewayNotification, GatewayHealth, GatewayStatus } from '../types/gateway';
-import type { ChatRuntimeEvent } from '../../shared/chat-runtime-events';
+import type { GatewaySessionsChangedPayload } from './chat/session-catalog';
 
 let gatewayInitPromise: Promise<void> | null = null;
 let gatewayEventUnsubscribers: Array<() => void> | null = null;
 let gatewayReconcileTimer: ReturnType<typeof setInterval> | null = null;
-const gatewayEventDedupe = new Map<string, number>();
-const GATEWAY_EVENT_DEDUPE_TTL_MS = 30_000;
-const LOAD_SESSIONS_MIN_INTERVAL_MS = 1_200;
-const LOAD_HISTORY_MIN_INTERVAL_MS = 800;
-let lastLoadSessionsAt = 0;
-let lastLoadHistoryAt = 0;
 let cronRepairTriggeredThisSession = false;
+let lastSynchronizedRuntimeIdentity: string | null = null;
+let gatewaySessionGeneration = 0;
 
 interface GatewayState {
   status: GatewayStatus;
@@ -34,140 +30,6 @@ interface GatewayState {
   clearError: () => void;
 }
 
-function pruneGatewayEventDedupe(now: number): void {
-  for (const [key, ts] of gatewayEventDedupe) {
-    if (now - ts > GATEWAY_EVENT_DEDUPE_TTL_MS) {
-      gatewayEventDedupe.delete(key);
-    }
-  }
-}
-
-function stableGatewayEventFingerprint(value: unknown): string {
-  let hash = 2166136261;
-  let length = 0;
-
-  const add = (part: string): void => {
-    length += part.length;
-    for (let i = 0; i < part.length; i += 1) {
-      hash ^= part.charCodeAt(i);
-      hash = Math.imul(hash, 16777619) >>> 0;
-    }
-  };
-
-  const visit = (entry: unknown): void => {
-    if (entry === undefined) {
-      add('u:');
-      return;
-    }
-    if (entry === null || typeof entry !== 'object') {
-      add(`${typeof entry}:${JSON.stringify(entry)};`);
-      return;
-    }
-    if (Array.isArray(entry)) {
-      add('[');
-      for (const item of entry) visit(item);
-      add(']');
-      return;
-    }
-
-    add('{');
-    for (const [key, child] of Object.entries(entry as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))) {
-      add(`${JSON.stringify(key)}:`);
-      visit(child);
-    }
-    add('}');
-  };
-
-  visit(value);
-  return `${hash.toString(36)}:${length.toString(36)}`;
-}
-
-function buildGatewayEventDedupeKey(event: Record<string, unknown>): string | null {
-  const runId = event.runId != null ? String(event.runId) : '';
-  const sessionKey = event.sessionKey != null ? String(event.sessionKey) : '';
-  const seq = event.seq != null ? String(event.seq) : '';
-  const state = event.state != null ? String(event.state) : '';
-  if (state === 'delta' && !seq) {
-    return ['delta-nosq', runId, sessionKey, stableGatewayEventFingerprint(event.message ?? event)].join('|');
-  }
-  if (runId || sessionKey || seq || state) {
-    return [runId, sessionKey, seq, state].join('|');
-  }
-  const message = event.message;
-  if (message && typeof message === 'object') {
-    const msg = message as Record<string, unknown>;
-    const messageId = msg.id != null ? String(msg.id) : '';
-    const stopReason = msg.stopReason ?? msg.stop_reason;
-    if (messageId || stopReason) {
-      return `msg|${messageId}|${String(stopReason ?? '')}`;
-    }
-  }
-  return null;
-}
-
-function getMessageIdDedupeKey(event: Record<string, unknown>): string | null {
-  const state = event.state != null ? String(event.state) : '';
-  if (state !== 'final') return null;
-  const message = event.message;
-  if (message && typeof message === 'object') {
-    const msgId = (message as Record<string, unknown>).id;
-    if (msgId != null) return `final-msgid|${String(msgId)}`;
-  }
-  return null;
-}
-
-function shouldProcessGatewayEvent(event: Record<string, unknown>): boolean {
-  const key = buildGatewayEventDedupeKey(event);
-  const msgKey = getMessageIdDedupeKey(event);
-  if (!key && !msgKey) return true;
-  const now = Date.now();
-  pruneGatewayEventDedupe(now);
-  if ((key && gatewayEventDedupe.has(key)) || (msgKey && gatewayEventDedupe.has(msgKey))) {
-    return false;
-  }
-  if (key) gatewayEventDedupe.set(key, now);
-  if (msgKey) gatewayEventDedupe.set(msgKey, now);
-  return true;
-}
-
-function maybeLoadSessions(
-  state: { loadSessions: () => Promise<void> },
-  force = false,
-): void {
-  const { status } = useGatewayStore.getState();
-  if (status.gatewayReady === false) return;
-
-  const now = Date.now();
-  if (!force && now - lastLoadSessionsAt < LOAD_SESSIONS_MIN_INTERVAL_MS) return;
-  lastLoadSessionsAt = now;
-  void state.loadSessions();
-}
-
-function maybeLoadHistory(
-  state: { loadHistory: (quiet?: boolean) => Promise<void> },
-  force = false,
-): void {
-  const now = Date.now();
-  if (!force && now - lastLoadHistoryAt < LOAD_HISTORY_MIN_INTERVAL_MS) return;
-  lastLoadHistoryAt = now;
-  void state.loadHistory(true);
-}
-
-/** Bump sidebar ordering when any session receives gateway traffic (e.g. Feishu DM). */
-function touchSessionActivity(sessionKey: string | null | undefined, activityMs = Date.now()): void {
-  if (!sessionKey) return;
-  import('./chat')
-    .then(({ useChatStore }) => {
-      useChatStore.setState((state) => ({
-        sessionLastActivity: {
-          ...state.sessionLastActivity,
-          [sessionKey]: Math.max(state.sessionLastActivity[sessionKey] ?? 0, activityMs),
-        },
-      }));
-    })
-    .catch(() => {});
-}
-
 function getGatewayErrorMessage(payload: string | { message?: string }): string {
   if (typeof payload === 'string') return payload || 'Gateway error';
   return payload.message || 'Gateway error';
@@ -179,108 +41,64 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function getGatewayRuntimeIdentity(status: GatewayStatus): string {
+  return `${status.pid ?? 'none'}:${status.connectedAt ?? 'none'}:${status.port}`;
+}
+
+function synchronizeGatewaySessionCatalog(status: GatewayStatus): void {
+  if (status.state !== 'running' || status.gatewayReady === false) {
+    lastSynchronizedRuntimeIdentity = null;
+    return;
+  }
+
+  const identity = getGatewayRuntimeIdentity(status);
+  if (identity === lastSynchronizedRuntimeIdentity) return;
+  lastSynchronizedRuntimeIdentity = identity;
+  gatewaySessionGeneration += 1;
+  const generation = gatewaySessionGeneration;
+
+  void (async () => {
+    const chatModulePromise = import('./chat');
+    try {
+      const { synchronizeGatewaySessionGeneration } = await chatModulePromise;
+      synchronizeGatewaySessionGeneration(generation);
+    } catch {
+      // Hydration below reports import failures without blocking subscription.
+    }
+
+    try {
+      await useGatewayStore.getState().rpc('sessions.subscribe', {});
+    } catch (error) {
+      console.warn('Failed to subscribe to Gateway session changes:', error);
+    } finally {
+      try {
+        const { useChatStore } = await chatModulePromise;
+        await useChatStore.getState().loadSessions({
+          force: true,
+          gatewayGeneration: generation,
+        });
+      } catch (error) {
+        console.warn('Failed to hydrate Gateway session catalog:', error);
+      }
+    }
+  })();
+}
+
 function handleGatewayNotification(notification: GatewayNotification | undefined): void {
   const payload = notification;
   if (!payload || payload.method === 'agent') {
     return;
   }
 
-  const p = asRecord(payload.params);
-  const data = asRecord(p.data);
-  const phase = data.phase ?? p.phase;
-  const hasChatData = (p.state ?? data.state) || (p.message ?? data.message);
-
-  if (hasChatData) {
-    const normalizedEvent: Record<string, unknown> = {
-      ...data,
-      runId: p.runId ?? data.runId,
-      sessionKey: p.sessionKey ?? data.sessionKey,
-      stream: p.stream ?? data.stream,
-      seq: p.seq ?? data.seq,
-      state: p.state ?? data.state,
-      message: p.message ?? data.message,
-    };
-    if (shouldProcessGatewayEvent(normalizedEvent)) {
-      import('./chat')
-        .then(({ useChatStore }) => {
-          useChatStore.getState().handleChatEvent(normalizedEvent);
-        })
-        .catch(() => {});
-    }
+  if (payload.method === 'sessions.changed') {
+    const changed = asRecord(payload.params) as GatewaySessionsChangedPayload;
+    import('./chat')
+      .then(({ useChatStore }) => {
+        useChatStore.getState().handleSessionsChanged(changed);
+      })
+      .catch(() => {});
+    return;
   }
-
-  if (phase === 'run.started' || phase === 'run.ended') {
-    const sessionKey = typeof (p.sessionKey ?? data.sessionKey) === 'string'
-      ? String(p.sessionKey ?? data.sessionKey)
-      : undefined;
-    touchSessionActivity(sessionKey);
-  }
-}
-
-function handleChatRuntimeEvent(event: ChatRuntimeEvent): void {
-  const resolvedSessionKey = event.sessionKey ?? null;
-  if (resolvedSessionKey) {
-    touchSessionActivity(resolvedSessionKey, typeof event.ts === 'number' ? event.ts : Date.now());
-  }
-
-  import('./chat')
-    .then(({ useChatStore, syncCachedSessionRunIdle }) => {
-      const state = useChatStore.getState();
-      state.handleRuntimeEvent(event);
-
-      const shouldRefreshSessions = resolvedSessionKey != null && (
-        resolvedSessionKey !== state.currentSessionKey
-        || !state.sessions.some((session) => session.key === resolvedSessionKey)
-      );
-
-      if (event.type === 'run.started') {
-        if (shouldRefreshSessions) {
-          maybeLoadSessions(state, true);
-        }
-        return;
-      }
-
-      if (event.type !== 'run.ended') {
-        return;
-      }
-
-      if (shouldRefreshSessions) {
-        maybeLoadSessions(state, true);
-      }
-
-      const matchesCurrentSession = resolvedSessionKey != null && resolvedSessionKey === state.currentSessionKey;
-      const matchesActiveRun = state.activeRunId != null && event.runId === state.activeRunId;
-      if (matchesCurrentSession || matchesActiveRun) {
-        maybeLoadHistory(state, true);
-      }
-      if (resolvedSessionKey && !matchesCurrentSession) {
-        syncCachedSessionRunIdle(resolvedSessionKey);
-      }
-    })
-    .catch(() => {});
-}
-
-function handleGatewayChatMessage(data: unknown): void {
-  import('./chat').then(({ useChatStore }) => {
-    const chatData = data as Record<string, unknown>;
-    const payload = ('message' in chatData && typeof chatData.message === 'object')
-      ? chatData.message as Record<string, unknown>
-      : chatData;
-
-    if (payload.state) {
-      if (!shouldProcessGatewayEvent(payload)) return;
-      useChatStore.getState().handleChatEvent(payload);
-      return;
-    }
-
-    const normalized = {
-      state: 'final',
-      message: payload,
-      runId: chatData.runId ?? payload.runId,
-    };
-    if (!shouldProcessGatewayEvent(normalized)) return;
-    useChatStore.getState().handleChatEvent(normalized);
-  }).catch(() => {});
 }
 
 function mapChannelStatus(status: string): 'connected' | 'connecting' | 'disconnected' | 'error' {
@@ -319,11 +137,13 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
       try {
         const status = await hostApi.gateway.status();
         set({ status, isInitialized: true });
+        synchronizeGatewaySessionCatalog(status);
 
         if (!gatewayEventUnsubscribers) {
           const unsubscribers: Array<() => void> = [];
           unsubscribers.push(hostEvents.onGatewayStatus((payload) => {
             set({ status: payload });
+            synchronizeGatewaySessionCatalog(payload);
 
             // Trigger cron repair when gateway becomes ready
             if (!cronRepairTriggeredThisSession && payload.state === 'running') {
@@ -351,12 +171,6 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
           unsubscribers.push(hostEvents.onGatewayPresence((payload) => {
             const current = get().health;
             set({ health: { ...(current ?? { ok: true }), presence: payload } });
-          }));
-          unsubscribers.push(hostEvents.onGatewayChatMessage((payload) => {
-            handleGatewayChatMessage(payload);
-          }));
-          unsubscribers.push(hostEvents.onChatRuntimeEvent((payload) => {
-            handleChatRuntimeEvent(payload);
           }));
           unsubscribers.push(hostEvents.onGatewayChannelStatus(
             (update) => {
@@ -392,12 +206,18 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
             hostApi.gateway.status()
               .then((latest) => {
                 const current = get().status;
-                if (latest.state !== current.state) {
+                const stateChanged = latest.state !== current.state;
+                const runtimeChanged = getGatewayRuntimeIdentity(latest) !== getGatewayRuntimeIdentity(current);
+                const readinessChanged = latest.gatewayReady !== current.gatewayReady;
+                if (stateChanged) {
                   console.info(
                     `[gateway-store] reconciled stale state: ${current.state} → ${latest.state}`,
                   );
+                }
+                if (stateChanged || runtimeChanged || readinessChanged) {
                   set({ status: latest });
                 }
+                synchronizeGatewaySessionCatalog(latest);
               })
               .catch(() => { /* ignore */ });
           }, 30_000);
@@ -413,6 +233,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
           if (refreshed.state !== current.state) {
             set({ status: refreshed });
           }
+          synchronizeGatewaySessionCatalog(refreshed);
         } catch {
           // Best-effort; the IPC listener will eventually reconcile.
         }

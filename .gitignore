@@ -89,10 +89,13 @@ src/extensions/_ext-bridge.generated.ts
 # Local playground artifacts
 playground/
 
-# ClawX-biz bridge workspace artifacts
+# DeepClaw-biz bridge workspace artifacts
 resources/enterprise-skills/
 resources/openclaw-plugins/skillshub/
 
 # Generated brand/build files
 electron-builder.generated.yml
 src/assets/brand-logo.generated.svg
+.opencode
+.superpowers
+.playwright-mcp

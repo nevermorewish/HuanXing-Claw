@@ -250,7 +250,7 @@ export function createAccountApi(
           models: payload.models,
           primaryModelId: payload.primaryModelId ?? null,
         });
-        gatewayManager.debouncedReload();
+
         const config = await readAccountModelConfig();
         return { success: true, config: toContractModelConfig(config) };
       } catch (error) {
@@ -270,7 +270,7 @@ export function createAccountApi(
           models: stored.models,
           primaryModelId: payload.modelId,
         });
-        gatewayManager.debouncedReload();
+
         const config = await readAccountModelConfig();
         return { success: true, config: toContractModelConfig(config) };
       } catch (error) {
@@ -297,7 +297,7 @@ export function createAccountApi(
             ? remaining[0].id
             : undefined,
         });
-        gatewayManager.debouncedReload();
+
         const config = await readAccountModelConfig();
         return { success: true, config: toContractModelConfig(config) };
       } catch (error) {

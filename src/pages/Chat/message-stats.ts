@@ -8,7 +8,7 @@
  * account model list (both expose `contextWindow`). Duration is captured
  * during the live run and stored on `RawMessage._durationMs`.
  */
-import type { RawMessage } from '@/stores/chat';
+import type { RawMessage } from '@shared/chat/types';
 import type { ModelProviderDTO } from '@/stores/modelProviders';
 import type { AccountModelEntry } from '@/stores/account';
 

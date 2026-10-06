@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { hostApi } from '@/lib/host-api';
+import { useChatStore } from '@/stores/chat';
+import { useSettingsStore } from '@/stores/settings';
 import type { ChannelType } from '@/types/channel';
 import type { AgentSummary, AgentsSnapshot } from '@/types/agent';
 
@@ -33,7 +35,32 @@ function applySnapshot(snapshot: AgentsSnapshot | undefined) {
   } : {};
 }
 
-export const useAgentsStore = create<AgentsState>((set) => ({
+function reconcileChatAgentSnapshot(snapshot: AgentsSnapshot | undefined): void {
+  if (!snapshot) return;
+  useChatStore.getState().reconcileAgentSessionTombstones(
+    (snapshot.agents ?? []).map((agent) => agent.id),
+  );
+}
+
+// A list response is publishable only if no newer list started and no Agent mutation
+// was confirmed while that request was in flight.
+let authoritativeMutationGeneration = 0;
+let latestListRequestId = 0;
+
+function commitMutationSnapshot(
+  set: (state: Partial<AgentsState>) => void,
+  snapshot: AgentsSnapshot | undefined,
+): void {
+  authoritativeMutationGeneration += 1;
+  set({
+    ...applySnapshot(snapshot),
+    loading: false,
+    error: null,
+  });
+  reconcileChatAgentSnapshot(snapshot);
+}
+
+export const useAgentsStore = create<AgentsState>((set, get) => ({
   agents: [],
   defaultAgentId: 'main',
   defaultModelRef: null,
@@ -44,14 +71,25 @@ export const useAgentsStore = create<AgentsState>((set) => ({
   error: null,
 
   fetchAgents: async () => {
+    const requestId = ++latestListRequestId;
+    const mutationGeneration = authoritativeMutationGeneration;
     set({ loading: true, error: null });
     try {
       const snapshot = await hostApi.agents.list();
+      if (
+        requestId !== latestListRequestId
+        || mutationGeneration !== authoritativeMutationGeneration
+      ) return;
       set({
         ...applySnapshot(snapshot),
         loading: false,
       });
+      reconcileChatAgentSnapshot(snapshot);
     } catch (error) {
+      if (
+        requestId !== latestListRequestId
+        || mutationGeneration !== authoritativeMutationGeneration
+      ) return;
       set({ loading: false, error: String(error) });
     }
   },
@@ -63,7 +101,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
         name,
         inheritWorkspace: options?.inheritWorkspace,
       });
-      set(applySnapshot(snapshot));
+      commitMutationSnapshot(set, snapshot);
     } catch (error) {
       set({ error: String(error) });
       throw error;
@@ -74,7 +112,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
     set({ error: null });
     try {
       const snapshot = await hostApi.agents.update(agentId, { name });
-      set(applySnapshot(snapshot));
+      commitMutationSnapshot(set, snapshot);
     } catch (error) {
       set({ error: String(error) });
       throw error;
@@ -85,7 +123,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
     set({ error: null });
     try {
       const snapshot = await hostApi.agents.updateModel(agentId, modelRef);
-      set(applySnapshot(snapshot));
+      commitMutationSnapshot(set, snapshot);
     } catch (error) {
       set({ error: String(error) });
       throw error;
@@ -94,9 +132,21 @@ export const useAgentsStore = create<AgentsState>((set) => ({
 
   deleteAgent: async (agentId: string) => {
     set({ error: null });
+    const configuredWorkspacePath = get().agents.find((agent) => agent.id === agentId)?.workspace;
     try {
       const snapshot = await hostApi.agents.delete(agentId);
-      set(applySnapshot(snapshot));
+      commitMutationSnapshot(set, snapshot);
+      useChatStore.getState().removeAgentSessions(agentId);
+      if (snapshot.removedWorkspacePath) {
+        void useSettingsStore.getState().removeWorkspace(
+          snapshot.removedWorkspacePath,
+          configuredWorkspacePath ? [configuredWorkspacePath] : [],
+        ).catch((error) => {
+          // Agent deletion already succeeded; a settings persistence failure must not
+          // report the destructive operation as failed or restore stale UI metadata.
+          console.warn('[agents] Failed to persist removed workspace cleanup:', error);
+        });
+      }
     } catch (error) {
       set({ error: String(error) });
       throw error;
@@ -107,7 +157,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
     set({ error: null });
     try {
       const snapshot = await hostApi.agents.assignChannel(agentId, channelType);
-      set(applySnapshot(snapshot));
+      commitMutationSnapshot(set, snapshot);
     } catch (error) {
       set({ error: String(error) });
       throw error;
@@ -118,7 +168,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
     set({ error: null });
     try {
       const snapshot = await hostApi.agents.removeChannel(agentId, channelType);
-      set(applySnapshot(snapshot));
+      commitMutationSnapshot(set, snapshot);
     } catch (error) {
       set({ error: String(error) });
       throw error;

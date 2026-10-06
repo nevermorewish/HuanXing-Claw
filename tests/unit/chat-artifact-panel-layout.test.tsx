@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Chat } from '@/pages/Chat';
 
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+}));
+
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: (_key: string, defaultValue?: string) => defaultValue ?? '',
   }),
@@ -14,29 +19,25 @@ vi.mock('@/stores/gateway', () => ({
   }),
 }));
 
+vi.mock('@/lib/host-api', () => ({
+  hostApi: {
+    chat: {
+      getAcpSessionFamily: vi.fn(async () => ({ success: true, current: null, children: [] })),
+    },
+    files: {
+      resolveWorkspaceContext: vi.fn(async ({ workspaceRoot, executionCwd }) => ({ ok: true, workspaceRoot, executionCwd })),
+    },
+  },
+}));
+
 const chatState = {
-  messages: [],
+  sessions: [{ key: 'main:test' }],
   currentSessionKey: 'main:test',
   currentAgentId: 'main',
   sessionLabels: {},
-  loading: false,
-  loadingMoreHistory: false,
-  hasMoreHistory: false,
-  sending: false,
-  error: null,
-  runError: null,
-  streamingMessage: null,
-  streamingTools: [],
-  pendingFinal: false,
-  activeRunId: null,
-  sendMessage: vi.fn(),
-  abortRun: vi.fn(),
-  clearError: vi.fn(),
-  loadMoreHistory: vi.fn(),
-  loadHistory: vi.fn(),
-  refresh: vi.fn(),
-  cleanupEmptySession: vi.fn(),
-  lastUserMessageAt: null,
+  loadSessions: vi.fn().mockResolvedValue(undefined),
+  selectAcpSession: vi.fn(),
+  acknowledgeAcpSessionCreated: vi.fn(),
 };
 
 vi.mock('@/stores/chat', () => ({
@@ -46,7 +47,7 @@ vi.mock('@/stores/chat', () => ({
 vi.mock('@/stores/agents', () => ({
   useAgentsStore: (selector: (state: { agents: Array<{ id: string; name: string; workspace: string }>; fetchAgents: () => void }) => unknown) => selector({
     agents: [{ id: 'main', name: 'main', workspace: '/workspace' }],
-    fetchAgents: vi.fn(),
+    fetchAgents: vi.fn().mockResolvedValue(undefined),
   }),
 }));
 
@@ -75,10 +76,6 @@ vi.mock('@/hooks/use-stick-to-bottom-instant', () => ({
     scrollToBottom: vi.fn(),
     isAtBottom: true,
   }),
-}));
-
-vi.mock('@/hooks/use-min-loading', () => ({
-  useMinLoading: (value: boolean) => value,
 }));
 
 vi.mock('@/pages/Chat/ChatInput', () => ({

@@ -1,8 +1,8 @@
 /**
  * Read/write agents.defaults.imageGenerationModel and per-agent auth readiness.
  */
-import { readOpenClawConfig, writeOpenClawConfig } from './channel-config';
-import { withConfigLock } from './config-mutex';
+import { mutateOpenClawConfig } from '../gateway/config-delivery';
+import { readOpenClawConfig } from './channel-config';
 import {
   getOAuthTokenFromOpenClaw,
   getProviderApiKeyFromOpenClaw,
@@ -10,7 +10,11 @@ import {
   syncOpenAiCompatibleImageRelay,
 } from './openclaw-auth';
 import { ensureDeepClawOpenAiImagePluginInstalled } from './plugin-install';
-import { listAgentsSnapshot, type AgentsSnapshot } from './agent-config';
+import {
+  listAgentsSnapshot,
+  listAgentsSnapshotFromConfig,
+  type AgentsSnapshot,
+} from './agent-config';
 import { expandPath } from './paths';
 import { BRAND } from '@shared/brand';
 import {
@@ -85,6 +89,7 @@ type AgentModelConfigShape = {
   primary?: string;
   fallbacks?: string[];
   timeoutMs?: number;
+  [key: string]: unknown;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -131,12 +136,12 @@ function parseImageGenerationModelConfig(raw: unknown): ImageGenerationModelConf
 
 function buildImageGenerationModelConfigWrite(
   config: ImageGenerationModelConfig,
+  existing: unknown,
 ): AgentModelConfigShape | undefined {
-  if (!config.primary && config.fallbacks.length === 0 && config.timeoutMs === null) {
-    return undefined;
-  }
-
-  const next: AgentModelConfigShape = {};
+  const next: AgentModelConfigShape = isRecord(existing) ? { ...existing } : {};
+  delete next.primary;
+  delete next.fallbacks;
+  delete next.timeoutMs;
   if (config.primary) {
     next.primary = config.primary;
   }
@@ -146,7 +151,7 @@ function buildImageGenerationModelConfigWrite(
   if (config.timeoutMs !== null) {
     next.timeoutMs = config.timeoutMs;
   }
-  return next;
+  return Object.keys(next).length > 0 ? next : undefined;
 }
 
 export function parseProviderFromModelRef(modelRef: string): string | null {
@@ -208,8 +213,8 @@ export async function setImageGenerationConfig(
     }
   }
 
-  return withConfigLock(async () => {
-    const config = await readOpenClawConfig();
+  let savedConfig: ImageGenerationModelConfig | undefined;
+  await mutateOpenClawConfig((config) => {
     const agents = (config.agents && typeof config.agents === 'object'
       ? { ...(config.agents as Record<string, unknown>) }
       : {}) as Record<string, unknown>;
@@ -221,7 +226,7 @@ export async function setImageGenerationConfig(
       primary: next.primary,
       fallbacks: [...new Set(next.fallbacks.map((ref) => ref.trim()).filter(Boolean))],
       timeoutMs: next.timeoutMs,
-    });
+    }, defaults.imageGenerationModel);
 
     if (writeValue) {
       defaults.imageGenerationModel = writeValue;
@@ -235,10 +240,9 @@ export async function setImageGenerationConfig(
 
     agents.defaults = defaults;
     config.agents = agents;
-    await writeOpenClawConfig(config);
-
-    return readImageGenerationConfig();
+    savedConfig = parseImageGenerationModelConfig(defaults.imageGenerationModel);
   });
+  return savedConfig!;
 }
 
 async function buildAgentAuthRows(
@@ -317,10 +321,10 @@ function resolveOpenAiImageRelayModelId(
 }
 
 export async function getImageGenerationSettingsSnapshot(): Promise<ImageGenerationSettingsSnapshot> {
-  const config = await readImageGenerationConfig();
-  const snapshot = await listAgentsSnapshot();
   const openclawConfig = await readOpenClawConfig();
   const defaults = getAgentsDefaults(openclawConfig);
+  const config = parseImageGenerationModelConfig(defaults?.imageGenerationModel);
+  const snapshot = await listAgentsSnapshotFromConfig(openclawConfig);
   const autoProviderFallback = defaults?.mediaGenerationAutoProviderFallback !== false;
 
   const providerKey = config.primary ? parseProviderFromModelRef(config.primary) : null;
@@ -349,6 +353,12 @@ export async function applyOpenAiImageRelaySettings(params: {
   apiKey?: string;
   model?: string | null;
 }): Promise<void> {
+  if (params.enabled) {
+    const plugin = await ensureDeepClawOpenAiImagePluginInstalled();
+    if (!plugin.installed) {
+      throw new Error(plugin.warning || 'Failed to install DeepClaw OpenAI Image plugin');
+    }
+  }
   const imageModelIds: string[] = [];
   const explicitModel = params.model?.trim();
   if (explicitModel) {
@@ -365,14 +375,11 @@ export async function applyOpenAiImageRelaySettings(params: {
     apiKey: params.apiKey,
     imageModelIds,
   });
-  if (params.enabled) {
-    ensureDeepClawOpenAiImagePluginInstalled();
-  }
 }
 
 export async function listImageGenerationProvidersFromRuntime(): Promise<ImageGenerationProviderRow[]> {
   const cfg = await readOpenClawConfig();
-  const snapshot = await listAgentsSnapshot();
+  const snapshot = await listAgentsSnapshotFromConfig(cfg);
   const rows = await listImageGenerationProvidersInProcess({
     config: cfg,
     isProviderConfigured: (providerId) => isImageProviderAuthenticated(providerId, snapshot.defaultAgentId),

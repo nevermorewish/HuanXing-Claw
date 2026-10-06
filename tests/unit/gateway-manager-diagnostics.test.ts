@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({
@@ -56,7 +58,7 @@ describe('GatewayManager diagnostics', () => {
     });
     expect(manager.getDiagnostics().lastAliveAt).toBe(Date.now());
 
-    const successPromise = manager.rpc<{ ok: boolean }>('chat.history', {}, 1000);
+    const successPromise = manager.rpc<{ ok: boolean }>('sessions.list', {}, 1000);
     const successRequestId = Array.from(
       (manager as unknown as { pendingRequests: Map<string, unknown> }).pendingRequests.keys(),
     )[0];
@@ -213,44 +215,18 @@ describe('GatewayManager diagnostics', () => {
     expect(snapshot.core.rpcRouter).toBe('blocked');
   });
 
-  it('restarts windows gateway on heartbeat misses and marks health unresponsive', async () => {
-    Object.defineProperty(process, 'platform', { value: 'win32' });
-
-    const { GatewayManager } = await import('@electron/gateway/manager');
+  it('keeps missed pongs degraded diagnostic evidence before a failed deadline probe', async () => {
     const { buildGatewayHealthSummary } = await import('@electron/utils/gateway-health');
-    const manager = new GatewayManager();
-
-    const ws = {
-      readyState: 1,
-      send: vi.fn(),
-      ping: vi.fn(),
-      terminate: vi.fn(),
-      on: vi.fn(),
-    };
-
-    (manager as unknown as { ws: typeof ws }).ws = ws;
-    (manager as unknown as { shouldReconnect: boolean }).shouldReconnect = true;
-    (manager as unknown as { status: { state: string; port: number } }).status = {
-      state: 'running',
-      port: 18789,
-    };
-    const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
-
-    (manager as unknown as { startPing: () => void }).startPing();
-    vi.advanceTimersByTime(300_000);
-
-    expect(restartSpy).toHaveBeenCalledTimes(1);
 
     const health = buildGatewayHealthSummary({
       status: { state: 'running', port: 18789 },
       diagnostics: {
-        ...manager.getDiagnostics(),
         consecutiveHeartbeatMisses: 4,
+        consecutiveRpcFailures: 0,
       },
     });
-    expect(health.state).toBe('unresponsive');
-    expect(health.reasons).toContain('gateway_unresponsive');
-
-    (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
+    expect(health.state).toBe('degraded');
+    expect(health.reasons).toContain('gateway_degraded');
+    expect(health.reasons).not.toContain('gateway_unresponsive');
   });
 });

@@ -35,6 +35,23 @@ describe('hostApi facade', () => {
     await expect(hostApi.settings.getAll()).rejects.toThrow('disk failed');
   });
 
+  it('reads the applied compaction reserve through the typed OpenClaw route', async () => {
+    hostInvoke.mockResolvedValueOnce({
+      id: 'req',
+      ok: true,
+      data: { reserveTokensFloor: 68_000 },
+    });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await expect(hostApi.openclaw.getCompactionReserve()).resolves.toEqual({
+      reserveTokensFloor: 68_000,
+    });
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'openclaw',
+      action: 'getCompactionReserve',
+    }));
+  });
+
   it('calls settings.setMany and reset through hostInvoke', async () => {
     hostInvoke
       .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { success: true } })
@@ -104,6 +121,25 @@ describe('hostApi facade', () => {
     expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
       module: 'uv',
       action: 'installAll',
+    }));
+  });
+
+  it('routes local HTML preview operations through hostInvoke', async () => {
+    hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: undefined });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await hostApi.webBrowser.navigate('file:///workspace/site.html');
+    await hostApi.webBrowser.openExternal('file:///workspace/site.html');
+
+    expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      module: 'webBrowser',
+      action: 'navigate',
+      payload: { url: 'file:///workspace/site.html' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      module: 'webBrowser',
+      action: 'openExternal',
+      payload: { url: 'file:///workspace/site.html' },
     }));
   });
 
@@ -192,6 +228,46 @@ describe('hostApi facade', () => {
     }));
   });
 
+  it('routes ACP trace and issue-report diagnostics through hostInvoke', async () => {
+    hostInvoke
+      .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { capturedAt: 123, maxSize: 500, size: 0, entries: [] } })
+      .mockResolvedValueOnce({ id: 'req-2', ok: true, data: { success: true } })
+      .mockResolvedValueOnce({ id: 'req-3', ok: true, data: { success: true, path: '/tmp/report.zip' } });
+    const { hostApi } = await import('@/lib/host-api');
+    const payload = {
+      event: 'image-generation:projection-rejected',
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      details: { reason: 'no-fresh-context' },
+    };
+
+    await expect(hostApi.diagnostics.acpTrace()).resolves.toEqual({
+      capturedAt: 123,
+      maxSize: 500,
+      size: 0,
+      entries: [],
+    });
+    await expect(hostApi.diagnostics.recordAcpTrace(payload)).resolves.toEqual({ success: true });
+    await expect(hostApi.diagnostics.exportIssueReport({
+      sessionKeys: ['agent:main:session-1', 'agent:research:session-2'],
+    })).resolves.toEqual({ success: true, path: '/tmp/report.zip' });
+
+    expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      module: 'diagnostics',
+      action: 'acpTrace',
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      module: 'diagnostics',
+      action: 'recordAcpTrace',
+      payload,
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      module: 'diagnostics',
+      action: 'exportIssueReport',
+      payload: { sessionKeys: ['agent:main:session-1', 'agent:research:session-2'] },
+    }));
+  });
+
   it('calls providers.list through hostInvoke', async () => {
     hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: [] });
     const { hostApi } = await import('@/lib/host-api');
@@ -239,14 +315,207 @@ describe('hostApi facade', () => {
     }));
   });
 
-  it('calls chat.sendWithMedia through hostInvoke', async () => {
-    hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { success: true } });
+  it('passes workspace-scoped file payloads unchanged through hostInvoke', async () => {
+    hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: { ok: true } });
+    const { hostApi } = await import('@/lib/host-api');
+    const context = { workspaceRoot: '~/.openclaw/workspace', executionCwd: 'projects/demo' };
+    const ref = { workspaceRoot: '/workspace', relativePath: 'src/index.ts' };
+    const binaryInput = { ...ref, maxBytes: 2048 };
+
+    await hostApi.files.resolveWorkspaceContext(context);
+    await hostApi.files.readWorkspaceText(ref);
+    await hostApi.files.readWorkspaceBinary(binaryInput);
+    await hostApi.files.statWorkspaceFile(ref);
+
+    const actions = [
+      ['resolveWorkspaceContext', context],
+      ['readWorkspaceText', ref],
+      ['readWorkspaceBinary', binaryInput],
+      ['statWorkspaceFile', ref],
+    ];
+    actions.forEach(([action, payload], index) => {
+      expect(hostInvoke).toHaveBeenNthCalledWith(index + 1, expect.objectContaining({
+        module: 'files',
+        action,
+        payload,
+      }));
+    });
+  });
+
+  it('passes the exact WorkspaceFileRef to listWorkspaceOpenHandlers', async () => {
+    hostInvoke.mockResolvedValueOnce({
+      id: 'req',
+      ok: true,
+      data: { ok: true, platform: 'darwin', handlers: [] },
+    });
+    const { hostApi } = await import('@/lib/host-api');
+    const ref = { workspaceRoot: '/workspace', relativePath: 'src/index.ts' };
+
+    await hostApi.files.listWorkspaceOpenHandlers(ref);
+
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'files',
+      action: 'listWorkspaceOpenHandlers',
+      payload: ref,
+    }));
+  });
+
+  it('passes only the WorkspaceFileRef and opaque handler id to openWorkspaceWith', async () => {
+    hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { ok: true } });
+    const { hostApi } = await import('@/lib/host-api');
+    const payload = {
+      ref: { workspaceRoot: '/workspace', relativePath: 'src/index.ts' },
+      handlerId: 'opaque-handler-id',
+    };
+
+    await hostApi.files.openWorkspaceWith(payload);
+
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'files',
+      action: 'openWorkspaceWith',
+      payload,
+    }));
+  });
+
+  it('passes the exact WorkspaceFileRef to revealWorkspaceFile', async () => {
+    hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { ok: true } });
+    const { hostApi } = await import('@/lib/host-api');
+    const ref = { workspaceRoot: '/workspace', relativePath: 'src/index.ts' };
+
+    await hostApi.files.revealWorkspaceFile(ref);
+
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'files',
+      action: 'revealWorkspaceFile',
+      payload: ref,
+    }));
+  });
+
+  it('passes attachment-scoped file actions without a workspace root', async () => {
+    hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: { ok: true } });
+    const { hostApi } = await import('@/lib/host-api');
+    const ref = {
+      sessionKey: 'agent:main:session-a',
+      generation: 4,
+      uri: 'file:///workspace/report.pdf',
+    };
+    const resolvePayload = { ref, name: 'report.pdf', mimeType: 'application/pdf' };
+
+    await hostApi.files.resolveAttachment(resolvePayload);
+    await hostApi.files.readAttachmentText(ref);
+    await hostApi.files.readAttachmentBinary({ ref, maxBytes: 2048 });
+    await hostApi.files.openAttachment(ref);
+    await hostApi.files.listAttachmentOpenHandlers(ref);
+    await hostApi.files.openAttachmentWith({ ref, handlerId: 'com.apple.Preview' });
+    await hostApi.files.revealAttachment(ref);
+
+    const actions = [
+      ['resolveAttachment', resolvePayload],
+      ['readAttachmentText', ref],
+      ['readAttachmentBinary', { ref, maxBytes: 2048 }],
+      ['openAttachment', ref],
+      ['listAttachmentOpenHandlers', ref],
+      ['openAttachmentWith', { ref, handlerId: 'com.apple.Preview' }],
+      ['revealAttachment', ref],
+    ];
+    actions.forEach(([action, payload], index) => {
+      expect(hostInvoke).toHaveBeenNthCalledWith(index + 1, expect.objectContaining({
+        module: 'files',
+        action,
+        payload,
+      }));
+      expect(payload).not.toHaveProperty('workspaceRoot');
+    });
+  });
+
+  it('exports attachment resolution from the file preview client', async () => {
+    hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: { ok: false, error: 'unavailable' } });
+    const { resolveAttachment } = await import('@/lib/file-preview-client');
+    const payload = {
+      ref: { sessionKey: 'agent:main:s1', generation: 1, uri: 'file:///workspace/a.txt' },
+    };
+
+    await resolveAttachment(payload);
+
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'files',
+      action: 'resolveAttachment',
+      payload,
+    }));
+  });
+
+  it('routes ACP chat methods through hostInvoke', async () => {
+    hostInvoke
+      .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { success: true, current: null, children: [] } })
+      .mockResolvedValueOnce({ id: 'req-2', ok: true, data: { success: true, generation: 1 } })
+      .mockResolvedValueOnce({ id: 'req-3', ok: true, data: { success: true, generation: 2 } })
+      .mockResolvedValueOnce({ id: 'req-4', ok: true, data: { success: true } })
+      .mockResolvedValueOnce({ id: 'req-5', ok: true, data: { success: true } });
     const { hostApi } = await import('@/lib/host-api');
 
-    await hostApi.chat.sendWithMedia({ sessionKey: 'main', message: 'hello', idempotencyKey: 'k' });
-    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+    expect(Object.keys(hostApi.chat)).toEqual([
+      'getAcpSessionFamily',
+      'loadAcpSession',
+      'sendAcpPrompt',
+      'cancelAcpSession',
+      'respondAcpPermission',
+    ]);
+
+    await expect(hostApi.chat.getAcpSessionFamily({
+      sessionKey: 'agent:main:parent',
+    })).resolves.toEqual({ success: true, current: null, children: [] });
+    await hostApi.chat.loadAcpSession({
+      sessionKey: 'main',
+      workspaceRoot: '/workspace',
+      cwd: '/workspace/project',
+    });
+    await hostApi.chat.sendAcpPrompt({
+      sessionKey: 'main',
+      cwd: '/workspace/project',
+      message: 'hello',
+    });
+    await hostApi.chat.cancelAcpSession({ sessionKey: 'main' });
+    await hostApi.chat.respondAcpPermission({
+      sessionKey: 'main',
+      requestId: 'perm-1',
+      outcome: { outcome: 'cancelled' },
+    });
+
+    expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
       module: 'chat',
-      action: 'sendWithMedia',
+      action: 'getAcpSessionFamily',
+      payload: { sessionKey: 'agent:main:parent' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      module: 'chat',
+      action: 'loadAcpSession',
+      payload: { sessionKey: 'main', workspaceRoot: '/workspace', cwd: '/workspace/project' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      module: 'chat',
+      action: 'sendAcpPrompt',
+      payload: { sessionKey: 'main', cwd: '/workspace/project', message: 'hello' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(4, expect.objectContaining({
+      module: 'chat',
+      action: 'cancelAcpSession',
+      payload: { sessionKey: 'main' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      module: 'chat',
+      action: 'respondAcpPermission',
+      payload: { sessionKey: 'main', requestId: 'perm-1', outcome: { outcome: 'cancelled' } },
+    }));
+  });
+
+  it('keeps generic gateway RPC requests on the gateway facade', async () => {
+    hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: { ok: true } });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await expect(hostApi.gateway.rpc('sessions.list', { limit: 10 }, 500)).resolves.toEqual({ ok: true });
+
+    expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      module: 'gateway', action: 'rpc', payload: { method: 'sessions.list', params: { limit: 10 }, timeoutMs: 500 },
     }));
   });
 
@@ -258,6 +527,18 @@ describe('hostApi facade', () => {
     expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
       module: 'sessions',
       action: 'summaries',
+    }));
+  });
+
+  it('calls sessions.turnTimings through hostInvoke', async () => {
+    hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { success: true, timings: [] } });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await hostApi.sessions.turnTimings({ sessionKey: 'agent:main:main', limit: 1000 });
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'sessions',
+      action: 'turnTimings',
+      payload: { sessionKey: 'agent:main:main', limit: 1000 },
     }));
   });
 
@@ -314,7 +595,7 @@ describe('hostApi facade', () => {
     const violations = files.flatMap((file) => {
       const text = readFileSync(file, 'utf8');
       const matches = text.match(/hostApi\.(?!gateway\.rpc\b)[A-Za-z0-9_]+\.[A-Za-z0-9_]+</g) ?? [];
-      return matches.map((match) => `${file.replace(`${process.cwd()}/`, '')}: ${match}`);
+      return matches.map((match) => `${file.replace(/\\/g, '/').replace(`${process.cwd().replace(/\\/g, '/')}/`, '')}: ${match}`);
     });
 
     expect(violations).toEqual([]);
@@ -347,6 +628,7 @@ describe('hostApi facade', () => {
   });
 
   it('keeps production main, preload, renderer, and shared imports on their side of the boundary', () => {
+    const webBrowserTypeBridge = readFileSync(join(process.cwd(), 'src/types/web-browser.ts'), 'utf8');
     const collectFiles = (root: string): string[] => {
       const files: string[] = [];
       const collect = (dir: string) => {
@@ -365,7 +647,7 @@ describe('hostApi facade', () => {
     };
 
     const findViolations = (root: string, patterns: RegExp[]): string[] => collectFiles(root).flatMap((file) => {
-      const relative = file.replace(`${process.cwd()}/`, '');
+      const relative = file.replace(/\\/g, '/').replace(`${process.cwd().replace(/\\/g, '/')}/`, '');
       const text = readFileSync(file, 'utf8');
       return patterns.flatMap((pattern) => (
         [...text.matchAll(pattern)].map((match) => `${relative}: ${match[0]}`)
@@ -383,7 +665,7 @@ describe('hostApi facade', () => {
       /\bfrom\s+['"][^'"]*(?:electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
       /\bimport\(\s*['"][^'"]*(?:@electron\/|electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
       /\brequire\(\s*['"][^'"]*(?:@electron\/|electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
-    ]);
+    ]).filter((violation) => violation !== "src/types/web-browser.ts: from 'electron'");
     const sharedToAppLayer = findViolations('shared', [
       /\bfrom\s+['"]@\//g,
       /\bfrom\s+['"]@electron\//g,
@@ -392,6 +674,7 @@ describe('hostApi facade', () => {
       /\brequire\(\s*['"][^'"]*(?:@\/|@electron\/|src\/|electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
     ]);
 
+    expect(webBrowserTypeBridge).toContain("import type { WebviewTag } from 'electron';");
     expect({
       electronToRenderer,
       rendererToElectron,

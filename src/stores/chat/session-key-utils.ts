@@ -1,0 +1,106 @@
+import { CHANNEL_NAMES } from '@shared/types/channel';
+import {
+  containsOpenClawHeartbeatPollSentinel,
+  isOpenClawHeartbeatAckText,
+  OPENCLAW_HEARTBEAT_POLL_SENTINEL,
+} from '@shared/chat/openclaw-internal';
+import { isCronSessionKey } from './cron-session-utils';
+import type { ChatSession } from './types';
+
+const CHANNEL_SESSION_SEGMENTS = new Set<string>(Object.keys(CHANNEL_NAMES));
+const NON_USER_SESSION_LABELS = new Set(['deepclaw', 'main']);
+const SUBAGENT_CONTEXT_PREFIX = '[Subagent Context]';
+
+function stripHeartbeatSentinel(value: string | undefined): string {
+  return (value ?? '').replaceAll(OPENCLAW_HEARTBEAT_POLL_SENTINEL, '').trim();
+}
+
+function hasUserAuthoredSessionText(value: string | undefined, sessionKey: string): boolean {
+  const text = stripHeartbeatSentinel(value);
+  if (!text) return false;
+  if (isOpenClawHeartbeatAckText(text)) return false;
+  if (text === sessionKey) return false;
+  return !NON_USER_SESSION_LABELS.has(text.toLowerCase());
+}
+
+/**
+ * OpenClaw channel sessions use `agent:<id>:<channel>:...` (e.g. feishu DM keys).
+ */
+export function isChannelSessionKey(sessionKey: string): boolean {
+  if (!sessionKey.startsWith('agent:')) return false;
+  const parts = sessionKey.split(':');
+  if (parts.length < 3) return false;
+  return CHANNEL_SESSION_SEGMENTS.has(parts[2] ?? '');
+}
+
+export function isNativeSubagentSessionKey(sessionKey: string): boolean {
+  const parts = sessionKey.split(':');
+  return parts.length === 4
+    && parts[0] === 'agent'
+    && Boolean(parts[1])
+    && parts[2] === 'subagent'
+    && Boolean(parts[3]);
+}
+
+export function formatSubagentSessionTitle(sessionKey: string, title: string): string {
+  if (!isNativeSubagentSessionKey(sessionKey) || !title.startsWith(SUBAGENT_CONTEXT_PREFIX)) {
+    return title;
+  }
+  return title.slice(SUBAGENT_CONTEXT_PREFIX.length).trimStart();
+}
+
+export function isDeepClawDesktopSessionKey(sessionKey: string): boolean {
+  return !isCronSessionKey(sessionKey) && !isChannelSessionKey(sessionKey);
+}
+
+/**
+ * Gateway may register channel sessions before any real user message (e.g. bot
+ * added to a group, webhook ping). Hide those placeholder entries from DeepClaw
+ * sidebar — they have no preview text, no derived title, and no display name.
+ */
+export function isPlaceholderChannelSession(session: ChatSession): boolean {
+  if (!isChannelSessionKey(session.key)) return false;
+  if (session.lastMessagePreview?.trim()) return false;
+  if (session.derivedTitle?.trim()) return false;
+  if (session.displayName?.trim() && session.displayName !== session.key) return false;
+  return true;
+}
+
+export function isOpenClawHeartbeatOnlySession(session: ChatSession): boolean {
+  if (!isDeepClawDesktopSessionKey(session.key)) return false;
+
+  const hasHeartbeat = [session.label, session.displayName, session.derivedTitle, session.lastMessagePreview]
+    .some(containsOpenClawHeartbeatPollSentinel);
+  if (!hasHeartbeat) return false;
+
+  if (hasUserAuthoredSessionText(session.label, session.key)) return false;
+  if (hasUserAuthoredSessionText(session.displayName, session.key)) return false;
+  if (hasUserAuthoredSessionText(session.derivedTitle, session.key)) return false;
+  if (hasUserAuthoredSessionText(session.lastMessagePreview, session.key)) return false;
+
+  return true;
+}
+
+export function findHiddenOpenClawHeartbeatSession(sessionKey: string, sessions: ChatSession[]): ChatSession | null {
+  const session = sessions.find((candidate) => candidate.key === sessionKey);
+  return session && isOpenClawHeartbeatOnlySession(session) ? session : null;
+}
+
+export function shouldRetainSessionInCatalog(session: ChatSession): boolean {
+  if (!session.key) return false;
+  if (session.createdLocally) return false;
+  if (isOpenClawHeartbeatOnlySession(session)) return false;
+  if (isChannelSessionKey(session.key)) {
+    return !isPlaceholderChannelSession(session);
+  }
+  return true;
+}
+
+export function shouldIncludeSessionInSidebarList(session: ChatSession): boolean {
+  // Native children remain in the catalog for status, attention, and deletion joins.
+  return shouldRetainSessionInCatalog(session) && !isNativeSubagentSessionKey(session.key);
+}
+
+export function shouldIncludeSessionInWorkspaceDeletion(session: ChatSession): boolean {
+  return shouldRetainSessionInCatalog(session);
+}

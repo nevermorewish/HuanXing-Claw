@@ -101,6 +101,9 @@ jobs:
       - name: Download agent-browser binaries for Windows
         run: pnpm run agent-browser:download:win
 
+      - name: Download CUA driver for Windows
+        run: pnpm run cua-driver:download:win
+
       - name: Download Node.js binaries for Windows
         run: pnpm run node:download:win
 
@@ -420,6 +423,9 @@ jobs:
 
       - name: Download uv binaries for macOS
         run: pnpm run uv:download:mac
+
+      - name: Download CUA driver for macOS
+        run: pnpm run cua-driver:download:mac
 
       - name: Download agent-browser binaries for macOS
         run: pnpm run agent-browser:download:mac

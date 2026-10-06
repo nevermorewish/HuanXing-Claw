@@ -1,47 +1,50 @@
 /**
  * Chat Page
- * Native React implementation communicating with OpenClaw Gateway
- * via the Main-owned host API. Session selector, thinking toggle, and refresh
- * are in the toolbar; messages render with markdown + streaming.
+ * ACP-native runtime rendering through the ordered inline timeline.
  */
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowDownToLine, Loader2, Sparkles } from 'lucide-react';
-import { useChatStore, type ChatRuntimeRunState, type RawMessage } from '@/stores/chat';
-import { isInternalMessage } from '@/stores/chat/helpers';
-import { buildBaselineRunKey, getBaseline } from '@/stores/baseline-cache';
-import { useGatewayStore } from '@/stores/gateway';
+import {
+  Suspense, lazy, useCallback, useDeferredValue, useEffect,
+  useMemo, useRef, useState, type SetStateAction,
+} from 'react';
+import { AlertTriangle, ArrowDownToLine, ArrowLeft, BotMessageSquare, FolderOpen } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+import { DEFAULT_SESSION_KEY } from '@shared/chat/types';
+import type { AcpSessionFamilyResult } from '@shared/acp-chat/types';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
-import { hostApi } from '@/lib/host-api';
+import { useChatStore } from '@/stores/chat';
+import { useComposerDraftStore } from '@/stores/composer-drafts';
+import { useSessionAttentionStore } from '@/stores/session-attention';
+import { useSettingsStore } from '@/stores/settings';
+import { ensureAcpChatSubscriptions, useAcpChatSessionStore } from '@/stores/acp-chat-session';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { ChatMessage } from './ChatMessage';
-import { ChatInput } from './ChatInput';
-import { ExecutionGraphCard } from './ExecutionGraphCard';
-import { ChatToolbar } from './ChatToolbar';
-import { extractImages, extractText, extractThinking, extractToolUse, isInternalAssistantReplyText, isInternalProcessNarration, normalizeMessageRole, sanitizeAssistantReplyText, stripProcessMessagePrefix } from './message-utils';
-import {
-  buildRunSegmentMessageIndices,
-  deriveRuntimeTaskSteps,
-  deriveTaskSteps,
-  findReplyMessageIndex,
-  getPostTriggerSegmentMessages,
-  getRunSegmentMessages,
-  hasActiveStreamingReplyInRun,
-  parseSubagentCompletionInfo,
-  segmentHasFinalReply,
-  type TaskStep,
-} from './task-visualization';
-import { hasDeliveredImageGenerationResult, isImageGenerationPending } from './image-generation-status';
-import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
+import {
+  getWorkspaceDisplayLabel,
+  isDefaultWorkspacePath,
+  normalizeWorkspacePath,
+  resolveEffectiveWorkspace,
+} from '@/lib/workspace-context';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
-import { useMinLoading } from '@/hooks/use-min-loading';
-import { extractGeneratedFiles, generatedFileHasDiffPayload, isHtmlPreviewExt, type GeneratedFile } from '@/lib/generated-files';
-import { GeneratedFilesPanel } from '@/components/file-preview/GeneratedFilesPanel';
-import type { FilePreviewTarget } from '@/components/file-preview/types';
-import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
-import type { AttachedFileMeta } from '@/stores/chat/types';
-import { toast } from 'sonner';
+import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
+import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
+import { getCurrentAcpPlan } from '@/lib/acp/current-plan';
+import type { MessageSegmentItem, RenderPart, ToolCallItem } from '@/lib/acp/timeline-types';
+import type { AcpTurnTiming } from '@/lib/acp/turn-timings';
+import { createEmptyAcpTimeline } from '@/lib/acp/reducer';
+import { projectOpenClawFileActivities, type AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
+import { hostApi } from '@/lib/host-api';
+import { getSessionDisplayTitle } from '@shared/chat/session-title';
+import { ChatInput, type ChatWorkspaceOption, type FileAttachment } from './ChatInput';
+import { ChatToolbar } from './ChatToolbar';
+import { AcpTimeline } from './AcpTimeline';
+import { AcpErrorBanner } from './AcpErrorBanner';
+import { projectSessionRunState } from '@/stores/chat/session-status';
+import { formatSubagentSessionTitle, isNativeSubagentSessionKey } from '@/stores/chat/session-key-utils';
+import type { AcpSubagentSession } from './AcpSubagentSessions';
 
 const ArtifactPanelLazy = lazy(() =>
   import('@/components/file-preview/ArtifactPanel').then((m) => ({ default: m.ArtifactPanel })),
@@ -50,850 +53,666 @@ const PanelResizeDividerLazy = lazy(() =>
   import('@/components/file-preview/PanelResizeDivider').then((m) => ({ default: m.PanelResizeDivider })),
 );
 
-type GraphStepCacheEntry = {
-  steps: ReturnType<typeof deriveTaskSteps>;
-  agentLabel: string;
-  sessionLabel: string;
-  segmentEnd: number;
-  replyIndex: number | null;
-  triggerIndex: number;
+const EMPTY_FILE_ACTIVITY: AcpFileActivityProjection = {
+  activities: [],
+  turnSummariesByTurnId: {},
+  fileGroups: [],
+  uniqueFileCount: 0,
 };
 
-type UserRunCard = {
-  triggerIndex: number;
-  replyIndex: number | null;
-  active: boolean;
-  agentLabel: string;
-  sessionLabel: string;
-  segmentEnd: number;
-  steps: TaskStep[];
-  messageStepTexts: string[];
-  streamingReplyText: string | null;
-  /**
-   * Whether the trailing "Thinking..." indicator should be hidden for this
-   * card. True only when the run's live stream is currently rendered AS a
-   * streaming step inside the graph (the step itself already signals
-   * liveness, so the extra indicator would be redundant). False in all
-   * other cases — including when the stream is promoted to a bubble
-   * below the graph, or when there is no streaming content at all (the
-   * gap between tool rounds), because the graph has no visible activity
-   * of its own in those windows and the indicator is what tells the user
-   * "work is still in progress".
-   */
-  suppressThinking: boolean;
-};
+// A session switch remounts Chat before the child catalog row is refreshed.
+const activeSubagentSessionKeys = new Set<string>();
 
 type QuestionDirectoryItem = {
-  index: number;
-  ordinal: number;
+  itemId: string;
+  anchorId: string;
   title: string;
 };
 
 const QUESTION_DIRECTORY_RENDER_LIMIT = 300;
 
-function getPrimaryMessageStepTexts(steps: TaskStep[]): string[] {
-  return steps
-    .filter((step) => step.kind === 'message' && step.parentId === 'agent-run' && !!step.detail)
-    .map((step) => step.detail!);
+type WorkspaceContextCheck = {
+  key: string;
+  available: boolean;
+};
+
+type LoadedAcpSessionFamily = {
+  sessionKey: string;
+  result: Extract<AcpSessionFamilyResult, { success: true }>;
+};
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
-function sanitizeGraphSteps(steps: TaskStep[]): TaskStep[] {
-  return steps.filter((step) => {
-    if (step.kind === 'thinking') return false;
-    if (step.kind === 'message' && step.detail && isInternalProcessNarration(step.detail)) return false;
-    return true;
-  });
+function successfulSessionSpawnIdentity(item: ToolCallItem): string | null {
+  const toolName = item.title.split(':', 1)[0]?.trim();
+  if (toolName !== 'sessions_spawn' || item.status !== 'completed') return null;
+  const details = recordValue(recordValue(item.output)?.details);
+  if (details?.status !== 'accepted') return null;
+  const runId = typeof details.runId === 'string' ? details.runId.trim() : '';
+  const childSessionKey = typeof details.childSessionKey === 'string' ? details.childSessionKey.trim() : '';
+  return runId && childSessionKey ? `${item.toolCallId}\0${runId}\0${childSessionKey}` : null;
 }
 
-function buildQuestionDirectoryTitle(message: RawMessage, fallback: string): string {
-  const normalized = extractText(message).replace(/\s+/g, ' ').trim();
+function buildQuestionDirectoryTitle(item: MessageSegmentItem, fallback: string): string {
+  const markdown = item.parts.find(
+    (part): part is Extract<RenderPart, { kind: 'markdown' }> => part.kind === 'markdown' && part.text.trim().length > 0,
+  );
+  const normalized = markdown?.text.replace(/\s+/g, ' ').trim();
   if (!normalized) return fallback;
-  return normalized.length > 64 ? `${normalized.slice(0, 64)}…` : normalized;
+  const graphemes = Array.from(
+    new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(normalized),
+    ({ segment }) => segment,
+  );
+  return graphemes.length > 64 ? `${graphemes.slice(0, 61).join('')}...` : normalized;
 }
 
-function isRealUserMessage(msg: RawMessage): boolean {
-  if (normalizeMessageRole(msg.role) !== 'user') return false;
-  if (isInternalMessage(msg)) return false;
-  const content = msg.content;
-  if (!Array.isArray(content)) return true;
-  // If every block in the content is a tool_result, this is a Gateway
-  // tool-result wrapper, not a real user message.
-  const blocks = content as Array<{ type?: string }>;
-  return blocks.length === 0 || !blocks.every((b) => b.type === 'tool_result' || b.type === 'toolResult');
+function isRecoverableInitialAcpLoadError(message: string | null): boolean {
+  return !!message && message.includes("reply was never sent");
 }
 
-function hasUserFacingImageAttachments(msg: RawMessage): boolean {
-  return (msg._attachedFiles ?? []).some((file) => file.mimeType.startsWith('image/'));
+function QuestionDirectory({ items }: { items: QuestionDirectoryItem[] }) {
+  const { t } = useTranslation('chat');
+  const navRef = useRef<HTMLElement | null>(null);
+  const visibleItems = items.slice(-QUESTION_DIRECTORY_RENDER_LIMIT);
+  const hiddenCount = items.length - visibleItems.length;
+
+  useEffect(() => {
+    const nav = navRef.current;
+    if (nav) nav.scrollTop = nav.scrollHeight;
+  }, [items.length]);
+
+  return (
+    <aside
+      id="chat-question-directory"
+      data-testid="chat-question-directory"
+      aria-label={t('questionDirectory.title')}
+      className="absolute right-0 top-0 z-30 flex max-h-[min(32rem,calc(100%-1rem))] w-[min(18rem,calc(100%-1rem))] flex-col overflow-hidden rounded-2xl border border-black/10 bg-surface-modal/95 p-3 shadow-xl shadow-black/10 backdrop-blur-xl dark:border-white/10 dark:shadow-black/30"
+    >
+      <h2 className="px-1 pb-2 text-sm font-medium text-foreground">{t('questionDirectory.title')}</h2>
+      <nav
+        ref={navRef}
+        className="min-h-0 flex-1 space-y-1 overflow-y-auto"
+        aria-label={t('questionDirectory.title')}
+      >
+        {visibleItems.map((item) => (
+          <button
+            key={item.itemId}
+            type="button"
+            data-testid={`chat-question-directory-item-${item.itemId}`}
+            title={item.title}
+            onClick={() => document.getElementById(item.anchorId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-foreground/80 transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10"
+          >
+            <span className="block truncate">{item.title}</span>
+          </button>
+        ))}
+      </nav>
+      {hiddenCount > 0 && (
+        <p className="px-1 pt-2 text-xs text-muted-foreground">
+          {t('questionDirectory.moreHint', { count: hiddenCount })}
+        </p>
+      )}
+    </aside>
+  );
 }
 
-function generatedFileToTarget(file: GeneratedFile): FilePreviewTarget {
-  return {
-    filePath: file.filePath,
-    fileName: file.fileName,
-    ext: file.ext,
-    mimeType: file.mimeType,
-    contentType: file.contentType,
-    action: file.action,
-    fullContent: file.fullContent,
-    baseline: file.baseline,
-    edits: file.edits,
-  };
+function AcpLoadingState() {
+  const [showSpinner, setShowSpinner] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setShowSpinner(true), 200);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center" aria-busy="true">
+      {showSpinner && <div data-testid="acp-chat-loading"><LoadingSpinner size="md" /></div>}
+    </div>
+  );
 }
 
-function hasRunningRuntimeTool(run: ChatRuntimeRunState | null): boolean {
-  if (!run) return false;
-  const toolStatuses = new Map<string, 'running' | 'completed' | 'error'>();
-  for (const event of run.events) {
-    if (event.type === 'tool.started' || event.type === 'tool.updated') {
-      toolStatuses.set(event.toolCallId, 'running');
-      continue;
-    }
-    if (event.type === 'tool.completed') {
-      toolStatuses.set(event.toolCallId, event.isError ? 'error' : 'completed');
-    }
-  }
-  return Array.from(toolStatuses.values()).some((status) => status === 'running');
+function AcpEmptyState() {
+  const { t } = useTranslation('chat');
+  return (
+    <div data-testid="acp-chat-empty-state" className="flex h-[60vh] flex-col items-center justify-center text-center">
+      <h1 className="text-4xl font-serif font-normal tracking-tight text-foreground/80 md:text-5xl">
+        {t('welcome.subtitle')}
+      </h1>
+    </div>
+  );
 }
 
-// Keep the last non-empty execution-graph snapshot per session/run outside
-// React state so `loadHistory` refreshes can still fall back to the previous
-// steps without tripping React's set-state-in-effect lint rule.
-const graphStepCacheStore = new Map<string, Record<string, GraphStepCacheEntry>>();
-const streamingTimestampStore = new Map<string, number>();
+function WorkspaceUnavailableBanner({
+  path,
+  readOnly,
+  onChooseWorkspace,
+}: {
+  path: string;
+  readOnly: boolean;
+  onChooseWorkspace?: () => void;
+}) {
+  const { t } = useTranslation('chat');
+  return (
+    <div
+      data-testid="workspace-unavailable-banner"
+      className="flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-surface-modal px-4 py-3 text-amber-700 shadow-sm dark:text-amber-400"
+    >
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">{t('workspace.unavailable.title')}</p>
+        <p className="mt-1 break-words text-sm opacity-80">
+          {t(readOnly ? 'workspace.unavailable.boundDescription' : 'workspace.unavailable.description', { path })}
+        </p>
+        {!readOnly && onChooseWorkspace && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-3 border-amber-500/30 bg-transparent text-amber-700 hover:bg-black/5 dark:text-amber-400 dark:hover:bg-white/10"
+            onClick={onChooseWorkspace}
+          >
+            <FolderOpen className="mr-2 h-4 w-4" aria-hidden="true" />
+            {t('workspace.unavailable.chooseAction')}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function Chat() {
-  const { t } = useTranslation('chat');
-  const gatewayStatus = useGatewayStore((s) => s.status);
-  const isGatewayRunning = gatewayStatus.state === 'running';
+  ensureAcpChatSubscriptions();
 
-  const messages = useChatStore((s) => s.messages);
+  const { t } = useTranslation('chat');
+
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
-  const currentAgentId = useChatStore((s) => s.currentAgentId);
+  const sessions = useChatStore((s) => s.sessions);
   const sessionLabels = useChatStore((s) => s.sessionLabels);
-  const loading = useChatStore((s) => s.loading);
-  const loadingMoreHistory = useChatStore((s) => s.loadingMoreHistory);
-  const hasMoreHistory = useChatStore((s) => s.hasMoreHistory);
-  const loadMoreHistory = useChatStore((s) => s.loadMoreHistory);
-  const sending = useChatStore((s) => s.sending);
-  const error = useChatStore((s) => s.error);
-  const runError = useChatStore((s) => s.runError);
-  const streamingMessage = useChatStore((s) => s.streamingMessage);
-  const streamingTools = useChatStore((s) => s.streamingTools);
-  const pendingFinal = useChatStore((s) => s.pendingFinal);
-  const activeRunId = useChatStore((s) => s.activeRunId);
-  const runtimeRuns = useChatStore((s) => s.runtimeRuns ?? {});
-  const sendMessage = useChatStore((s) => s.sendMessage);
-  const abortRun = useChatStore((s) => s.abortRun);
-  const clearError = useChatStore((s) => s.clearError);
+  const currentAgentId = useChatStore((s) => s.currentAgentId);
+  const composerDraft = useComposerDraftStore((s) => s.drafts[currentSessionKey] ?? '');
+  const setComposerDraft = useComposerDraftStore((s) => s.setDraft);
+  const loadSessions = useChatStore((s) => s.loadSessions);
+  const switchSession = useChatStore((s) => s.switchSession);
+  const selectAcpSession = useChatStore((s) => s.selectAcpSession);
+  const acknowledgeAcpSessionCreated = useChatStore((s) => s.acknowledgeAcpSessionCreated);
+  const setVisibleSession = useSessionAttentionStore((s) => s.setVisibleSession);
+  const sessionAttentionByKey = useSessionAttentionStore((s) => s.bySessionKey);
+  const markSessionRead = useSessionAttentionStore((s) => s.markRead);
+  const chatWorkspacePath = useSettingsStore((s) => s.chatWorkspacePath);
+  const recentWorkspacePaths = useSettingsStore((s) => s.recentWorkspacePaths ?? []);
+  const workspaceLabels = useSettingsStore((s) => s.workspaceLabels);
+  const setChatWorkspacePath = useSettingsStore((s) => s.setChatWorkspacePath);
+  const removeWorkspace = useSettingsStore((s) => s.removeWorkspace);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
   const agents = useAgentsStore((s) => s.agents);
-
-  const cleanupEmptySession = useChatStore((s) => s.cleanupEmptySession);
-  const lastUserMessageAt = useChatStore((s) => s.lastUserMessageAt);
-  const agentsList = useAgentsStore((s) => s.agents);
-  const currentAgent = useMemo(
-    () => (agentsList ?? []).find((a) => a.id === currentAgentId) ?? null,
-    [agentsList, currentAgentId],
+  const [sessionDiscoveryAttempted, setSessionDiscoveryAttempted] = useState(false);
+  const [lastPromptAttemptSessionKey, setLastPromptAttemptSessionKey] = useState<string | null>(null);
+  const [questionDirectoryOpenSessionKey, setQuestionDirectoryOpenSessionKey] = useState<string | null>(null);
+  const [resolvedWorkspaceContext, setResolvedWorkspaceContext] = useState<{
+    key: string;
+    sessionKey: string;
+    workspaceRoot: string;
+    executionCwd: string;
+  } | null>(null);
+  const [workspaceContextCheck, setWorkspaceContextCheck] = useState<WorkspaceContextCheck | null>(null);
+  const [loadedSessionFamily, setLoadedSessionFamily] = useState<LoadedAcpSessionFamily | null>(null);
+  const currentSession = useMemo(
+    () => sessions.find((session) => session.key === currentSessionKey) ?? null,
+    [currentSessionKey, sessions],
   );
+  const currentAgent = useMemo(
+    () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
+    [agents, currentAgentId],
+  );
+  const catalogSessionTitle = currentSession?.createdLocally
+    ? t('newSession')
+    : currentSession
+      ? getSessionDisplayTitle(currentSession, sessionLabels)
+      : currentSessionKey;
+  const effectiveWorkspace = useMemo(
+    () => resolveEffectiveWorkspace({
+      session: currentSession,
+      globalWorkspace: chatWorkspacePath,
+      defaultWorkspace: currentSessionKey === DEFAULT_SESSION_KEY
+        ? currentAgent?.workspace
+        : undefined,
+    }),
+    [chatWorkspacePath, currentAgent?.workspace, currentSession, currentSessionKey],
+  );
+  const cwd = effectiveWorkspace.cwd;
+  const allWorkspacePaths = useMemo(() => {
+    const seen = new Set<string>();
+    const paths: string[] = [];
+    const candidatePaths = [
+      ...recentWorkspacePaths,
+      chatWorkspacePath,
+      ...sessions.map((session) => session.workspacePath).filter((path): path is string => !!path),
+    ];
+    for (const path of candidatePaths) {
+      const normalized = normalizeWorkspacePath(path);
+      if (!normalized || isDefaultWorkspacePath(normalized)) continue;
+      const slashedPath = normalized.replace(/\\/g, '/');
+      const identity = /^[A-Za-z]:\//.test(slashedPath) ? slashedPath.toLowerCase() : slashedPath;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      paths.push(normalized);
+    }
+    return paths;
+  }, [chatWorkspacePath, recentWorkspacePaths, sessions]);
+  const unreferencedRecentWorkspacePaths = useMemo(() => {
+    if (agents.length === 0) return [];
+    const referencedPaths = new Set(
+      [
+        chatWorkspacePath,
+        ...agents.map((agent) => agent.workspace),
+        ...sessions.map((session) => session.workspacePath).filter((path): path is string => !!path),
+      ]
+        .map((path) => normalizeWorkspacePath(path))
+        .filter((path): path is string => Boolean(path)),
+    );
+    return recentWorkspacePaths.filter((path) => {
+      const normalized = normalizeWorkspacePath(path);
+      return Boolean(
+        normalized
+        && !isDefaultWorkspacePath(normalized)
+        && !referencedPaths.has(normalized),
+      );
+    });
+  }, [agents, chatWorkspacePath, recentWorkspacePaths, sessions]);
+  const unreferencedWorkspaceAvailability = useWorkspaceAvailability(unreferencedRecentWorkspacePaths);
+
+  useEffect(() => {
+    const unavailablePaths = unreferencedRecentWorkspacePaths.filter(
+      (path) => unreferencedWorkspaceAvailability[path] === 'unavailable',
+    );
+    if (unavailablePaths.length === 0) return;
+    void removeWorkspace(unavailablePaths[0]!, unavailablePaths.slice(1)).catch((error) => {
+      console.warn('[chat] Failed to prune unavailable recent workspaces:', error);
+    });
+  }, [removeWorkspace, unreferencedRecentWorkspacePaths, unreferencedWorkspaceAvailability]);
+
+  const workspaceLabel = getWorkspaceDisplayLabel(
+    cwd,
+    t('workspace.defaultLabel'),
+    workspaceLabels,
+    allWorkspacePaths,
+  );
+  const workspaceOptions = useMemo<ChatWorkspaceOption[]>(() => {
+    return allWorkspacePaths.map((normalized) => ({
+      path: normalized,
+      label: getWorkspaceDisplayLabel(
+        normalized,
+        t('workspace.defaultLabel'),
+        workspaceLabels,
+        allWorkspacePaths,
+      ),
+    }));
+  }, [allWorkspacePaths, t, workspaceLabels]);
+  const acpTimeline = useAcpChatSessionStore((s) => s.timeline);
+  const acpActiveSessionKey = useAcpChatSessionStore((s) => s.activeSessionKey);
+  const renderedAcpTimeline = useDeferredValue(acpTimeline);
+  const emptyCurrentTimeline = useMemo(
+    () => createEmptyAcpTimeline(currentSessionKey ?? '', 0),
+    [currentSessionKey],
+  );
+  // Defer streaming updates, not session boundaries or the first history render.
+  const canDeferAcpTimeline = renderedAcpTimeline.sessionId === acpTimeline.sessionId
+    && renderedAcpTimeline.loadGeneration === acpTimeline.loadGeneration
+    && renderedAcpTimeline.itemOrder.length > 0
+    && acpTimeline.itemOrder.length > 0;
+  const visibleAcpTimeline = acpTimeline.sessionId === currentSessionKey
+    ? canDeferAcpTimeline ? renderedAcpTimeline : acpTimeline
+    : emptyCurrentTimeline;
+  const acpTurnTimings = useAcpChatSessionStore((s) => s.turnTimingsByUserMessageId);
+  const acpLoading = useAcpChatSessionStore((s) => s.loading);
+  const acpSending = useAcpChatSessionStore((s) => s.sending);
+  const imageGenerationPending = useAcpChatSessionStore(
+    (s) => Boolean(s.pendingImageGenerationTaskIds?.length),
+  );
+  const acpCancelling = useAcpChatSessionStore((s) => s.cancelling);
+  const acpError = useAcpChatSessionStore((s) => s.error);
+  const acpWorkspaceRoot = useAcpChatSessionStore((s) => s.workspaceRoot);
+  const acpCwd = useAcpChatSessionStore((s) => s.cwd);
+  const prepareLocalAcpSession = useAcpChatSessionStore((s) => s.prepareLocalSession);
+  const loadAcpSession = useAcpChatSessionStore((s) => s.loadSession);
+  const sendAcpPrompt = useAcpChatSessionStore((s) => s.sendPrompt);
+  const cancelAcp = useAcpChatSessionStore((s) => s.cancel);
+  const respondAcpPermission = useAcpChatSessionStore((s) => s.respondPermission);
+  const clearAcpError = useAcpChatSessionStore((s) => s.clearError);
   const panelOpen = useArtifactPanel((s) => s.open);
   const panelWidthPct = useArtifactPanel((s) => s.widthPct);
-  const openChanges = useArtifactPanel((s) => s.openChanges);
-  const openPreview = useArtifactPanel((s) => s.openPreview);
   const closeArtifactPanel = useArtifactPanel((s) => s.close);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
-  // Close the panel when the session changes — its contents would otherwise
-  // be stale (file list belongs to the previous chat).
-  useEffect(() => {
-    closeArtifactPanel();
-  }, [currentSessionKey, closeArtifactPanel]);
-  const [childTranscripts, setChildTranscripts] = useState<Record<string, RawMessage[]>>({});
-  const [questionDirectoryOpenSessionKey, setQuestionDirectoryOpenSessionKey] = useState<string | null>(null);
+  const acpLoadInFlightKeyRef = useRef<string | null>(null);
+  const familyRequestIdRef = useRef(0);
+  const selectedFamilySessionKeyRef = useRef(currentSessionKey);
+  const spawnInvalidationRef = useRef({ sessionKey: '', signature: '' });
+  const { contentRef, scrollRef, scrollToBottom, isAtBottom } = useStickToBottomInstant(
+    currentSessionKey,
+    acpSending || acpCancelling,
+  );
+  selectedFamilySessionKeyRef.current = currentSessionKey;
 
-  // Callback for file cards in chat messages — opens the in-app preview
-  // panel instead of the system default editor.
-  const handleOpenAttachedFile = useCallback((file: AttachedFileMeta) => {
-    if (!file.filePath) return;
-    if (file.mimeType === 'application/x-directory') {
-      void hostApi.shell.openPath(file.filePath)
-        .then((error) => {
-          if (typeof error === 'string' && error) {
-            toast.error(error);
-          }
-        })
-        .catch(() => {
-          toast.error(t('filePreview.errors.openInFinderFailed'));
-        });
-      return;
-    }
-    const target = buildPreviewTarget(file.filePath, file.fileName, file.fileSize);
-    openPreview(target);
-  }, [openPreview, t]);
-  // Persistent per-run override for the Execution Graph's expanded/collapsed
-  // state. Keyed by a stable run id (trigger message id, or a fallback of
-  // `${sessionKey}:${triggerIdx}`) so user toggles survive the `loadHistory`
-  // refresh that runs after every final event — otherwise the card would
-  // remount and reset. `undefined` values mean "user hasn't toggled, let the
-  // card pick a default from its own `active` prop."
-  const [graphExpandedOverrides, setGraphExpandedOverrides] = useState<Record<string, boolean>>({});
-  const graphStepCache: Record<string, GraphStepCacheEntry> = graphStepCacheStore.get(currentSessionKey) ?? {};
-  const minLoading = useMinLoading(loading && messages.length > 0);
-  const { contentRef, scrollRef, scrollToBottom, isAtBottom } = useStickToBottomInstant(currentSessionKey, sending);
+  const loadCurrentSessionFamily = useCallback((sessionKey: string) => {
+    const requestId = ++familyRequestIdRef.current;
+    void hostApi.chat.getAcpSessionFamily({ sessionKey }).then((result) => {
+      if (
+        requestId !== familyRequestIdRef.current
+        || selectedFamilySessionKeyRef.current !== sessionKey
+        || !result.success
+      ) return;
+      setLoadedSessionFamily({ sessionKey, result });
+    }).catch(() => undefined);
+  }, []);
 
-  // Load data when gateway is running.
-  // When the store already holds messages for this session (i.e. the user
-  // is navigating *back* to Chat), use quiet mode so the existing messages
-  // stay visible while fresh data loads in the background.  This avoids
-  // an unnecessary messages → spinner → messages flicker.
   useEffect(() => {
+    familyRequestIdRef.current += 1;
+    setLoadedSessionFamily((current) => current?.sessionKey === currentSessionKey ? current : null);
+    if (currentSessionKey) loadCurrentSessionFamily(currentSessionKey);
     return () => {
-      // If the user navigates away without sending any messages, remove the
-      // empty session so it doesn't linger as a ghost entry in the sidebar.
-      cleanupEmptySession();
+      familyRequestIdRef.current += 1;
     };
-  }, [cleanupEmptySession]);
+  }, [currentSessionKey, loadCurrentSessionFamily]);
 
   useEffect(() => {
-    void fetchAgents();
+    setVisibleSession(currentSessionKey);
+    return () => setVisibleSession(null);
+  }, [currentSessionKey, setVisibleSession]);
+
+  useEffect(() => {
+    void fetchAgents().catch(() => undefined);
   }, [fetchAgents]);
 
   useEffect(() => {
-    const completions = messages
-      .map((message) => parseSubagentCompletionInfo(message))
-      .filter((value): value is NonNullable<typeof value> => value != null);
-    const missing = completions.filter((completion) => !childTranscripts[completion.sessionId]);
-    if (missing.length === 0) return;
+    closeArtifactPanel();
+  }, [currentSessionKey, closeArtifactPanel]);
 
-    let cancelled = false;
-    void Promise.all(
-      missing.map(async (completion) => {
-        try {
-          const result = await hostApi.sessions.history({
-            agentId: completion.agentId,
-            sessionId: completion.sessionId,
-          });
-          if (!result.success) {
-            console.warn('Failed to load child transcript:', {
-              agentId: completion.agentId,
-              sessionId: completion.sessionId,
-              result,
-            });
-            return null;
-          }
-          return { sessionId: completion.sessionId, messages: result.messages || [] };
-        } catch (error) {
-          console.warn('Failed to load child transcript:', {
-            agentId: completion.agentId,
-            sessionId: completion.sessionId,
-            error,
-          });
-          return null;
-        }
-      }),
-    ).then((results) => {
-      if (cancelled) return;
-      setChildTranscripts((current) => {
-        const next = { ...current };
-        for (const result of results) {
-          if (!result) continue;
-          next[result.sessionId] = result.messages;
-        }
-        return next;
+  const projectionExecutionCwd = acpActiveSessionKey === currentSessionKey && acpCwd ? acpCwd : cwd;
+  const workspaceContextKey = currentSessionKey && cwd && projectionExecutionCwd
+    ? `${currentSessionKey}\0${cwd}\0${projectionExecutionCwd}`
+    : null;
+
+  useEffect(() => {
+    if (!workspaceContextKey || !currentSessionKey || !cwd || !projectionExecutionCwd) return;
+    let stale = false;
+    setWorkspaceContextCheck(null);
+    void hostApi.files.resolveWorkspaceContext({
+      workspaceRoot: cwd,
+      executionCwd: projectionExecutionCwd,
+    }).then((result) => {
+      if (stale) return;
+      if (!result.ok || !result.workspaceRoot || !result.executionCwd) {
+        setResolvedWorkspaceContext(null);
+        setWorkspaceContextCheck({ key: workspaceContextKey, available: false });
+        return;
+      }
+      setResolvedWorkspaceContext({
+        key: workspaceContextKey,
+        sessionKey: currentSessionKey,
+        workspaceRoot: result.workspaceRoot,
+        executionCwd: result.executionCwd,
       });
+      setWorkspaceContextCheck({ key: workspaceContextKey, available: true });
+    }).catch(() => {
+      if (stale) return;
+      setResolvedWorkspaceContext(null);
+      setWorkspaceContextCheck({ key: workspaceContextKey, available: false });
     });
+    return () => {
+      stale = true;
+    };
+  }, [currentSessionKey, cwd, projectionExecutionCwd, workspaceContextKey]);
 
+  const workspaceContextAvailable = !!workspaceContextKey
+    && workspaceContextCheck?.key === workspaceContextKey
+    && workspaceContextCheck.available;
+  const workspaceUnavailable = !!workspaceContextKey
+    && workspaceContextCheck?.key === workspaceContextKey
+    && !workspaceContextCheck.available;
+  const acpPresentationPending = !currentSession?.createdLocally && (
+    acpLoading
+    || (acpTimeline.sessionId !== currentSessionKey && !workspaceUnavailable)
+  );
+
+  useEffect(() => {
+    if (currentSessionKey !== DEFAULT_SESSION_KEY || sessions.length > 0 || sessionDiscoveryAttempted) return;
+    let cancelled = false;
+    void loadSessions()
+      .finally(() => {
+        if (!cancelled) setSessionDiscoveryAttempted(true);
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [messages, childTranscripts]);
+  }, [currentSessionKey, loadSessions, sessionDiscoveryAttempted, sessions.length]);
 
-  const streamMsg = streamingMessage && typeof streamingMessage === 'object'
-    ? streamingMessage as unknown as { role?: string; content?: unknown; timestamp?: number }
-    : null;
-  const streamTimestamp = typeof streamMsg?.timestamp === 'number' ? streamMsg.timestamp : 0;
   useEffect(() => {
-    if (!sending) {
-      streamingTimestampStore.delete(currentSessionKey);
-      return;
-    }
-    if (!streamingTimestampStore.has(currentSessionKey)) {
-      streamingTimestampStore.set(currentSessionKey, streamTimestamp || Date.now() / 1000);
-    }
-  }, [currentSessionKey, sending, streamTimestamp]);
+    if (!currentSessionKey || !cwd || !currentSession?.createdLocally) return;
+    acpLoadInFlightKeyRef.current = null;
+    const hasStaleTimeline = acpTimeline.sessionId !== currentSessionKey || acpTimeline.itemOrder.length > 0;
+    if (acpActiveSessionKey === currentSessionKey && acpWorkspaceRoot === cwd && acpCwd === cwd && !hasStaleTimeline) return;
+    prepareLocalAcpSession({ sessionKey: currentSessionKey, workspaceRoot: cwd, cwd });
+  }, [acpActiveSessionKey, acpCwd, acpTimeline.itemOrder.length, acpTimeline.sessionId, acpWorkspaceRoot, currentSession, currentSessionKey, cwd, prepareLocalAcpSession]);
 
-  const streamingTimestamp = sending
-    ? (streamingTimestampStore.get(currentSessionKey) ?? streamTimestamp)
-    : 0;
-  const streamText = streamMsg ? extractText(streamMsg) : (typeof streamingMessage === 'string' ? streamingMessage : '');
-  const hasStreamText = streamText.trim().length > 0;
-  // Whether the streaming chunk currently carries a `thinking` block. Used as
-  // a liveness signal so the run stays "active" (and the ExecutionGraphCard
-  // keeps showing its trailing "Thinking..." indicator) during the brief window
-  // between a tool finishing and the next text/tool chunk arriving — that gap
-  // is normally only filled by streamed thinking. NOT included in
-  // `shouldRenderStreaming`: a thinking-only stream chunk should not produce
-  // a chat bubble (thinking is rendered exclusively inside the ExecutionGraph).
-  const streamThinking = streamMsg ? extractThinking(streamMsg) : null;
-  const hasStreamThinking = !!streamThinking && streamThinking.trim().length > 0;
-  const streamTools = streamMsg ? extractToolUse(streamMsg) : [];
-  const hasStreamTools = streamTools.length > 0;
-  const streamImages = streamMsg ? extractImages(streamMsg) : [];
-  const hasStreamAttachedImages = ((streamMsg as RawMessage | null)?._attachedFiles ?? [])
-    .some((file) => file.mimeType.startsWith('image/'));
-  const hasStreamImages = streamImages.length > 0 || hasStreamAttachedImages;
-  const hasStreamToolStatus = streamingTools.length > 0;
-  const hasRunningStreamToolStatus = streamingTools.some((tool) => tool.status === 'running');
-  const hasImageGenerateStreamToolStatus = streamingTools.some((tool) => tool.name === 'image_generate');
-  const currentRuntimeRun = activeRunId ? runtimeRuns[activeRunId] ?? null : null;
-  const currentRuntimeHasToolActivity = Boolean(currentRuntimeRun?.events.some((event) =>
-    event.type === 'tool.started'
-    || event.type === 'tool.updated'
-    || event.type === 'tool.completed'
-    || event.type === 'command.output'
-    || event.type === 'patch.completed'
-    || event.type === 'approval.updated',
-  ));
-  const hasRunningRuntimeToolStatus = hasRunningRuntimeTool(currentRuntimeRun);
-  const shouldRenderStreaming = sending && (hasStreamText || hasStreamTools || hasStreamImages || hasStreamToolStatus);
-  const hasAnyStreamContent = hasStreamText || hasStreamThinking || hasStreamTools || hasStreamImages || hasStreamToolStatus;
-  const hasHistoryCompletionBlockingStream = hasStreamText
-    || hasStreamImages
-    || hasRunningStreamToolStatus
-    || streamTools.length > 0;
-
-  const isEmpty = messages.length === 0 && !sending;
-  const showScrollToLatest = !isEmpty && !isAtBottom;
-  const subagentCompletionInfos = useMemo(
-    () => messages.map((message) => parseSubagentCompletionInfo(message)),
-    [messages],
-  );
-  // Build an index of the *next* real user message after each position.
-  // Gateway history may contain `role: 'user'` messages that are actually
-  // tool-result wrappers (Anthropic API format).  These must NOT split
-  // the run into multiple segments — only genuine user-authored messages
-  // should act as run boundaries.
-  const nextUserMessageIndexes = useMemo(() => {
-    const indexes = new Array<number>(messages.length).fill(-1);
-    let nextUserMessageIndex = -1;
-    for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
-      indexes[idx] = nextUserMessageIndex;
-      if (isRealUserMessage(messages[idx]) && !subagentCompletionInfos[idx]) {
-        nextUserMessageIndex = idx;
+  useEffect(() => {
+    if (!currentSessionKey || !cwd || !workspaceContextAvailable) return;
+    if (currentSessionKey === DEFAULT_SESSION_KEY && sessions.length === 0 && acpActiveSessionKey == null && !sessionDiscoveryAttempted) return;
+    if (acpActiveSessionKey === currentSessionKey && acpWorkspaceRoot === cwd && acpCwd === cwd) return;
+    const acpLoadKey = `${currentSessionKey}\0${cwd}`;
+    if (acpLoadInFlightKeyRef.current === acpLoadKey) return;
+    const currentSession = sessions.find((session) => session.key === currentSessionKey);
+    if (currentSession?.createdLocally) return;
+    const createIfMissing = !currentSession;
+    acpLoadInFlightKeyRef.current = acpLoadKey;
+    if (createIfMissing) selectAcpSession(currentSessionKey, cwd);
+    void loadAcpSession({
+      sessionKey: currentSessionKey,
+      workspaceRoot: cwd,
+      cwd,
+      ...(createIfMissing ? { createIfMissing: true } : {}),
+    }).then((loaded) => {
+      if (loaded && createIfMissing) {
+        acknowledgeAcpSessionCreated(currentSessionKey, cwd);
       }
-    }
-    return indexes;
-  }, [messages, subagentCompletionInfos]);
-
-  const questionDirectoryItems = useMemo<QuestionDirectoryItem[]>(() => {
-    const items: QuestionDirectoryItem[] = [];
-    let questionOrdinal = 0;
-    messages.forEach((message, index) => {
-      if (!isRealUserMessage(message) || subagentCompletionInfos[index]) return;
-      questionOrdinal += 1;
-      items.push({
-        index,
-        ordinal: questionOrdinal,
-        title: buildQuestionDirectoryTitle(message, t('questionDirectory.fallback', { number: questionOrdinal })),
-      });
+    }).finally(() => {
+      if (acpLoadInFlightKeyRef.current === acpLoadKey) {
+        acpLoadInFlightKeyRef.current = null;
+      }
     });
-    return items;
-  }, [messages, subagentCompletionInfos, t]);
-
-  const questionDirectoryVisible = questionDirectoryOpenSessionKey === currentSessionKey && questionDirectoryItems.length > 1;
-
-  const isRunTrigger = useCallback(
-    (message: RawMessage, index: number) => isRealUserMessage(message) && !subagentCompletionInfos[index],
-    [subagentCompletionInfos],
-  );
-
-  const runSegmentMessageIndices = useMemo(
-    () => buildRunSegmentMessageIndices(messages, nextUserMessageIndexes, isRunTrigger),
-    [messages, nextUserMessageIndexes, isRunTrigger],
-  );
-
-  // Indices of intermediate assistant process messages that are represented
-  // in the ExecutionGraphCard (narration text and/or thinking). We suppress
-  // them from the chat stream so they don't appear duplicated below the graph.
-  const foldedNarrationIndices = new Set<number>();
-
-  const userRunCards: UserRunCard[] = messages.flatMap((message, idx) => {
-    if (!isRealUserMessage(message) || subagentCompletionInfos[idx]) return [];
-
-    const runKey = message.id
-      ? `msg-${message.id}`
-      : `${currentSessionKey}:trigger-${idx}`;
-    const nextUserIndex = nextUserMessageIndexes[idx];
-    const segmentEnd = nextUserIndex === -1 ? messages.length : nextUserIndex;
-    // Orphans from paginated history are folded into the graph only — they must
-    // not participate in run lifecycle (hasFinalReply / replyIndex) or a prior
-    // turn's assistant reply is mistaken for the current run's answer (#1048).
-    const postTriggerMessages = getPostTriggerSegmentMessages(messages, idx, nextUserIndex);
-    const segmentMessages = getRunSegmentMessages(messages, idx, nextUserIndex, isRunTrigger);
-    const completionInfos = subagentCompletionInfos
-      .slice(idx + 1, segmentEnd)
-      .filter((value): value is NonNullable<typeof value> => value != null);
-    // A run is considered "open" (still active) when it's the last segment
-    // AND at least one of:
-    //  - sending/pendingFinal/streaming data (normal streaming path)
-    //  - segment has tool calls but no pure-text final reply yet (server-side
-    //    tool execution — Gateway fires phase "end" per tool round which
-    //    briefly clears sending, but the run is still in progress)
-    const isLatestRunSegment = nextUserIndex === -1;
-    const activeRuntimeRun = isLatestRunSegment && activeRunId ? runtimeRuns[activeRunId] ?? null : null;
-    const runtimeHasToolActivity = Boolean(activeRuntimeRun?.events.some((event) =>
-      event.type === 'tool.started'
-      || event.type === 'tool.updated'
-      || event.type === 'tool.completed'
-      || event.type === 'command.output'
-      || event.type === 'patch.completed'
-      || event.type === 'approval.updated',
-    ));
-    const runtimeHasRunningTool = hasRunningRuntimeTool(activeRuntimeRun);
-    const hasToolActivity = runtimeHasToolActivity || postTriggerMessages.some((m) =>
-      m.role === 'assistant' && extractToolUse(m).length > 0,
-    );
-    const hasFinalReply = segmentHasFinalReply(postTriggerMessages);
-    const pendingImageGeneration = isLatestRunSegment
-      && isImageGenerationPending(postTriggerMessages, streamingTools);
-    const imageGenerationSettledInHistory = isLatestRunSegment
-      && hasDeliveredImageGenerationResult(postTriggerMessages)
-      && !pendingImageGeneration;
-    const imageGenerationSettledInStream = isLatestRunSegment
-      && hasStreamImages
-      && (hasImageGenerateStreamToolStatus || postTriggerMessages.some((m) =>
-        m.role === 'assistant' && extractToolUse(m).some((tool) => tool.name === 'image_generate'),
-      ));
-    const imageGenerationSettled = imageGenerationSettledInHistory || imageGenerationSettledInStream;
-    const runStillExecutingTools = hasToolActivity && !hasFinalReply;
-    // runStillExecutingTools bridges the brief gap between tool rounds when
-    // Gateway temporarily clears sending.  However, after an explicit abort
-    // (which clears activeRunId), we must NOT keep the run "open" — so we
-    // gate it on activeRunId being present. We also bail out as soon as a
-    // terminal model error has been surfaced so the run doesn't appear active.
-    // History may already contain the final answer while lifecycle flags are
-    // still armed (missing Gateway terminal phase, blocked chat.send RPC, etc.).
-    // Treat the run as closed for graph/input UI when the transcript is done
-    // and no user-visible reply/tool stream is active. Tool chains stay open
-    // while a runtime/stream tool is running, but plain text turns must still
-    // close when their final reply is already in history and Gateway missed the
-    // terminal lifecycle event.
-    const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettled;
-    const finalReplyCanSettleRun = hasToolActivity
-      || !sending
-      || (!runtimeHasRunningTool && !hasRunningStreamToolStatus);
-    const runCompletedInHistory = imageGenerationSettled || (hasFinalReply
-      && !pendingImageGeneration
-      && !streamBlocksHistoryCompletion
-      && finalReplyCanSettleRun);
-    const isLatestOpenRun = isLatestRunSegment
-      && !runError
-      && !runCompletedInHistory
-      && (sending || pendingFinal || pendingImageGeneration || hasAnyStreamContent || (runStillExecutingTools && !!activeRunId));
-
-    const buildSteps = (omitLastStreamingMessageSegment: boolean): TaskStep[] => {
-      let builtSteps = deriveTaskSteps({
-        messages: segmentMessages,
-        streamingMessage: isLatestOpenRun ? streamingMessage : null,
-        streamingTools: isLatestOpenRun ? streamingTools : [],
-        omitLastStreamingMessageSegment: isLatestOpenRun ? omitLastStreamingMessageSegment : false,
-      });
-
-      for (const completion of completionInfos) {
-        const childMessages = childTranscripts[completion.sessionId];
-        if (!childMessages || childMessages.length === 0) continue;
-        const branchRootId = `subagent:${completion.sessionId}`;
-        const childSteps = deriveTaskSteps({
-          messages: childMessages,
-          streamingMessage: null,
-          streamingTools: [],
-        }).map((step) => ({
-          ...step,
-          id: `${completion.sessionId}:${step.id}`,
-          depth: step.depth + 1,
-          parentId: branchRootId,
-        }));
-
-        builtSteps = [
-          ...builtSteps,
-          {
-            id: branchRootId,
-            label: `${completion.agentId} subagent`,
-            status: 'completed',
-            kind: 'system' as const,
-            detail: completion.sessionKey,
-            depth: 1,
-            parentId: 'agent-run',
-          },
-          ...childSteps,
-        ];
-      }
-
-      return builtSteps;
-    };
-
-    // Show the streaming response as a separate bubble (not inside the
-    // execution graph) once tool activity has happened and the CURRENT stream
-    // chunk carries no tool_use block.
-    //
-    // We use an optimistic promotion strategy because the distinguishing
-    // signal between "narration-before-next-tool" and "final reply" is not
-    // available during early deltas — both are text-only, both arrive after
-    // `hasToolActivity` has flipped true.  Any of these signals opens the
-    // promotion gate:
-    //   1. `pendingFinal`       — tool-result final just fired; next text is
-    //      (almost always) the final reply.
-    //   2. `allToolsCompleted`  — every client-tracked tool entry reached
-    //      `completed` state.
-    //   3. `hasToolActivity`    — at least one prior tool_use exists in the
-    //      segment, i.e. we're past the first tool round.
-    //   4. No tool activity yet — plain Q&A; any stream text is the reply.
-    //
-    // Demotion happens the moment a tool_use block appears in the streaming
-    // message (`streamTools.length > 0`) OR a tool transitions back to
-    // `running`.  When demoted, the stream re-renders inside the graph as a
-    // narration step.  A brief flicker when narration turns into the next
-    // tool round is inherent to optimistic promotion and is accepted.
-    //
-    // Earlier iterations tried restricting this gate to only
-    // `pendingFinal || allToolsCompleted` to protect the trailing
-    // "Thinking..." indicator.  That check is real, but belongs in the
-    // `suppressThinking` coupling below — not here.  With the coupling
-    // fixed, the three-signal gate gives the correct bubble placement for
-    // both narration and final reply.
-    const allToolsCompleted = streamingTools.length > 0 && !hasRunningStreamToolStatus;
-    const canPromoteStreamToBubble = pendingFinal
-      || allToolsCompleted
-      || hasToolActivity
-      || (!hasToolActivity && (hasStreamText || hasStreamImages));
-    const rawStreamingReplyCandidate = isLatestOpenRun
-      && canPromoteStreamToBubble
-      && (hasStreamText || hasStreamImages)
-      && streamTools.length === 0
-      && !hasRunningStreamToolStatus
-      && !runtimeHasRunningTool;
-
-    let steps = activeRuntimeRun && runtimeHasToolActivity
-      ? sanitizeGraphSteps(deriveRuntimeTaskSteps(activeRuntimeRun))
-      : sanitizeGraphSteps(buildSteps(rawStreamingReplyCandidate));
-    let streamingReplyText: string | null = null;
-    if (rawStreamingReplyCandidate) {
-      const trimmedReplyText = sanitizeAssistantReplyText(
-        stripProcessMessagePrefix(streamText, getPrimaryMessageStepTexts(steps)),
-      );
-      const hasReplyText = trimmedReplyText.trim().length > 0
-        && !isInternalAssistantReplyText(trimmedReplyText);
-      if (hasReplyText || hasStreamImages) {
-        streamingReplyText = hasReplyText ? trimmedReplyText : '';
-      } else {
-        steps = activeRuntimeRun && runtimeHasToolActivity
-          ? sanitizeGraphSteps(deriveRuntimeTaskSteps(activeRuntimeRun))
-          : sanitizeGraphSteps(buildSteps(false));
-      }
-    }
-
-    const hasActiveStreamingReply = hasActiveStreamingReplyInRun(
-      isLatestOpenRun,
-      hasAnyStreamContent,
-      streamingReplyText,
-    );
-    const replyIndexOffset = findReplyMessageIndex(postTriggerMessages, hasActiveStreamingReply);
-    const replyIndex = replyIndexOffset === -1 ? null : idx + 1 + replyIndexOffset;
-
-    const segmentAgentId = currentAgentId;
-    const segmentAgentLabel = agents.find((agent) => agent.id === segmentAgentId)?.name || segmentAgentId;
-    const segmentSessionLabel = sessionLabels[currentSessionKey] || currentSessionKey;
-
-    if (steps.length === 0) {
-      if (isLatestOpenRun && streamingReplyText == null) {
-        const historyReplyOffset = findReplyMessageIndex(postTriggerMessages, false);
-        // History can contain the final answer while `sending` is still true
-        // (blocked chat.send RPC, slow provider). Do not show an empty graph
-        // that hides the reply behind "Thinking..." (#1048).
-        if (historyReplyOffset >= 0 && !hasActiveStreamingReply) {
-          return [];
-        }
-        return [{
-          triggerIndex: idx,
-          replyIndex,
-          active: true,
-          agentLabel: segmentAgentLabel,
-          sessionLabel: segmentSessionLabel,
-          segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
-          steps: [],
-          messageStepTexts: [],
-          streamingReplyText: null,
-          suppressThinking: false,
-        }];
-      }
-      const cached = graphStepCache[runKey];
-      if (!cached) return [];
-      // The cache was captured during streaming and may contain stream-
-      // generated message steps that include accumulated narration + reply
-      // text.  Strip these out — historical message steps (from messages[])
-      // will be properly recomputed on the next render with fresh data.
-      const cleanedSteps = sanitizeGraphSteps(cached.steps.filter(
-        (s) => !(s.kind === 'message' && s.id.startsWith('stream-message')),
-      ));
-      return [{
-        triggerIndex: idx,
-        replyIndex: cached.replyIndex,
-        active: false,
-        agentLabel: cached.agentLabel,
-        sessionLabel: cached.sessionLabel,
-        segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
-        steps: cleanedSteps,
-        messageStepTexts: getPrimaryMessageStepTexts(cleanedSteps),
-        streamingReplyText: null,
-        suppressThinking: false,
-      }];
-    }
-
-    // Mark intermediate assistant messages whose process output should be folded into
-    // the ExecutionGraphCard. We fold the text regardless of whether the
-    // message ALSO carries tool calls (mixed `text + toolCall` messages are
-    // common — e.g. "waiting for the page to load…" followed by a `wait`
-    // tool call). This prevents orphan narration bubbles from leaking into
-    // the chat stream once the graph is collapsed.
-    //
-    // While the live stream carries the answer, fold assistant history into the
-    // graph. If the reply is already in history but not streaming, keep it in
-    // the chat stream (do not pass `isLatestOpenRun` alone — that folds all).
-    const segmentReplyOffset = findReplyMessageIndex(postTriggerMessages, hasActiveStreamingReply);
-    for (let offset = 0; offset < postTriggerMessages.length; offset += 1) {
-      if (offset === segmentReplyOffset) continue;
-      const candidate = postTriggerMessages[offset];
-      if (!candidate || candidate.role !== 'assistant') continue;
-      const hasNarrationText = extractText(candidate).trim().length > 0;
-      const hasThinking = !!extractThinking(candidate);
-      if (!hasNarrationText && !hasThinking) continue;
-      foldedNarrationIndices.add(idx + 1 + offset);
-    }
-
-    // The graph should stay "active" (expanded, can show trailing thinking)
-    // for the entire duration of the run — not just until a streaming reply
-    // appears.  Tying active to streamingReplyText caused a flicker: a brief
-    // active→false→true transition collapsed the graph via ExecutionGraphCard's
-    // uncontrolled path before the controlled `expanded` override could kick in.
-    const cardActive = isLatestOpenRun;
-
-    // Suppress the trailing "Thinking..." indicator only when the live stream is
-    // currently rendered AS a streaming step inside this card's graph. In
-    // that case the streaming step itself is the activity signal, and the
-    // separate trailing indicator would be redundant.
-    //   - streamingReplyText != null: stream is promoted to a bubble → graph
-    //     has no live step of its own → DO show the trailing indicator so the
-    //     user still sees progress in the graph (indicator rendered above the
-    //     bubble).
-    //   - no stream content at all (the gap between tool rounds): graph also
-    //     has no live step → DO show the indicator — this is the very case
-    //     the indicator exists for.
-    //   - tool execution is visible in the graph: still show the trailing
-    //     indicator as a separate liveness signal so the user sees both
-    //     "tool is running" and "agent is still thinking".
-    const streamVisiblyActiveInGraph = hasStreamText
-      || hasStreamThinking
-      || hasStreamImages;
-    const streamIsInGraph =
-      isLatestOpenRun && streamingReplyText == null && streamVisiblyActiveInGraph;
-    const suppressThinking = streamIsInGraph;
-
-    return [{
-      triggerIndex: idx,
-      replyIndex,
-      active: cardActive,
-      agentLabel: segmentAgentLabel,
-      sessionLabel: segmentSessionLabel,
-      segmentEnd: nextUserIndex === -1 ? messages.length - 1 : nextUserIndex - 1,
-      steps,
-      messageStepTexts: getPrimaryMessageStepTexts(steps),
-      streamingReplyText,
-      suppressThinking,
-    }];
-  }, [messages, subagentCompletionInfos, currentSessionKey, streamingMessage, streamingTools, pendingFinal, sending, hasAnyStreamContent, hasStreamText, hasStreamThinking, hasStreamImages, hasImageGenerateStreamToolStatus, streamText, streamTools.length, hasRunningStreamToolStatus, hasHistoryCompletionBlockingStream, childTranscripts, currentAgentId, agents, sessionLabels, graphStepCache, runError, isRunTrigger, activeRunId, runtimeRuns]);
-  const hasActiveExecutionGraph = userRunCards.some((card) => card.active);
-  let latestRunSegmentCompletion = { hasFinalReply: false, hasToolActivity: false };
-  let pendingImageGeneration = false;
-  let imageGenerationSettledInHistory = false;
-  for (let idx = messages.length - 1; idx >= 0; idx -= 1) {
-    if (!isRealUserMessage(messages[idx]) || subagentCompletionInfos[idx]) continue;
-    const nextUserIndex = nextUserMessageIndexes[idx];
-    const postTrigger = getPostTriggerSegmentMessages(messages, idx, nextUserIndex);
-    latestRunSegmentCompletion = {
-      hasFinalReply: segmentHasFinalReply(postTrigger),
-      hasToolActivity: postTrigger.some((m) =>
-        m.role === 'assistant' && extractToolUse(m).length > 0,
-      ),
-    };
-    pendingImageGeneration = isImageGenerationPending(
-      postTrigger,
-      nextUserIndex === -1 ? streamingTools : [],
-    );
-    imageGenerationSettledInHistory = nextUserIndex === -1
-      && hasDeliveredImageGenerationResult(postTrigger)
-      && !pendingImageGeneration;
-    break;
-  }
-  const imageGenerationSettledInStream = hasStreamImages
-    && hasImageGenerateStreamToolStatus;
-  const imageGenerationSettled = imageGenerationSettledInHistory || imageGenerationSettledInStream;
-  const streamBlocksHistoryCompletion = hasHistoryCompletionBlockingStream && !imageGenerationSettled;
-  const runSettledInHistory = imageGenerationSettled || (latestRunSegmentCompletion.hasFinalReply
-    && !pendingImageGeneration
-    && !streamBlocksHistoryCompletion
-    && (
-      latestRunSegmentCompletion.hasToolActivity
-      || currentRuntimeHasToolActivity
-      || !sending
-      || (!hasRunningRuntimeToolStatus && !hasRunningStreamToolStatus)
-    ));
-  const shouldClearStoreLifecycleFromHistory = sending
-    && runSettledInHistory
-    && (
-      imageGenerationSettled
-      || (!hasRunningRuntimeToolStatus && !hasRunningStreamToolStatus)
-    );
-  const inputRunActive = (sending && !imageGenerationSettled)
-    || pendingImageGeneration
-    || (hasActiveExecutionGraph && !runSettledInHistory);
-
-  useEffect(() => {
-    if (!shouldClearStoreLifecycleFromHistory) return;
-    useChatStore.setState({
-      sending: false,
-      activeRunId: null,
-      pendingFinal: false,
-      lastUserMessageAt: null,
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingToolImages: [],
-      runError: null,
-    });
-  }, [shouldClearStoreLifecycleFromHistory]);
-
-  const replyTextOverrides = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const card of userRunCards) {
-      if (card.replyIndex == null) continue;
-      const replyMessage = messages[card.replyIndex];
-      if (!replyMessage || replyMessage.role !== 'assistant') continue;
-      const fullReplyText = extractText(replyMessage);
-      const trimmedReplyText = sanitizeAssistantReplyText(
-        stripProcessMessagePrefix(fullReplyText, card.messageStepTexts),
-      );
-      if (trimmedReplyText !== fullReplyText) {
-        map.set(card.replyIndex, trimmedReplyText);
-      }
-    }
-    return map;
-  }, [userRunCards, messages]);
-  const streamingReplyText = userRunCards.find((card) => card.streamingReplyText != null)?.streamingReplyText ?? null;
-
-  // Derive the set of run keys that should be auto-collapsed (run finished
-  // streaming or has a reply override) during render instead of in an effect,
-  // so we don't violate react-hooks/set-state-in-effect. Explicit user toggles
-  // still win via `graphExpandedOverrides` and are merged in at the call site.
-  // Pre-compute generated files per run (memoised so the cards and the
-  // ArtifactPanel can both read them without re-parsing tool calls every
-  // render).
-  const filesByRun = useMemo(() => {
-    const map = new Map<number, GeneratedFile[]>();
-    for (const card of userRunCards) {
-      const userTurnOrdinal = messages
-        .slice(0, card.triggerIndex + 1)
-        .filter((msg) => msg.role === 'user' && (!Array.isArray(msg.content) || !(msg.content as Array<{ type?: string }>).every((b) => b.type === 'tool_result' || b.type === 'toolResult')))
-        .length;
-      const runKey = buildBaselineRunKey(currentSessionKey, userTurnOrdinal);
-      const raw = extractGeneratedFiles(
-        messages,
-        card.triggerIndex,
-        card.segmentEnd,
-        runKey ? (filePath) => getBaseline(runKey, filePath) : undefined,
-      );
-      map.set(card.triggerIndex, raw.filter(generatedFileHasDiffPayload));
-    }
-    return map;
-  }, [currentSessionKey, userRunCards, messages]);
-  const allGeneratedFiles = useMemo(() => {
-    const all: GeneratedFile[] = [];
-    for (const files of filesByRun.values()) all.push(...files);
-    return all;
-  }, [filesByRun]);
-
-  const refreshSignal = useMemo(() => {
-    if (sending) return undefined;
-    return lastUserMessageAt ?? 0;
-  }, [sending, lastUserMessageAt]);
-
-  const autoCollapsedRunKeys = useMemo(() => {
-    const keys = new Set<string>();
-    for (const card of userRunCards) {
-      // Auto-collapse once the run is complete and a final reply exists.
-      // Don't collapse while the reply is still streaming.
-      const isStillStreaming = card.streamingReplyText != null;
-      const shouldCollapse = !isStillStreaming && !card.active && card.replyIndex != null;
-      if (!shouldCollapse) continue;
-      const triggerMsg = messages[card.triggerIndex];
-      const runKey = triggerMsg?.id
-        ? `msg-${triggerMsg.id}`
-        : `${currentSessionKey}:trigger-${card.triggerIndex}`;
-      keys.add(runKey);
-    }
-    return keys;
-  }, [currentSessionKey, messages, userRunCards]);
-
-  useEffect(() => {
-    if (userRunCards.length === 0) return;
-    const current = graphStepCacheStore.get(currentSessionKey) ?? {};
-    let changed = false;
-    const next = { ...current };
-    for (const card of userRunCards) {
-      if (card.steps.length === 0) continue;
-      const triggerMsg = messages[card.triggerIndex];
-      const runKey = triggerMsg?.id
-        ? `msg-${triggerMsg.id}`
-        : `${currentSessionKey}:trigger-${card.triggerIndex}`;
-      const existing = current[runKey];
-      const sameSteps = !!existing
-        && existing.steps.length === card.steps.length
-        && existing.steps.every((step, index) => {
-          const nextStep = card.steps[index];
-          return nextStep
-            && step.id === nextStep.id
-            && step.label === nextStep.label
-            && step.status === nextStep.status
-            && step.kind === nextStep.kind
-            && step.detail === nextStep.detail
-            && step.depth === nextStep.depth
-            && step.parentId === nextStep.parentId;
-        });
-      if (
-        sameSteps
-        && existing?.agentLabel === card.agentLabel
-        && existing?.sessionLabel === card.sessionLabel
-        && existing?.segmentEnd === card.segmentEnd
-        && existing?.replyIndex === card.replyIndex
-        && existing?.triggerIndex === card.triggerIndex
-      ) {
-        continue;
-      }
-      next[runKey] = {
-        steps: card.steps,
-        agentLabel: card.agentLabel,
-        sessionLabel: card.sessionLabel,
-        segmentEnd: card.segmentEnd,
-        replyIndex: card.replyIndex,
-        triggerIndex: card.triggerIndex,
-      };
-      changed = true;
-    }
-    if (changed) {
-      graphStepCacheStore.set(currentSessionKey, next);
-    }
-  }, [userRunCards, messages, currentSessionKey]);
+  }, [acknowledgeAcpSessionCreated, acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, selectAcpSession, sessionDiscoveryAttempted, sessions, workspaceContextAvailable]);
 
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
   const isWindows = platform === 'win32';
+  const showScrollToLatest = visibleAcpTimeline.itemOrder.length > 0 && !isAtBottom;
+  const hasAttemptedAcpPromptForCurrentSession = lastPromptAttemptSessionKey === currentSessionKey;
+  const visibleAcpError = !workspaceUnavailable && acpError
+    && !(acpTimeline.itemOrder.length === 0 && !hasAttemptedAcpPromptForCurrentSession && isRecoverableInitialAcpLoadError(acpError))
+    ? acpError
+    : null;
+  const chooseReplacementWorkspace = async () => {
+    try {
+      const result = await hostApi.dialog.open({
+        title: t('composer.workspacePickerTitle'),
+        buttonLabel: t('composer.workspacePickerButton'),
+        properties: ['openDirectory', 'createDirectory'],
+      });
+      const selected = result.filePaths[0]?.trim();
+      if (!result.canceled && selected) setChatWorkspacePath(selected);
+    } catch {
+      toast.error(t('composer.workspacePickerFailed'));
+    }
+  };
+  const fileActivity = useMemo(() => {
+    if (
+      !workspaceContextKey
+      || resolvedWorkspaceContext?.key !== workspaceContextKey
+      || resolvedWorkspaceContext.sessionKey !== currentSessionKey
+      || acpActiveSessionKey !== currentSessionKey
+      || visibleAcpTimeline.sessionId !== currentSessionKey
+    ) return EMPTY_FILE_ACTIVITY;
+    return projectOpenClawFileActivities({
+      timeline: visibleAcpTimeline,
+      workspaceRoot: resolvedWorkspaceContext.workspaceRoot,
+      executionCwd: resolvedWorkspaceContext.executionCwd,
+    });
+  }, [acpActiveSessionKey, currentSessionKey, resolvedWorkspaceContext, visibleAcpTimeline, workspaceContextKey]);
+  const questionDirectoryItems = useMemo(() => {
+    const userItems = visibleAcpTimeline.itemOrder
+      .map((itemId) => visibleAcpTimeline.itemsById[itemId])
+      .filter((item): item is MessageSegmentItem => item?.kind === 'message-segment' && item.role === 'user');
+    return userItems.map((item, index) => ({
+      itemId: item.id,
+      anchorId: getAcpUserMessageAnchorId(item.id),
+      title: buildQuestionDirectoryTitle(item, t('questionDirectory.fallback', { number: index + 1 })),
+    }));
+  }, [t, visibleAcpTimeline]);
+  const questionDirectoryVisible = questionDirectoryOpenSessionKey === currentSessionKey
+    && questionDirectoryItems.length > 1;
+  const composerContextUsage = visibleAcpTimeline.metadata.usage;
+  const currentPlan = useMemo(
+    () => visibleAcpTimeline.sessionId === currentSessionKey
+      ? getCurrentAcpPlan(visibleAcpTimeline)
+      : null,
+    [currentSessionKey, visibleAcpTimeline],
+  );
+  const successfulSpawnSignature = useMemo(() => {
+    if (visibleAcpTimeline.sessionId !== currentSessionKey) return '';
+    return visibleAcpTimeline.itemOrder
+      .map((itemId) => visibleAcpTimeline.itemsById[itemId])
+      .filter((item): item is ToolCallItem => item?.kind === 'tool-call')
+      .map(successfulSessionSpawnIdentity)
+      .filter((identity): identity is string => identity !== null)
+      .join('\n');
+  }, [currentSessionKey, visibleAcpTimeline]);
+  useEffect(() => {
+    const previous = spawnInvalidationRef.current;
+    if (previous.sessionKey !== currentSessionKey) {
+      spawnInvalidationRef.current = { sessionKey: currentSessionKey, signature: successfulSpawnSignature };
+      return;
+    }
+    if (previous.signature === successfulSpawnSignature) return;
+    spawnInvalidationRef.current = { sessionKey: currentSessionKey, signature: successfulSpawnSignature };
+    if (successfulSpawnSignature) loadCurrentSessionFamily(currentSessionKey);
+  }, [currentSessionKey, loadCurrentSessionFamily, successfulSpawnSignature]);
+  const visibleSessionFamily = loadedSessionFamily?.sessionKey === currentSessionKey
+    ? loadedSessionFamily.result
+    : null;
+  const catalogSessionByKey = useMemo(
+    () => new Map(sessions.map((session) => [session.key, session])),
+    [sessions],
+  );
+  const currentCatalogSession = catalogSessionByKey.get(currentSessionKey);
+  const currentSessionRunState = currentCatalogSession
+    ? projectSessionRunState(currentCatalogSession)
+    : 'unknown';
+  const subagentSessions = useMemo<AcpSubagentSession[]>(() => {
+    if (!visibleSessionFamily) return [];
+    return visibleSessionFamily.children.flatMap((child) => {
+      const catalogSession = catalogSessionByKey.get(child.sessionKey);
+      if (!catalogSession) return [];
+      const runState = catalogSession ? projectSessionRunState(catalogSession) : 'unknown';
+      return [{
+        sessionKey: child.sessionKey,
+        title: child.title,
+        busy: runState === 'busy'
+          || (runState === 'unknown' && sessionAttentionByKey[child.sessionKey]?.observedBusy === true),
+      }];
+    });
+  }, [catalogSessionByKey, sessionAttentionByKey, visibleSessionFamily]);
+  useEffect(() => {
+    for (const session of subagentSessions) {
+      if (!session.busy) activeSubagentSessionKeys.delete(session.sessionKey);
+    }
+    if (currentSessionRunState === 'idle') {
+      activeSubagentSessionKeys.delete(currentSessionKey);
+    }
+  }, [currentSessionKey, currentSessionRunState, subagentSessions]);
+  const isCurrentSessionSubagent = visibleSessionFamily?.current?.sessionKey === currentSessionKey
+    && isNativeSubagentSessionKey(currentSessionKey);
+  const currentSessionTitle = isNativeSubagentSessionKey(currentSessionKey)
+    ? isCurrentSessionSubagent
+      ? formatSubagentSessionTitle(currentSessionKey, visibleSessionFamily.current!.title)
+      : currentSessionKey
+    : catalogSessionTitle;
+  const familyParentSessionKey = isCurrentSessionSubagent
+    ? visibleSessionFamily.current?.parentSessionKey
+    : null;
+  const directParentSessionKey = familyParentSessionKey && catalogSessionByKey.has(familyParentSessionKey)
+    ? familyParentSessionKey
+    : null;
+  const currentSubagentBusy = isCurrentSessionSubagent && (
+    currentSessionRunState === 'busy'
+    || (currentSessionRunState === 'unknown' && (
+      sessionAttentionByKey[currentSessionKey]?.observedBusy === true
+      || activeSubagentSessionKeys.has(currentSessionKey)
+    ))
+  );
+  const completedSubagentTurn = useMemo(() => {
+    if (!currentSubagentBusy) return null;
+    for (let index = visibleAcpTimeline.itemOrder.length - 1; index >= 0; index -= 1) {
+      const item = visibleAcpTimeline.itemsById[visibleAcpTimeline.itemOrder[index]];
+      if (item?.kind !== 'message-segment' || item.role !== 'user') continue;
+      const timing = acpTurnTimings[item.messageId];
+      if (timing?.status === 'complete') {
+        return { messageId: item.messageId, durationMs: timing.durationMs };
+      }
+    }
+    return null;
+  }, [acpTurnTimings, currentSubagentBusy, visibleAcpTimeline]);
+  const [liveSubagentTurn, setLiveSubagentTurn] = useState<{
+    sessionKey: string;
+    messageId: string;
+    startedAtMs: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!completedSubagentTurn) {
+      setLiveSubagentTurn((current) => (
+        current?.sessionKey === currentSessionKey ? null : current
+      ));
+      return;
+    }
+    setLiveSubagentTurn((current) => (
+      current?.sessionKey === currentSessionKey && current.messageId === completedSubagentTurn.messageId
+        ? current
+        : {
+            sessionKey: currentSessionKey,
+            messageId: completedSubagentTurn.messageId,
+            startedAtMs: Date.now() - completedSubagentTurn.durationMs,
+          }
+    ));
+  }, [completedSubagentTurn, currentSessionKey]);
+  const visibleTurnTimings = useMemo(() => {
+    if (liveSubagentTurn?.sessionKey !== currentSessionKey) return acpTurnTimings;
+    return {
+      ...acpTurnTimings,
+      [liveSubagentTurn.messageId]: {
+        source: 'live',
+        status: 'running',
+        startedAtMs: liveSubagentTurn.startedAtMs,
+      } satisfies AcpTurnTiming,
+    };
+  }, [acpTurnTimings, currentSessionKey, liveSubagentTurn]);
+  const navigateToSession = useCallback((sessionKey: string) => {
+    if (!useChatStore.getState().sessions.some((session) => session.key === sessionKey)) return;
+    markSessionRead(sessionKey);
+    if (sessionKey !== currentSessionKey) switchSession(sessionKey);
+  }, [currentSessionKey, markSessionRead, switchSession]);
+  const selectSubagentSession = useCallback((sessionKey: string) => {
+    if (
+      projectSessionRunState(catalogSessionByKey.get(sessionKey) ?? {}) === 'busy'
+      || sessionAttentionByKey[sessionKey]?.observedBusy === true
+    ) {
+      activeSubagentSessionKeys.add(sessionKey);
+    }
+    navigateToSession(sessionKey);
+  }, [catalogSessionByKey, navigateToSession, sessionAttentionByKey]);
+  const handleComposerDraftChange = useCallback((update: SetStateAction<string>) => {
+    setComposerDraft(currentSessionKey, update);
+  }, [currentSessionKey, setComposerDraft]);
 
   return (
     <div
@@ -902,273 +721,228 @@ export function Chat() {
       className={cn(
         'relative flex min-h-0 -m-6 overflow-hidden transition-colors duration-500',
         'bg-background',
-        // Stack above MainLayout's mac-main-drag-region (z-10) so the right-hand
-        // artifact/preview pane stays clickable; window drag is handled by the
-        // sidebar + chat-toolbar drag strips instead.
         isMac && 'z-20 rounded-tl-2xl shadow-[inset_1px_1px_0_hsl(var(--border)/0.55)]',
         isWindows && 'rounded-tl-2xl',
       )}
       style={{ height: isMac ? 'calc(100vh - 1px)' : 'calc(100vh - 2.5rem)' }}
     >
-      {/* Left column: chat */}
-      <div className="flex min-w-0 flex-1 flex-col">
-      {/* Toolbar */}
-      <div className="relative flex shrink-0 items-center justify-end px-4 py-2">
-        <div data-testid="chat-toolbar-drag-region" className="drag-region absolute inset-0 z-0" aria-hidden="true" />
-        <div data-testid="chat-toolbar-actions" className="no-drag relative z-10">
-          <ChatToolbar
-            questionDirectoryOpen={questionDirectoryVisible}
-            questionDirectoryCount={questionDirectoryItems.length}
-            onToggleQuestionDirectory={() =>
-              setQuestionDirectoryOpenSessionKey((openSessionKey) =>
-                openSessionKey === currentSessionKey ? null : currentSessionKey,
-              )
-            }
-          />
-        </div>
-      </div>
-
-      {/* Messages Area */}
-      <div className="relative min-h-0 flex-1 overflow-hidden px-4 py-4">
-        <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-4 lg:flex-row lg:items-stretch">
-          <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto" data-testid="chat-scroll-container">
-            <div
-              ref={contentRef}
-              className={cn(
-                "mx-auto space-y-4",
-                isEmpty ? "w-full max-w-3xl" : "max-w-4xl",
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className={cn(
+          'relative flex shrink-0 items-center px-4 py-2',
+          isWindows ? 'gap-4' : 'justify-end',
+        )}>
+          <div data-testid="chat-toolbar-drag-region" className="drag-region absolute inset-0 z-0" aria-hidden="true" />
+          {(isWindows || isCurrentSessionSubagent) && (
+            <div className={cn(
+              'relative z-10 flex min-w-0 flex-1 items-center gap-2',
+              isWindows ? 'drag-region' : 'no-drag',
+            )}>
+              {isWindows && (
+                <h1
+                  data-testid="chat-session-title"
+                  title={currentSessionTitle}
+                  className="min-w-0 truncate text-sm font-medium text-foreground"
+                >
+                  {currentSessionTitle}
+                </h1>
               )}
-            >
-              {isEmpty ? (
-                <WelcomeScreen />
-              ) : (
+              {isCurrentSessionSubagent && (
                 <>
-                  {hasMoreHistory && (
-                    <div className="flex justify-center pt-2">
-                      <button
-                        type="button"
-                        onClick={() => void loadMoreHistory()}
-                        disabled={loadingMoreHistory}
-                        className="inline-flex items-center gap-2 rounded-full border border-border bg-background/80 px-3 py-1.5 text-xs text-muted-foreground shadow-sm transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
-                        data-testid="chat-load-more-history"
-                      >
-                        {loadingMoreHistory && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                        {loadingMoreHistory ? t('loadingMoreHistory') : t('loadMoreHistory')}
-                      </button>
-                    </div>
-                  )}
-                  {messages.map((msg, idx) => {
-                    if (isInternalMessage(msg) && !hasUserFacingImageAttachments(msg)) return null;
-                    const isFoldedNarration = foldedNarrationIndices.has(idx);
-                    if (isFoldedNarration && !hasUserFacingImageAttachments(msg)) return null;
-                    const suppressToolCards = runSegmentMessageIndices.has(idx);
-                    const isToolOnlyAssistant = normalizeMessageRole(msg.role) === 'assistant'
-                      && extractToolUse(msg).length > 0
-                      && extractText(msg).trim().length === 0
-                      && !extractThinking(msg);
-                    if (suppressToolCards && isToolOnlyAssistant && !(msg._attachedFiles?.length)) {
-                      return null;
-                    }
-                    return (
-                    <div
-                      key={msg.id || `msg-${idx}`}
-                      className="space-y-3"
-                      id={`chat-message-${idx}`}
-                      data-testid={`chat-message-${idx}`}
+                  <Badge
+                    variant="secondary"
+                    data-testid="chat-subagent-marker"
+                    className="no-drag shrink-0 gap-1 px-1.5 py-0.5 text-2xs font-medium"
+                  >
+                    <BotMessageSquare aria-hidden="true" className="h-3 w-3" />
+                    {t('acp.subagentSessions.marker')}
+                  </Badge>
+                  {directParentSessionKey && (
+                    <button
+                      type="button"
+                      onClick={() => navigateToSession(directParentSessionKey)}
+                      aria-label={t('acp.subagentSessions.returnToParent')}
+                      className="no-drag inline-flex min-w-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10"
                     >
-                      <ChatMessage
-                        message={msg}
-                        textOverride={replyTextOverrides.get(idx)}
-                        suppressAssistantText={isFoldedNarration}
-                        suppressToolCards={suppressToolCards}
-                        suppressProcessAttachments={suppressToolCards}
-                        onOpenFile={handleOpenAttachedFile}
-                      />
-                      {userRunCards
-                        .filter((card) => card.triggerIndex === idx)
-                        .map((card) => {
-                          const triggerMsg = messages[card.triggerIndex];
-                          const runKey = triggerMsg?.id
-                            ? `msg-${triggerMsg.id}`
-                            : `${currentSessionKey}:trigger-${card.triggerIndex}`;
-                          const userOverride = graphExpandedOverrides[runKey];
-                          // Always use the controlled expanded prop instead of
-                          // relying on ExecutionGraphCard's uncontrolled state.
-                          // Uncontrolled state is lost on remount (key changes
-                          // when loadHistory replaces message ids), causing
-                          // spurious collapse.  The controlled prop survives
-                          // remounts because it's computed fresh each render.
-                          const expanded = userOverride != null
-                            ? userOverride
-                            : !autoCollapsedRunKeys.has(runKey);
-                          const generatedFiles = filesByRun.get(card.triggerIndex) ?? [];
-                          return (
-                            <div key={`run-${currentSessionKey}:${card.triggerIndex}`} className="space-y-3">
-                              <ExecutionGraphCard
-                                key={`graph-${currentSessionKey}:${card.triggerIndex}`}
-                                agentLabel={card.agentLabel}
-                                steps={card.steps}
-                                active={card.active}
-                                suppressThinking={card.suppressThinking}
-                                expanded={expanded}
-                                onExpandedChange={(next) =>
-                                  setGraphExpandedOverrides((prev) => ({ ...prev, [runKey]: next }))
-                                }
-                              />
-                              {generatedFiles.length > 0 && (
-                                <GeneratedFilesPanel
-                                  files={generatedFiles}
-                                  onOpen={(file) => {
-                                    const target = generatedFileToTarget(file);
-                                    if (isHtmlPreviewExt(file.ext)) {
-                                      openPreview(target);
-                                      return;
-                                    }
-                                    openChanges(target);
-                                  }}
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                    </div>
-                    );
-                  })}
-
-                  {/* Streaming message — render when reply text is separated from graph,
-                      OR when there's streaming content without an active graph */}
-                  {shouldRenderStreaming && (
-                    streamingReplyText != null
-                    || !hasActiveExecutionGraph
-                    || (hasStreamText && streamTools.length === 0 && !hasRunningStreamToolStatus && !hasRunningRuntimeToolStatus)
-                  ) && (
-                    <ChatMessage
-                      suppressToolCards={hasActiveExecutionGraph || runSegmentMessageIndices.size > 0}
-                      message={(() => {
-                        const base = streamMsg
-                          ? {
-                              ...(streamMsg as Record<string, unknown>),
-                              role: (typeof streamMsg.role === 'string' ? streamMsg.role : 'assistant') as RawMessage['role'],
-                              content: streamMsg.content ?? streamText,
-                              timestamp: streamMsg.timestamp ?? streamingTimestamp,
-                            }
-                          : {
-                              role: 'assistant' as const,
-                              content: streamText,
-                              timestamp: streamingTimestamp,
-                            };
-                        // When the reply renders as a separate bubble, strip
-                        // thinking blocks from the message — they belong to
-                        // the execution phase and are already omitted from
-                        // the graph via omitLastStreamingMessageSegment.
-                        if (streamingReplyText != null && Array.isArray(base.content)) {
-                          return {
-                            ...base,
-                            content: (base.content as Array<{ type?: string }>).filter(
-                              (block) => block.type !== 'thinking',
-                            ),
-                          } as RawMessage;
-                        }
-                        return base as RawMessage;
-                      })()}
-                      textOverride={streamingReplyText ?? undefined}
-                      isStreaming
-                      streamingTools={streamingReplyText != null || hasActiveExecutionGraph ? [] : streamingTools}
-                      onOpenFile={handleOpenAttachedFile}
-                    />
-                  )}
-
-                  {/* Activity indicator: waiting for next AI turn after tool execution */}
-                  {inputRunActive && pendingFinal && !shouldRenderStreaming && !hasActiveExecutionGraph && (
-                    <ActivityIndicator phase="tool_processing" />
-                  )}
-
-                  {pendingImageGeneration && (
-                    <ImageGeneratingIndicator />
-                  )}
-
-                  {/* Typing indicator when sending but no stream content yet */}
-                  {inputRunActive && !pendingFinal && !hasAnyStreamContent && !hasActiveExecutionGraph && !pendingImageGeneration && (
-                    <TypingIndicator />
+                      <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{t('acp.subagentSessions.returnToParent')}</span>
+                    </button>
                   )}
                 </>
               )}
             </div>
+          )}
+          <div data-testid="chat-toolbar-actions" className="no-drag relative z-10">
+            <ChatToolbar
+              questionDirectoryOpen={questionDirectoryVisible}
+              questionDirectoryCount={questionDirectoryItems.length}
+              onToggleQuestionDirectory={() => setQuestionDirectoryOpenSessionKey((openSessionKey) => (
+                openSessionKey === currentSessionKey ? null : currentSessionKey
+              ))}
+              workspaceAvailable={!!cwd}
+            />
           </div>
-          {showScrollToLatest && (
-            <button
-              type="button"
-              onClick={() => void scrollToBottom({ animation: 'smooth', ignoreEscapes: true })}
-              className="absolute bottom-4 right-4 z-20 inline-flex items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg shadow-black/10 backdrop-blur transition-colors hover:bg-black/5 dark:hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:shadow-black/30"
-              aria-label={t('scrollToLatest')}
-              title={t('scrollToLatest')}
-              data-testid="chat-scroll-to-latest"
-            >
-              <ArrowDownToLine className="h-3.5 w-3.5" />
-              <span>{t('scrollToLatest')}</span>
-            </button>
-          )}
-
-          {!isEmpty && questionDirectoryVisible && (
-            <QuestionDirectory items={questionDirectoryItems} />
-          )}
-
         </div>
-      </div>
 
-      {/* Run error callout */}
-      {runError && (
-        <div className="px-4 pt-2" data-testid="chat-run-error">
-          <div className="max-w-4xl mx-auto rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3">
-            <div className="flex items-start justify-between gap-3">
-              <p className="text-sm font-medium text-destructive flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                {t('runError.title')}
-              </p>
-              <button
-                type="button"
-                onClick={clearError}
-                className="shrink-0 text-xs text-destructive/60 hover:text-destructive underline"
-                data-testid="chat-run-error-dismiss"
-              >
-                {t('common:actions.dismiss')}
-              </button>
+        <div className="relative min-h-0 flex-1 overflow-hidden px-4 py-4">
+          <div className="relative mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col">
+            <div data-testid="chat-scroll-column" className="relative min-h-0 min-w-0 flex-1">
+              <div ref={scrollRef} className="h-full min-h-0 min-w-0 overflow-y-auto" data-testid="chat-scroll-container">
+                <div ref={contentRef} className="mx-auto max-w-4xl space-y-4">
+                  {workspaceUnavailable && (
+                    <WorkspaceUnavailableBanner
+                      path={cwd}
+                      readOnly={effectiveWorkspace.readOnly}
+                      onChooseWorkspace={effectiveWorkspace.readOnly ? undefined : () => void chooseReplacementWorkspace()}
+                    />
+                  )}
+                  {visibleAcpError && (acpPresentationPending || visibleAcpTimeline.itemOrder.length === 0) && (
+                    <AcpErrorBanner
+                      message={visibleAcpError}
+                      kind={hasAttemptedAcpPromptForCurrentSession ? 'prompt' : 'load'}
+                      onDismiss={clearAcpError}
+                    />
+                  )}
+                  {acpPresentationPending ? (
+                    <AcpLoadingState key={currentSessionKey} />
+                  ) : visibleAcpTimeline.itemOrder.length === 0 ? (
+                    <AcpEmptyState />
+                  ) : (
+                    <>
+                      <AcpTimeline
+                        snapshot={visibleAcpTimeline}
+                        isStreaming={acpSending || acpCancelling || currentSubagentBusy}
+                        turnTimingsByUserMessageId={visibleTurnTimings}
+                        fileActivity={fileActivity}
+                        workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
+                          ? resolvedWorkspaceContext.workspaceRoot
+                          : undefined}
+                        onPermissionSelect={(requestId, optionId) => {
+                          void respondAcpPermission(requestId, optionId);
+                        }}
+                      />
+                      {visibleAcpError && (
+                        <AcpErrorBanner
+                          message={visibleAcpError}
+                          kind={hasAttemptedAcpPromptForCurrentSession ? 'prompt' : 'load'}
+                          onDismiss={clearAcpError}
+                        />
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {showScrollToLatest && (
+                <button
+                  type="button"
+                  onClick={() => void scrollToBottom({ animation: 'smooth', ignoreEscapes: true })}
+                  className="absolute bottom-4 right-4 z-20 inline-flex items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg shadow-black/10 backdrop-blur transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10 dark:shadow-black/30"
+                  aria-label={t('scrollToLatest')}
+                  title={t('scrollToLatest')}
+                  data-testid="chat-scroll-to-latest"
+                >
+                  <ArrowDownToLine className="h-3.5 w-3.5" />
+                  <span>{t('scrollToLatest')}</span>
+                </button>
+              )}
             </div>
-            <p className="mt-1 text-sm text-destructive/90 break-words">
-              {runError}
-            </p>
+
+            {questionDirectoryVisible && <QuestionDirectory items={questionDirectoryItems} />}
           </div>
         </div>
-      )}
 
-      {/* Error bar */}
-      {error && (
-        <div className="px-4 py-2 bg-destructive/10 border-t border-destructive/20">
-          <div className="max-w-4xl mx-auto flex items-center justify-between">
-            <p className="text-sm text-destructive flex items-center gap-2">
-              <AlertCircle className="h-4 w-4" />
-              {error}
-            </p>
-            <button
-              onClick={clearError}
-              className="text-xs text-destructive/60 hover:text-destructive underline"
-            >
-              {t('common:actions.dismiss')}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Input Area */}
-      <ChatInput
-        onSend={sendMessage}
-        onStop={abortRun}
-        disabled={!isGatewayRunning}
-        sending={inputRunActive}
-      />
+        {(!isCurrentSessionSubagent || currentSubagentBusy) && <ChatInput
+          draft={composerDraft}
+          draftKey={currentSessionKey}
+          onDraftChange={handleComposerDraftChange}
+          onSend={(text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => {
+            if (!currentSessionKey || !cwd || !workspaceContextAvailable) return;
+            const targetAgent = targetAgentId
+              ? agents.find((agent) => agent.id === targetAgentId) ?? null
+              : null;
+            const sessionKey = targetAgent
+              ? targetAgent.mainSessionKey || `agent:${targetAgent.id}:main`
+              : currentSessionKey;
+            const existingSession = sessions.find((session) => session.key === sessionKey);
+            setLastPromptAttemptSessionKey(sessionKey);
+            const promptCwd = targetAgent?.workspace || cwd;
+            const media = attachments
+              ?.filter((file) => file.status === 'ready')
+              .map((file) => ({
+                filePath: file.stagedPath,
+                stagingId: file.id,
+                sourceKind: file.sourceKind,
+                fileName: file.fileName,
+                mimeType: file.mimeType,
+              }));
+            if (targetAgent || !existingSession) {
+              selectAcpSession(sessionKey, promptCwd);
+            }
+            void (async () => {
+              if (promptCwd !== cwd) {
+                const promptWorkspace = await hostApi.files.resolveWorkspaceContext({
+                  workspaceRoot: promptCwd,
+                  executionCwd: promptCwd,
+                }).catch(() => ({ ok: false }));
+                if (!promptWorkspace.ok) return;
+              }
+              const createIfMissing = !existingSession || !!existingSession.createdLocally;
+              if (
+                createIfMissing
+                || acpActiveSessionKey !== sessionKey
+                || acpWorkspaceRoot !== promptCwd
+                || acpCwd !== promptCwd
+              ) {
+                const acpLoadKey = `${sessionKey}\0${promptCwd}`;
+                acpLoadInFlightKeyRef.current = acpLoadKey;
+                const loaded = await (async () => {
+                  try {
+                    return await loadAcpSession({
+                      sessionKey,
+                      workspaceRoot: promptCwd,
+                      cwd: promptCwd,
+                      ...(createIfMissing ? { createIfMissing: true } : {}),
+                    });
+                  } finally {
+                    if (acpLoadInFlightKeyRef.current === acpLoadKey) {
+                      acpLoadInFlightKeyRef.current = null;
+                    }
+                  }
+                })();
+                if (loaded && createIfMissing) {
+                  acknowledgeAcpSessionCreated(sessionKey, promptCwd, text);
+                }
+                if (!loaded) return;
+              }
+              const sendPromise = sendAcpPrompt({
+                sessionKey,
+                cwd: promptCwd,
+                message: text,
+                media,
+              });
+              requestAnimationFrame(() => {
+                void scrollToBottom({ animation: 'instant', ignoreEscapes: true });
+              });
+              await sendPromise;
+            })();
+          }}
+          onStop={() => void cancelAcp()}
+          disabled={acpLoading || acpCancelling || !cwd || !workspaceContextAvailable}
+          sending={isCurrentSessionSubagent ? currentSubagentBusy : acpSending || acpCancelling}
+          statusOnly={isCurrentSessionSubagent}
+          imageGenerating={imageGenerationPending}
+          workspaceLabel={workspaceLabel}
+          workspacePath={cwd}
+          workspaceOptions={workspaceOptions}
+          workspaceReadOnly={effectiveWorkspace.readOnly}
+          onSelectWorkspace={setChatWorkspacePath}
+          contextUsage={composerContextUsage}
+          currentPlan={currentPlan}
+          subagentSessions={subagentSessions}
+          onSelectSubagent={selectSubagentSession}
+        />}
       </div>
 
-      {/* Right column: artifact / file preview panel (WorkBuddy-style) */}
       {panelOpen && (
         <>
           <Suspense fallback={null}>
@@ -1183,204 +957,24 @@ export function Chat() {
             style={{ width: `${panelWidthPct}%` }}
           >
             <Suspense
-              fallback={
+              fallback={(
                 <div className="flex h-full items-center justify-center">
                   <LoadingSpinner size="md" />
                 </div>
-              }
+              )}
             >
               <ArtifactPanelLazy
-                files={allGeneratedFiles}
+                fileGroups={fileActivity.fileGroups}
+                uniqueFileCount={fileActivity.uniqueFileCount}
                 agent={currentAgent}
-                runStartedAt={lastUserMessageAt ?? null}
-                refreshSignal={refreshSignal}
+                workspacePath={cwd}
+                workspaceLabel={workspaceLabel}
+                runStartedAt={null}
               />
             </Suspense>
           </aside>
         </>
       )}
-
-      {/* Transparent loading overlay */}
-      {minLoading && !sending && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/20 backdrop-blur-[1px] rounded-xl pointer-events-auto">
-          <div className="bg-background shadow-lg rounded-full p-2.5 border border-border">
-            <LoadingSpinner size="md" />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Question Directory ─────────────────────────────────────────
-
-function QuestionDirectory({ items }: { items: QuestionDirectoryItem[] }) {
-  const { t } = useTranslation('chat');
-  const scrollRef = useRef<HTMLElement | null>(null);
-  const visibleItems =
-    items.length > QUESTION_DIRECTORY_RENDER_LIMIT
-      ? items.slice(-QUESTION_DIRECTORY_RENDER_LIMIT)
-      : items;
-  const hiddenCount = Math.max(0, items.length - visibleItems.length);
-  const lastItemKey = visibleItems.at(-1)?.index ?? -1;
-
-  useEffect(() => {
-    const scrollEl = scrollRef.current;
-    if (!scrollEl) return;
-
-    const scrollToEnd = () => {
-      scrollEl.scrollTop = scrollEl.scrollHeight;
-    };
-
-    scrollToEnd();
-    const frame = requestAnimationFrame(() => {
-      requestAnimationFrame(scrollToEnd);
-    });
-
-    if (typeof ResizeObserver === 'undefined') {
-      return () => cancelAnimationFrame(frame);
-    }
-
-    const observer = new ResizeObserver(scrollToEnd);
-    observer.observe(scrollEl);
-    return () => {
-      cancelAnimationFrame(frame);
-      observer.disconnect();
-    };
-  }, [lastItemKey, visibleItems.length]);
-
-  const handleJumpToMessage = (index: number) => {
-    document.getElementById(`chat-message-${index}`)?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
-  };
-
-  return (
-    <aside
-      data-testid="chat-question-directory"
-      className="flex min-h-0 w-full shrink-0 self-stretch lg:w-64 xl:w-72"
-      aria-label={t('questionDirectory.title')}
-    >
-      <div className="sticky top-2 flex min-h-0 w-full flex-1 flex-col rounded-2xl border border-black/5 bg-black/[0.02] p-3 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
-        <div className="mb-2 flex shrink-0 items-center justify-between gap-2 px-1">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {t('questionDirectory.title')}
-          </h2>
-          <span className="rounded-full bg-black/5 px-2 py-0.5 text-2xs font-medium text-muted-foreground dark:bg-white/10">
-            {items.length}
-          </span>
-        </div>
-        <nav ref={scrollRef} className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pr-1">
-          {visibleItems.map((item) => (
-            <button
-              key={item.index}
-              type="button"
-              data-testid={`chat-question-directory-item-${item.index}`}
-              onClick={() => handleJumpToMessage(item.index)}
-              className={cn(
-                'group flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition-colors',
-                'text-foreground/70 hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
-              )}
-              title={item.title}
-            >
-              <span className="line-clamp-2 min-w-0 text-xs leading-5">
-                {item.title}
-              </span>
-            </button>
-          ))}
-          {hiddenCount > 0 && (
-            <div className="px-2 py-2 text-xs leading-5 text-muted-foreground">
-              {t('questionDirectory.moreHint', { count: hiddenCount })}
-            </div>
-          )}
-        </nav>
-      </div>
-    </aside>
-  );
-}
-
-// ── Welcome Screen ──────────────────────────────────────────────
-
-function WelcomeScreen() {
-  const { t } = useTranslation('chat');
-  const quickActions = [
-    { key: 'askQuestions', label: t('welcome.askQuestions') },
-    { key: 'creativeTasks', label: t('welcome.creativeTasks') },
-    { key: 'brainstorming', label: t('welcome.brainstorming') },
-  ];
-
-  return (
-    <div className="flex flex-col items-center justify-center text-center h-[60vh]">
-      <h1 className="text-4xl md:text-5xl font-serif text-foreground/80 mb-8 font-normal tracking-tight">
-        {t('welcome.subtitle')}
-      </h1>
-
-      <div className="flex flex-wrap items-center justify-center gap-2.5 max-w-lg w-full">
-        {quickActions.map(({ key, label }) => (
-          <button 
-            key={key}
-            className="px-4 py-1.5 rounded-full border border-black/10 dark:border-white/10 text-meta font-medium text-foreground/70 hover:bg-black/5 dark:hover:bg-white/5 transition-colors bg-black/[0.02]"
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Typing Indicator ────────────────────────────────────────────
-
-function TypingIndicator() {
-  return (
-    <div className="flex gap-3" data-testid="chat-typing-indicator">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full mt-1 bg-black/5 dark:bg-white/5 text-foreground">
-        <Sparkles className="h-4 w-4" />
-      </div>
-      <div className="bg-black/5 dark:bg-white/5 text-foreground rounded-2xl px-4 py-3">
-        <div className="flex gap-1">
-          <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-          <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-          <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Activity Indicator (shown between tool cycles) ─────────────
-
-function ActivityIndicator({ phase }: { phase: 'tool_processing' }) {
-  void phase;
-  return (
-    <div className="flex gap-3" data-testid="chat-activity-indicator">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full mt-1 bg-black/5 dark:bg-white/5 text-foreground">
-        <Sparkles className="h-4 w-4" />
-      </div>
-      <div className="bg-black/5 dark:bg-white/5 text-foreground rounded-2xl px-4 py-3">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-          <span>Processing tool results…</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ImageGeneratingIndicator() {
-  const { t } = useTranslation('chat');
-  return (
-    <div className="flex gap-3" data-testid="chat-image-generating-indicator">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full mt-1 bg-black/5 dark:bg-white/5 text-foreground">
-        <Sparkles className="h-4 w-4" />
-      </div>
-      <div className="bg-black/5 dark:bg-white/5 text-foreground rounded-2xl px-4 py-3">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-          <span>{t('imageGeneration.generating')}</span>
-        </div>
-      </div>
     </div>
   );
 }

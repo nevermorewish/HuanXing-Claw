@@ -1,0 +1,139 @@
+# DeepClawのアーキテクチャ
+
+このドキュメントは、READMEの「アーキテクチャ」セクションの詳細版です。
+
+DeepClawは **統合Host APIレイヤーを備えたデュアルプロセスアーキテクチャ**を採用しています。Rendererは単一のクライアント抽象を呼び出し、プロトコル選択とプロセスライフサイクルはElectron Mainが管理します。
+
+OpenClawの設定配信もElectron Mainが管理します。Gateway実行中は`config.get`が返す権威あるスナップショットを基準にし、変更を`config.set`でコミットします。Gatewayが停止中または起動中の場合は、同じコーディネーターが解決済みJSON5設定ファイルを更新しますが、これを理由にGatewayを起動することはありません。そのため、通常のプロバイダー、Agent、チャネル、バインディング、スキル、モデルの変更ではGatewayプロセスを置き換えません。完全な再起動は、プロキシなどのプロセス起動環境の変更と、ユーザーによる明示的な操作に限られます。確認済みのプロセス終了とWebSocket切断では、既存の自動再接続経路が引き続き使用されます。WebSocketハートビートの連続3回までの欠落は診断のみとし、短いpong遅延で長時間実行中の処理を中断しません。pongまたは任意の受信メッセージでカウントをリセットし、4回連続で欠落した場合に、ライフサイクルが自動復旧可能なrunning状態であれば、保護されたGateway自動復旧を要求します。認証設定をSQLiteへ書き込んだ後はOpenClawの`secrets.reload`を呼び出し、実行中のAgentがプロセス再起動なしで新しい認証情報を読み取れるようにします。
+
+ChatはElectron Mainが所有するACP stdio bridgeを使用します。Mainはアプリが管理するGateway tokenをプライベートなプロセス環境経由でローカルの子プロセスへ渡すため、ランタイム設定の再読み込み後もACP履歴リプレイの認証が維持されます。保護されたGateway復旧が受理済みのメインセッションrunを中断した場合、パッチ済みOpenClawランタイムは別の復旧runを開始し、直接中断されたrun idを明示的なlineageとして保持します。Chat eventとagent eventはそのlineageを維持し、再接続したACP bridgeはpending promptを新しいrunへ順次引き継ぎ、run単位のストリームカーソルをリセットしてセッション単位のtool eventを購読します。その後の再起動で応答永続化後のプロセス内終端通知が失われた場合、ACPは現在のrun idとsession keyを`agent.wait`へ渡し、Gatewayは永続化されたlifecycle ownerがそのrunと一致する場合に限って完了させます。RendererはGatewayランタイムの識別子を認識せず、型付きhost eventから同じメモリ内ACP timelineを描画し続けます。Gatewayはproviders、models、skills、workspace、settings、diagnostics、media configurationなどの非Chat機能を引き続き担当します。
+
+### ACPのセマンティック権威
+
+ACPが提供するすべてのChatの意味とコンテキストでは、`session/load`履歴だけでなくACPを優先的なセマンティック権威として扱います。該当する場合のセッションIDとルーティング、ワークスペースと実行`cwd`、promptとtimelineの状態、標準resourceや添付ファイルのセマンティクスが含まれます。ACPが値やイベントを提供する場合、MainとRendererはGatewayスナップショット、transcriptからの推論、ローカル設定、別の並列投影で置き換えず、ACPの結果を使用します。
+
+上流ACPに相当する機能がない場合に限り、ACPを迂回できます。その互換性パスは狭く有界で、sessionとgenerationに紐付ける必要があります。また、理由、情報源、制限、調整方法、削除条件を該当するHarness referenceまたはruleに記録し、競合する権威へ暗黙に発展させてはいけません。
+
+パッチ済みOpenClawはProviderへ送信する前にprompt圧力を回復します。ツール結果テキストの合計が予約分を差し引いたprompt予算を超える場合、実測した超過量と安全バッファーから1つの切り詰め目標を算出し、mid-turn、pre-prompt、post-compactionの回復で再利用します。古いツール出力から縮小しつつ、各ツール呼び出しと結果の対応、および最新結果の有界な表現を保持します。コンパクションが「実際の会話メッセージなし」と返しても、実測済みのtranscriptまたはレンダリング済みprompt圧力は破棄しません。構造化されたコンパクション失敗イベントでは、トリガー元と任意の安定した理由コードを分離し、プレーンテキストの理由をACP記録前に500文字へ制限します。
+
+### ACP履歴の権威と有界なtranscript補足
+
+ACP `session/load` のリプレイがChat履歴の主要な権威です。DeepClawは第二のACP ledger、縮約timeline、リプレイキャッシュ、再構成したツール履歴を永続化しません。OpenClawの構造化ACP event ledgerが利用できない場合、そのACP adapterは永続化済みtranscriptの`toolCall`と`toolResult`を順番どおりにネイティブなtool updateへ再構成し、text-tool-textの境界を維持します。DeepClaw自身はこれらの記録を推論しません。OpenClawの一部の機能にはまだ完全に対応するACP実装がありません。たとえば、assistantメディアがACPから省略されたり、Gateway処理によってassistantの`MEDIA:`ディレクティブが表示中のライブ返信から削除されたりする場合があります。そのため、DeepClawは有界で印付き、メモリのみの互換性補足だけを保持します。
+
+#### 完了ターンのリプレイhydration
+
+ACP promptの実行中は、`session/update`通知が表示中のtimelineを即時更新し続けます。Rendererは型付き`session/prompt`呼び出しを待ち、それが成功した直後に限って、同じsessionへ`session/load`を1回発行します。2つの操作の間に固定sleepはありません。hydrationは、同じsession、generation、workspace、Renderer load requestが引き続きcurrentな場合だけ開始されます。Mainは共有ACP connection上のloadを直列化し、次のrouting generationを割り当て、上流`session/load`の完了までリプレイ通知をbufferし、そのraw batchをload結果とともに返します。
+
+loadの進行中も、Rendererは完了済みのlive timelineを保持し、空のloading状態を表示しません。IPC結果のhandoff中に先着した次generationのeventもbufferします。成功した空でないbatchだけを返却sessionとgenerationでfilterし、空のACP timelineから通常のreducerで縮約して、完全なtimelineとgenerationを1回のstate updateでatomicにcommitします。Pending attachmentは新generationで再解決し、live turn timingはリプレイされたuser message identityへ移し、リプレイの画像証拠は旧generationの未完了projectionを引き継ぎます。失敗、例外、stale、supersededなhydrationはlive contentを置き換えません。成功しても空、またはresumed-active-promptの結果では表示itemを保持しますが、後続eventを失わないようMainがcommit済みのgenerationは採用します。
+
+成功した`session/prompt`の完了が、この処理の因果的なsettlement barrierです。無条件の遅延はlatencyを増やし、sending状態を長く維持し、navigationや別のloadによってhydrationがsupersedeされるwindowを広げる一方、上流の永続化完了を保証しません。将来、リプレイがdurableになる前にprompt successを返す上流実装が確認された場合は、固定遅延ではなく、同じidentity guardの下で空リプレイまたは現在ターン欠落を条件にした有界retryを使います。以下の1500 ms retryは有界なtranscript互換補足だけに適用され、ACP replay hydrationの一部ではありません。
+
+- 非同期の画像生成完了は、同じセッションに確認済みの`image_generate`コンテキストがあり、完了の証拠が信頼できるか、承認済みのtranscript証拠である場合に限り復元できます。
+- 一般の添付ファイルは、永続化されたassistantの`__openclaw.media`事実、または行頭にある明示的なassistant `MEDIA:`ディレクティブから復元できます。復元されるのは添付ファイルの参照と宣言されたメタデータだけで、周囲のassistantメッセージは復元しません。
+- ACPリプレイには元のイベントタイムスタンプがないため、Mainは有界のtranscript JSONLレコードからメタデータのみのターン全体の時間を追加できます。これはACPですでに復元されたターンにだけ付与できます。
+- cronセッションのACPリプレイが完全に空の場合、Mainの型付きcron履歴APIがスケジュール済みプロンプトと完了サマリーを提供できます。識別された実行サマリーにOpenClawの切り詰めマーカーがある場合、対応するrunのtranscriptがより長く、永続化されたサマリーの完全な接頭辞を共有するときに限り、Mainは最終assistantテキストを復元できます。
+
+履歴の読み取りは最新のtranscriptメッセージ1000件に制限されます。成功したライブpromptでは直ちに1回読み取り、1500ms後に1回だけ再試行します。すべての補足は、正確なsession、ACP generation、操作、必要に応じてライブユーザーターンに紐付けられます。古い、欠落した、重複した、または曖昧な一致は破棄されます。これらの経路で通常のassistantメッセージ、thought、tool、plan、permission、ファイルアクティビティ、欠落したターン、別のChat履歴を再構成してはいけません。Mainはtranscriptの証拠からネイティブACPイベントを生成しません。標準ACP resourceが優先され、上流が同等の内容を提供した場合はこれらの互換性例外を削除します。
+
+別の会話やページを開いても、未完了のACP応答はストリーミングを継続します。完了前に戻ると最新のメモリ内timelineを復元し、ライブ応答の表示を続けます。完了後は通常のACP履歴リプレイが正の情報源です。
+
+ACPのassistantターンにはターン全体の所要時間が表示されます。ライブ計時はクライアントが観測したpromptライフサイクルに従い、アプリ内の移動後も継続します。履歴の所要時間はElectron Mainが有界のOpenClaw transcriptタイムスタンプから算出し、ACPリプレイですでに復元されたターンにだけ付与します。
+
+ACP Chatは標準ACP resourceを添付ファイルとして描画します。ユーザーが選択した画像はファイル名をホバーオーバーレイに表示するサムネイルになり、その他の利用可能な添付カードにはファイル名と淡色で省略可能なソースパスが表示されます。現在のOpenClaw ACP adapterがassistantメディアを省略した場合、正規化された永続OpenClawメディア情報と明示的なassistant `MEDIA:`ディレクティブを、transcript専用メタデータを表示せずに添付カードとして復元できます。
+
+既存のローカルファイル参照は、アクティブなworkspace外のパスを含め、プレビューやオープンのたびにElectron Mainが正確なsessionとgenerationについて再検証します。AIが生成したプレビュー可能なローカル添付（20 MB以下の`.docx`と`.pptx`を含む）は、読み取り専用のアプリ内プレビューを主操作として保持し、対応アプリで開く操作やFinder、エクスプローラー、システムのファイルマネージャーで表示する操作を副次メニューから選べます。ローカルHTML添付では、そのメニューの先頭項目から右側のPreviewタブでファイルを開けます。
+
+Officeプレビューには同じ制限があります。`.doc`と`.ppt`はシステムアプリで開き、DOCXのページ区切りはMicrosoft Wordと異なる場合があり、PPTXのアニメーション、画面切り替え、メディア再生はサポートされません。対応アプリの検出はmacOSとWindowsでのみ利用でき、Linuxまたは検出失敗時は通知なしにファイル位置の表示だけへ切り替わります。その他のローカルファイル（20 MBを超えるOfficeファイルを含む）は、クリック後にシステムアプリで開きます。ユーザーが選択したフォルダー添付は送信後も利用でき、クリックするとシステムのファイルマネージャーで開きます。DeepClawはその内容を読み取ったりプレビューしたりしません。リモートHTTP/HTTPS添付はクリック後に外部で開きます。正規のメディア情報を伴わない通常の文章中のパスは添付として扱われません。
+
+ACP Chatは、ランタイムが画像生成メディアを信頼できる構造化メディアとして配信した場合、生成画像のプレビューも表示できます。信頼できるOpenClaw internal-UI配信と画像生成タスクに紐付いた最終返信では、テキストだけの失敗説明を含む元のユーザー向け完了テキストを保持し、汎用画像キャプションに置き換えません。OpenClawの履歴リプレイ中、assistant画像の`MEDIA:`マーカーは、同じセッションで画像生成タスクの開始が記録されている場合に限りインライン画像へ昇格します。プレビューは任意のRendererファイルシステムアクセスではなく、Electron Mainのホストメディア処理で読み込みます。標準ACPの画像とresourceコンテンツが引き続き優先され、そのまま描画されます。
+
+### ACPファイルアクティビティのセマンティクス
+
+- ファイルアクティビティは、成功して完了したOpenClawの`write`、`edit`、`apply_patch`呼び出しから投影されます。ツール認識は公式OpenClaw Chat UIに従い、完了した呼び出しだけに絞る処理はDeepClaw固有です。
+- 作成・変更された行は、プレビュー可能なassistant添付と同じファイルカードと**Open with**メニューを使い、状態と任意の`+/-`概要を保持します。HTMLではメニューの先頭項目が右側の**Preview**タブでファイルを開きます。削除行には **Changes** 操作だけを残します。アプリ一覧、選択アプリで開く操作、表示位置の要求は、workspaceルートと相対パスからElectron Mainが個別に再検証します。ツール由来のパスは添付にならず、Rendererへ正規化済みのネイティブパスも公開されません。
+- `write` はツールの宣言どおり、対象パスがすでに存在する可能性があっても、作成および全行追加の差分として表示されます。
+- **Changes** はツールが宣言したアクティビティを時系列に記録するセッション単位の記録です。Gitの出力でも、検証済みソースベースラインとの差分でもありません。
+- 各ファイルについて、Changesはassistantの各ターンに最大1つのdiffエディターを表示します。安全に連結できる断片は合成し、独立した断片は1つのエディターに連結しますが、完全なファイルベースラインとの差分とはみなしません。
+- シェルコマンド、スクリプト、ユーザー、IDEによる副作用は検出されません。
+- 完全なACPリプレイから記録済みのファイルアクティビティを復元できます。リプレイが不完全でも、DeepClawはフォールバック推論で欠落を補いません。
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        DeepClaw デスクトップアプリ                    │
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │              Electron メインプロセス                        │  │
+│  │  • ウィンドウとアプリケーションのライフサイクル管理        │  │
+│  │  • Gatewayプロセスの監視                                    │  │
+│  │  • システム統合（トレイ、通知、キーチェーン）               │  │
+│  │  • 自動更新のオーケストレーション                           │  │
+│  └────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────┬───────────────────────────────────┘
+                               │
+                               │ IPC（権威ある制御プレーン）
+                               ▼
+┌──────────────────────────────────────────────────────────────────┐
+│              React Rendererプロセス                              │
+│  • モダンなコンポーネントベースUI（React 19）                    │
+│  • Zustandによる状態管理                                         │
+│  • 統一host-api/api-client呼び出し                               │
+│  • assistant返信はMarkdown、ユーザー入力はプレーンテキスト       │
+└──────────────────────────────┬───────────────────────────────────┘
+                               │
+                               │ 型付きIPCリクエスト
+                               ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                Main Host ServicesとGateway Manager                │
+│  • host:invoke型付きサービスディスパッチ                         │
+│  • 設定、ファイル、セッション、スキル、プロバイダー、診断       │
+│  • Main所有のGateway WebSocketとプロセス監視                     │
+└──────────────────────────────┬───────────────────────────────────┘
+                               │
+                               │ Main所有WebSocket
+                               ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     OpenClaw Gateway                             │
+│  • AIエージェントランタイムとオーケストレーション                │
+│  • メッセージチャネル管理                                        │
+│  • スキル/プラグイン実行環境                                     │
+│  • プロバイダー抽象化レイヤー                                    │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### 設計原則
+
+- **プロセス分離**：AIランタイムは別プロセスで動作し、重い計算中もUIの応答性を保ちます。
+- **フロントエンド呼び出しの単一入口**：Rendererのリクエストは`host-api` / `api-client`を経由し、プロトコルの詳細は安定したインターフェースの背後に隠されます。
+- **Mainプロセスによるトランスポート管理**：Electron MainがACP Chat stdio bridgeとGatewayトランスポートを所有し、Rendererは型付きIPCでMainと通信します。
+- **拡張IPCの貢献点**：Mainプロセス拡張はHTTP routeではなく、型付きIPCレジストリを通じてhost-api actionを提供します。
+- **グレースフルリカバリ**：再接続、タイムアウト、バックオフを内蔵し、一時的な障害を自動処理します。
+- **セキュアストレージ**：APIキーや機密データにはOSのネイティブな安全な保存機構を使用します。
+- **CORSセーフ設計**：RendererはローカルGatewayやHost API HTTPエンドポイントを直接呼び出しません。
+
+### Gatewayの存活復旧
+
+Gatewayの存活判定はElectron Mainが行います。WebSocket pongは有用なトランスポート証拠です。通常のトランスポート喪失時は、Mainが既存のGateway WebSocket再接続パスを優先して接続を復旧します。DeepClawは3分間の信頼できる存活信号なしの期限を設け、その後に`system-presence`でコアRPCルーターを検証してから、自身が所有するプロセスを置き換えるか判断します。
+
+| 設計点 | 処理 | 目的 |
+| --- | --- | --- |
+| pong、任意の受信Gatewayフレーム、成功したRPCを存活信号として扱う* | `lastAliveAt`を更新し、古いdeadlineコールバックを取り消す | 接続が実際のトラフィックを処理している際、大規模なAI操作（Skillやツール呼び出しなど）がpongを遅延させることがあるため、その遅延をGateway停止と誤判定しない |
+| 単一の3分間静止deadlineを使う | 180秒まではheartbeat missを記録するだけで、socketやプロセスを変更しない | 自動復旧を制限しつつ、pongだけによる再起動を防ぐ |
+| deadline時にコントロールプレーンを検証する | 5秒タイムアウトで`system-presence` RPCを1回呼び出し、純粋なWebSocket信号ではなくコントロールプレーンからGateway状態を確認する。成功時は通常監視へ戻る | 静かなイベントストリームとコア読取RPCを処理できないGatewayを区別する |
+| 利用不能なDeepClaw所有プロセスだけを再起動する | deadline probe失敗時に保護されたGateway再起動パスを要求する | 真に応答しないローカル子プロセスを復旧する |
+| 外部Gatewayを自動停止しない | DeepClawのWebSocketだけを優先して置き換えまたは再接続し、利用不能診断を報告する | DeepClawが所有しないプロセスにshutdownを発行しない |
+| 権威的なライフサイクルパスを分離する | 既存のWebSocket close再接続、code 1012 reload復旧、プロセス終了復旧、手動再起動を維持する | 重複または競合するstop/start操作を防ぐ |
+| この経路でアクティブな作業負荷を追跡しない | chat、tool、cronの実行中かどうかにかかわらず同じdeadlineを適用する | 存活復旧を虚偽の再起動防止とプロセス所有権に集中させる |
+
+> * この存活信号の設計は [LobsterAI](https://github.com/netease-youdao/lobsterai) を参考にしています。
+
+### プロセスモデルとGatewayのトラブルシューティング
+
+- DeepClawはElectronアプリのため、**1つのアプリインスタンスでも複数のOSプロセスが表示される**（main/renderer/zygote/utility）のは正常です。
+- 単一起動保護にはElectronのロックに加えてローカルのプロセスファイルロックのフォールバックを使用し、デスクトップIPCやセッションバスが不安定な環境での二重起動を防ぎます。
+- ローリングアップグレード中に旧版と新版が混在すると、単一起動保護が非対称になる場合があります。安定性のため、すべてのデスクトップクライアントを同じバージョンへ更新してください。
+- OpenClaw Gatewayのリスナーは**単一所有者**である必要があります。`127.0.0.1:18789`をListenするプロセスは1つだけにしてください。
+- Gatewayのreadinessは`system-presence`、`health`、`status`などOpenClawのコア信号を基準にします。メモリまたはチャネルの失敗は、Gateway全体の障害ではなく機能低下として表示されます。
+- アクティブなリスナーは次のコマンドで確認できます。
+  - macOS/Linux：`lsof -nP -iTCP:18789 -sTCP:LISTEN`
+  - Windows（PowerShell）：`Get-NetTCPConnection -LocalPort 18789 -State Listen`
+- ウィンドウの閉じるボタン（`X`）はDeepClawをトレイに隠すだけで、完全終了ではありません。完全終了にはトレイメニューの **Quit DeepClaw** を使用してください。

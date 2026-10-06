@@ -1,9 +1,14 @@
 import { mkdirSync, copyFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { ElectronApplication } from '@playwright/test';
 
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const SESSION_KEY = 'agent:main:main';
+const MAIN_WORKSPACE = '/workspace';
+const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
+
+type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -26,14 +31,15 @@ const tableMarkdown = [
   '| @DashHuang | "OpenAI is rolling out KYC" screenshot sparks discussion | — |',
 ].join('\n');
 
-const seededHistory = [
+const seededUpdates: AcpSessionUpdate[] = [
   {
-    role: 'user',
+    sessionUpdate: 'user_message',
+    messageId: 'table-header-user',
     content: [{ type: 'text', text: 'Please summarize today\'s AI news on X.' }],
-    timestamp: Date.now(),
   },
   {
-    role: 'assistant',
+    sessionUpdate: 'agent_message',
+    messageId: 'table-header-assistant',
     content: [{
       type: 'text',
       text: [
@@ -50,14 +56,35 @@ const seededHistory = [
         '**Key trends:** Today\'s hottest three topics in the AI corner of X are (1) GPT Images 2 / GPT Image2, (2) Claude account bans, and (3) OpenAI Workspace Agents.',
       ].join('\n'),
     }],
-    timestamp: Date.now(),
   },
 ];
+
+async function emitAcpSessionUpdates(app: ElectronApplication, updates: AcpSessionUpdate[]) {
+  await app.evaluate(
+    async ({ app: _app }, payload) => {
+      const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+      for (const update of payload.updates) {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('chat:acp-session-update', {
+            sessionKey: payload.sessionKey,
+            generation: 1,
+            historical: true,
+            notification: {
+              sessionId: payload.sessionKey,
+              update,
+            },
+          });
+        }
+      }
+    },
+    { sessionKey: SESSION_KEY, updates },
+  );
+}
 
 const CLOUD_ARTIFACT_PATH = '/opt/cursor/artifacts/chat_table_header_light.png';
 
 test.describe('DeepClaw chat table header styling', () => {
-  test('renders markdown table headers with transparent background and bold text in light theme', async ({ launchElectronApp }, testInfo) => {
+  test('renders transparent light and muted dark Markdown table headers', async ({ launchElectronApp }, testInfo) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -67,19 +94,27 @@ test.describe('DeepClaw chat table header styling', () => {
           [stableStringify(['sessions.list', {}])]: {
             success: true,
             result: {
-              sessions: [{ key: SESSION_KEY, displayName: 'main' }],
+              sessions: [{ key: SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE }],
             },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: seededHistory },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: seededHistory },
           },
         },
         hostApi: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: {
+            success: true,
+            generation: 1,
+          },
           [stableStringify(['/api/gateway/status', 'GET'])]: {
             ok: true,
             data: {
@@ -95,7 +130,7 @@ test.describe('DeepClaw chat table header styling', () => {
               ok: true,
               json: {
                 success: true,
-                agents: [{ id: 'main', name: 'main' }],
+                agents: [{ id: 'main', name: 'main', workspace: MAIN_WORKSPACE, mainSessionKey: SESSION_KEY }],
               },
             },
           },
@@ -112,6 +147,8 @@ test.describe('DeepClaw chat table header styling', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await emitAcpSessionUpdates(app, seededUpdates);
 
       await page.evaluate(() => {
         const root = document.documentElement;
@@ -119,16 +156,25 @@ test.describe('DeepClaw chat table header styling', () => {
         root.classList.add('light');
       });
 
-      const header = page.locator('.prose table thead th').first();
-      await expect(header).toBeVisible({ timeout: 30_000 });
+      const headerParent = page.locator('.prose table thead').first();
+      const headerCell = headerParent.locator('th').first();
+      await expect(headerCell).toBeVisible({ timeout: 30_000 });
 
-      const headerStyles = await header.evaluate((el) => {
-        const style = window.getComputedStyle(el);
-        return { backgroundColor: style.backgroundColor, fontWeight: style.fontWeight };
+      const lightHeaderStyles = await headerParent.evaluate((element) => {
+        const cell = element.querySelector('th');
+        if (!cell) throw new Error('Markdown table header cell is missing');
+        const parentStyle = window.getComputedStyle(element);
+        const cellStyle = window.getComputedStyle(cell);
+        return {
+          parentBackgroundColor: parentStyle.backgroundColor,
+          cellBackgroundColor: cellStyle.backgroundColor,
+          cellFontWeight: cellStyle.fontWeight,
+        };
       });
 
-      expect(headerStyles.backgroundColor).toBe('rgba(0, 0, 0, 0)');
-      expect(Number(headerStyles.fontWeight)).toBeGreaterThanOrEqual(700);
+      expect(lightHeaderStyles.parentBackgroundColor).toBe('rgba(0, 0, 0, 0)');
+      expect(lightHeaderStyles.cellBackgroundColor).toBe('rgba(0, 0, 0, 0)');
+      expect(Number(lightHeaderStyles.cellFontWeight)).toBeGreaterThanOrEqual(700);
 
       const tableEl = page.locator('.prose table').first();
       await tableEl.scrollIntoViewIfNeeded();
@@ -146,6 +192,29 @@ test.describe('DeepClaw chat table header styling', () => {
       } catch {
         // Cloud artifact directory is optional; ignore when unavailable (e.g. on CI runners).
       }
+
+      await page.evaluate(() => {
+        const root = document.documentElement;
+        root.classList.remove('light');
+        root.classList.add('dark');
+      });
+      const darkHeaderStyles = await headerParent.evaluate((element) => {
+        const cell = element.querySelector('th');
+        if (!cell) throw new Error('Markdown table header cell is missing');
+        const mutedProbe = document.createElement('div');
+        mutedProbe.className = 'bg-muted';
+        document.body.appendChild(mutedProbe);
+        const mutedBackgroundColor = window.getComputedStyle(mutedProbe).backgroundColor;
+        mutedProbe.remove();
+        return {
+          parentBackgroundColor: window.getComputedStyle(element).backgroundColor,
+          cellBackgroundColor: window.getComputedStyle(cell).backgroundColor,
+          mutedBackgroundColor,
+        };
+      });
+
+      expect(darkHeaderStyles.parentBackgroundColor).toBe(darkHeaderStyles.mutedBackgroundColor);
+      expect(darkHeaderStyles.cellBackgroundColor).toBe(darkHeaderStyles.mutedBackgroundColor);
     } finally {
       await closeElectronApp(app);
     }

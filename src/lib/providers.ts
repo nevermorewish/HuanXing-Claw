@@ -6,11 +6,15 @@
  * layer so TypeScript project boundaries remain stable during the migration.
  */
 
+import { providerIcons } from '@/assets/providers';
+import { resolveSupportedLanguage, type LanguageCode } from '@shared/language';
+
 export const PROVIDER_TYPES = [
   'anthropic',
   'openai',
   'google',
   'openrouter',
+  'tokendance',
   'ark',
   'moonshot',
   'moonshot-global',
@@ -18,6 +22,8 @@ export const PROVIDER_TYPES = [
   'deepseek',
   'minimax-portal',
   'minimax-portal-cn',
+  'zai',
+  'zai-global',
   'modelstudio',
   'ollama',
   'custom',
@@ -40,6 +46,7 @@ export const BUILTIN_PROVIDER_TYPES = [
   'openai',
   'google',
   'openrouter',
+  'tokendance',
   'ark',
   'moonshot',
   'moonshot-global',
@@ -47,6 +54,8 @@ export const BUILTIN_PROVIDER_TYPES = [
   'deepseek',
   'minimax-portal',
   'minimax-portal-cn',
+  'zai',
+  'zai-global',
   'modelstudio',
   'ollama',
 ] as const;
@@ -98,7 +107,16 @@ export interface ProviderTypeInfo {
   hidden?: boolean;
   /** If true, hide OAuth sign-in controls in the add-provider UI (logic remains enabled). */
   hideOAuthUi?: boolean;
+  /** Limits discovery in the add-provider UI without affecting configured accounts. */
+  availableInLanguages?: readonly LanguageCode[];
 }
+
+export type ProviderRecoveryAction = 'top_up_balance' | 'reauthorize_api_key' | 'api_key_quota';
+export type ProviderValidationResult = {
+  valid: boolean;
+  error?: string;
+  recoveryAction?: ProviderRecoveryAction;
+};
 
 export type ProviderAuthMode =
   | 'api_key'
@@ -143,8 +161,6 @@ export interface ProviderAccount {
   updatedAt: string;
 }
 
-import { providerIcons } from '@/assets/providers';
-
 /** All supported provider types with UI metadata */
 export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
   {
@@ -155,8 +171,8 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     model: 'Claude',
     requiresApiKey: true,
     showModelId: true,
-    defaultModelId: 'claude-opus-4-6',
-    modelIdPlaceholder: 'claude-opus-4-6',
+    defaultModelId: 'claude-opus-5',
+    modelIdPlaceholder: 'claude-opus-5',
     docsUrl: 'https://platform.claude.com/docs/en/api/overview',
   },
   {
@@ -168,9 +184,9 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     requiresApiKey: true,
     isOAuth: true,
     supportsApiKey: true,
-    defaultModelId: 'gpt-5.5',
+    defaultModelId: 'gpt-5.6-sol',
     showModelId: true,
-    modelIdPlaceholder: 'gpt-5.5',
+    modelIdPlaceholder: 'gpt-5.6-sol',
     apiKeyUrl: 'https://platform.openai.com/api-keys',
   },
   {
@@ -180,21 +196,79 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     placeholder: 'AIza...',
     model: 'Gemini',
     requiresApiKey: true,
-    defaultModelId: 'gemini-3.1-pro-preview',
+    defaultModelId: 'gemini-3.8-flash',
     showModelId: true,
-    modelIdPlaceholder: 'gemini-3.1-pro-preview',
+    modelIdPlaceholder: 'gemini-3.8-flash',
     apiKeyUrl: 'https://aistudio.google.com/app/apikey',
   },
-  { id: 'openrouter', name: 'OpenRouter', icon: '🌐', placeholder: 'sk-or-v1-...', model: 'Multi-Model', requiresApiKey: true, showModelId: true, modelIdPlaceholder: 'openai/gpt-5.5', defaultModelId: 'openai/gpt-5.5', docsUrl: 'https://openrouter.ai/models' },
+  // OpenRouter prefixes floating "latest" aliases with `~`; the pinned
+  // equivalent is `deepseek/deepseek-v4.1-flash`.
+  { id: 'openrouter', name: 'OpenRouter', icon: '🌐', placeholder: 'sk-or-v1-...', model: 'Multi-Model', requiresApiKey: true, showModelId: true, modelIdPlaceholder: '~deepseek/deepseek-flash-latest', defaultModelId: '~deepseek/deepseek-flash-latest', docsUrl: 'https://openrouter.ai/models' },
+  {
+    id: 'tokendance',
+    name: 'TokenDance',
+    icon: 'TD',
+    placeholder: 'your-tokendance-api-key',
+    model: 'Multi-Model',
+    requiresApiKey: true,
+    isOAuth: true,
+    supportsApiKey: true,
+    defaultBaseUrl: 'https://tokendance.space/gateway/v1',
+    defaultModelId: 'qwen3.8-max',
+    showModelId: true,
+    modelIdPlaceholder: 'qwen3.8-max',
+    apiKeyUrl: 'https://tokendance.space/keys',
+    docsUrl: 'https://tokendance.space/docs/ai-integration',
+    availableInLanguages: ['zh'],
+  },
   { id: 'minimax-portal-cn', name: 'MiniMax (CN)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M3', showModelId: true, modelIdPlaceholder: 'MiniMax-M3', apiKeyUrl: 'https://platform.minimaxi.com/' },
-  { id: 'moonshot', name: 'Moonshot (CN)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.cn/v1', showModelId: true, defaultModelId: 'kimi-k2.6', modelIdPlaceholder: 'kimi-k2.6', docsUrl: 'https://platform.moonshot.cn/' },
-  { id: 'moonshot-global', name: 'Moonshot (Global)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.ai/v1', showModelId: true, defaultModelId: 'kimi-k2.6', modelIdPlaceholder: 'kimi-k2.6', docsUrl: 'https://platform.moonshot.ai/' },
-  { id: 'siliconflow', name: 'SiliconFlow (CN)', icon: '🌊', placeholder: 'sk-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://api.siliconflow.cn/v1', showModelId: true, modelIdPlaceholder: 'deepseek-ai/DeepSeek-V3', defaultModelId: 'deepseek-ai/DeepSeek-V3', docsUrl: 'https://docs.siliconflow.cn/cn/userguide/introduction' },
-  { id: 'deepseek', name: 'DeepSeek', icon: '🐋', placeholder: 'sk-...', model: 'DeepSeek', requiresApiKey: true, defaultBaseUrl: 'https://api.deepseek.com/v1', showModelId: true, modelIdPlaceholder: 'deepseek-v4-pro', defaultModelId: 'deepseek-v4-pro', apiKeyUrl: 'https://platform.deepseek.com/api_keys', docsUrl: 'https://api-docs.deepseek.com/', docsUrlZh: 'https://api-docs.deepseek.com/zh-cn/' },
+  { id: 'moonshot', name: 'Moonshot (CN)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.cn/v1', showModelId: true, defaultModelId: 'kimi-k3', modelIdPlaceholder: 'kimi-k3', docsUrl: 'https://platform.moonshot.cn/' },
+  { id: 'moonshot-global', name: 'Moonshot (Global)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.ai/v1', showModelId: true, defaultModelId: 'kimi-k3', modelIdPlaceholder: 'kimi-k3', docsUrl: 'https://platform.moonshot.ai/' },
+  // GLM-5.3 on SiliconFlow is 1M-context but text-only; the multimodal sibling
+  // is `zai-org/GLM-5.3-Flash`.
+  { id: 'siliconflow', name: 'SiliconFlow (CN)', icon: '🌊', placeholder: 'sk-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://api.siliconflow.cn/v1', showModelId: true, modelIdPlaceholder: 'zai-org/GLM-5.3', defaultModelId: 'zai-org/GLM-5.3', docsUrl: 'https://docs.siliconflow.cn/cn/userguide/introduction' },
+  { id: 'deepseek', name: 'DeepSeek', icon: '🐋', placeholder: 'sk-...', model: 'DeepSeek', requiresApiKey: true, defaultBaseUrl: 'https://api.deepseek.com/v1', showModelId: true, modelIdPlaceholder: 'deepseek-flash', defaultModelId: 'deepseek-flash', apiKeyUrl: 'https://platform.deepseek.com/api_keys', docsUrl: 'https://api-docs.deepseek.com/', docsUrlZh: 'https://api-docs.deepseek.com/zh-cn/' },
   { id: 'minimax-portal', name: 'MiniMax (Global)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M3', showModelId: true, modelIdPlaceholder: 'MiniMax-M3', apiKeyUrl: 'https://platform.minimax.io' },
+  {
+    id: 'zai',
+    name: 'Z.AI (CN)',
+    icon: 'Z',
+    placeholder: 'your-z.ai-api-key',
+    model: 'GLM',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    showBaseUrl: true,
+    showModelId: true,
+    modelIdPlaceholder: 'glm-5.3-flash',
+    defaultModelId: 'glm-5.3-flash',
+    apiKeyUrl: 'https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys',
+    docsUrl: 'https://docs.bigmodel.cn/cn/api/introduction',
+    docsUrlZh: 'https://docs.bigmodel.cn/cn/api/introduction',
+    codePlanPresetBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+    codePlanPresetModelId: 'glm-5.3-flash',
+    codePlanDocsUrl: 'https://docs.bigmodel.cn/cn/coding-plan/quick-start',
+  },
+  {
+    id: 'zai-global',
+    name: 'Z.AI (Global)',
+    icon: 'Z',
+    placeholder: 'your-z.ai-api-key',
+    model: 'GLM',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
+    showBaseUrl: true,
+    showModelId: true,
+    modelIdPlaceholder: 'glm-5.3-flash',
+    defaultModelId: 'glm-5.3-flash',
+    apiKeyUrl: 'https://z.ai/manage-apikey',
+    docsUrl: 'https://docs.z.ai/guides/overview/quick-start',
+    codePlanPresetBaseUrl: 'https://api.z.ai/api/coding/paas/v4',
+    codePlanPresetModelId: 'glm-5.3-flash',
+    codePlanDocsUrl: 'https://docs.z.ai/devpack/quick-start',
+  },
   { id: 'modelstudio', name: 'Model Studio', icon: '☁️', placeholder: 'sk-...', model: 'Qwen', requiresApiKey: true, defaultBaseUrl: 'https://coding.dashscope.aliyuncs.com/v1', showBaseUrl: true, defaultModelId: 'qwen3.6-plus', showModelId: true, showModelIdInDevModeOnly: true, modelIdPlaceholder: 'qwen3.6-plus', apiKeyUrl: 'https://bailian.console.aliyun.com/', hidden: true },
   { id: 'ark', name: 'ByteDance Ark', icon: 'A', placeholder: 'your-ark-api-key', model: 'Doubao', requiresApiKey: true, defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'ep-20260228000000-xxxxx', docsUrl: 'https://www.volcengine.com/', codePlanPresetBaseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3', codePlanPresetModelId: 'ark-code-latest', codePlanDocsUrl: 'https://www.volcengine.com/docs/82379/1928261?lang=zh' },
-  { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'Not required', requiresApiKey: false, defaultBaseUrl: 'http://localhost:11434/v1', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen3:latest' },
+  { id: 'ollama', name: 'Ollama', icon: '🦙', placeholder: 'Not required', requiresApiKey: false, defaultBaseUrl: 'http://localhost:11434/v1', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen3:latest', docsUrl: 'https://icnnp7d0dymg.feishu.cn/wiki/FuPewJKmii7Gpmkx2W7cI3uxnRf' },
   {
     id: 'custom',
     name: 'Custom',
@@ -215,8 +289,8 @@ export function getProviderIconUrl(type: ProviderType | string): string | undefi
 }
 
 /** Whether a provider's logo needs CSS invert in dark mode (all logos are monochrome) */
-export function shouldInvertInDark(_type: ProviderType | string): boolean {
-  return true;
+export function shouldInvertInDark(type: ProviderType | string): boolean {
+  return type !== 'tokendance';
 }
 
 /** Provider list shown in the Setup wizard */
@@ -225,6 +299,18 @@ export const SETUP_PROVIDERS = PROVIDER_TYPE_INFO;
 /** Get type info by provider type id */
 export function getProviderTypeInfo(type: ProviderType): ProviderTypeInfo | undefined {
   return PROVIDER_TYPE_INFO.find((t) => t.id === type);
+}
+
+/** Whether a provider should be discoverable in the add-provider UI for this language. */
+export function isProviderAvailableForLanguage(
+  provider: Pick<ProviderTypeInfo, 'availableInLanguages'>,
+  language: string | null | undefined,
+): boolean {
+  if (!provider.availableInLanguages?.length) {
+    return true;
+  }
+
+  return provider.availableInLanguages.includes(resolveSupportedLanguage(language));
 }
 
 export function getProviderDocsUrl(

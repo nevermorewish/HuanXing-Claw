@@ -5,6 +5,7 @@ import {
   formatModelRefLabel,
   formatProviderDisplayName,
   isConfiguredModelRefAvailable,
+  normalizeModelIdForRuntimeProvider,
   resolveConfiguredModelRef,
   resolveRuntimeProviderKey,
 } from '../../src/lib/model-options';
@@ -59,6 +60,9 @@ describe('model option helpers', () => {
   it('formats model refs using only the text after the provider prefix', () => {
     expect(formatModelRefLabel('openrouter/openai/gpt-5.5')).toBe('openai/gpt-5.5');
     expect(formatModelRefLabel('custom-alpha1234/model-alpha')).toBe('model-alpha');
+    expect(normalizeModelIdForRuntimeProvider('openai/gpt-5.6', 'openai')).toBe('gpt-5.6');
+    expect(normalizeModelIdForRuntimeProvider('openrouter/openai/gpt-5.6', 'openrouter'))
+      .toBe('openai/gpt-5.6');
   });
 
   it('formats provider display names using custom labels or vendor names', () => {
@@ -83,12 +87,16 @@ describe('model option helpers', () => {
       {
         modelRef: 'custom-alpha123/model-alpha',
         label: 'model-alpha (Alpha)',
+        modelId: 'model-alpha',
+        providerName: 'Alpha',
         runtimeProviderKey: 'custom-alpha123',
         accountId: 'alpha1234',
       },
       {
         modelRef: 'custom-beta5678/provider/model-beta',
         label: 'provider/model-beta (Beta)',
+        modelId: 'provider/model-beta',
+        providerName: 'Beta',
         runtimeProviderKey: 'custom-beta5678',
         accountId: 'beta5678',
       },
@@ -110,6 +118,121 @@ describe('model option helpers', () => {
     expect(options).toHaveLength(1);
     expect(options[0].modelRef).toBe('custom-gamma901/model-gamma');
     expect(options[0].label).toBe('model-gamma (Alpha)');
+  });
+
+  it('builds multiple configured model options from account metadata custom models', () => {
+    const accountId = 'model-hub-01';
+    const runtimeKey = resolveRuntimeProviderKey(account({ id: accountId, label: 'Model Hub' }));
+    const options = buildConfiguredModelOptions(
+      [
+        account({
+          id: accountId,
+          label: 'Model Hub',
+          model: 'model-default',
+          metadata: { customModels: ['gpt-5.4', 'claude-sonnet-4', 'gpt-5.4'] },
+        }),
+      ],
+      [status(accountId)],
+      vendors,
+      accountId,
+    );
+
+    expect(options).toEqual([
+      {
+        modelRef: `${runtimeKey}/gpt-5.4`,
+        label: 'gpt-5.4 (Model Hub)',
+        modelId: 'gpt-5.4',
+        providerName: 'Model Hub',
+        runtimeProviderKey: runtimeKey,
+        accountId,
+      },
+      {
+        modelRef: `${runtimeKey}/claude-sonnet-4`,
+        label: 'claude-sonnet-4 (Model Hub)',
+        modelId: 'claude-sonnet-4',
+        providerName: 'Model Hub',
+        runtimeProviderKey: runtimeKey,
+        accountId,
+      },
+    ]);
+  });
+
+  it.each([
+    ['api_key', 'openai-api-key'],
+    ['oauth_device', 'openai-device-oauth'],
+    ['oauth_browser', 'openai-browser-oauth'],
+  ] as const)('uses only the selected built-in model for %s accounts with stale metadata', (authMode, id) => {
+    const openAiAccount = account({
+      id,
+      vendorId: 'openai',
+      label: 'OpenAI',
+      authMode,
+      model: 'openai/gpt-5.6',
+      metadata: { customModels: ['gpt-5.5', 'openai/gpt-5.6'] },
+    });
+
+    const options = buildConfiguredModelOptions(
+      [openAiAccount],
+      authMode === 'api_key' ? [status(id)] : [],
+      vendors,
+      openAiAccount.id,
+    );
+
+    expect(options).toEqual([
+      {
+        modelRef: 'openai/gpt-5.6',
+        label: 'gpt-5.6 (OpenAI)',
+        modelId: 'gpt-5.6',
+        providerName: 'OpenAI',
+        runtimeProviderKey: 'openai',
+        accountId: id,
+      },
+    ]);
+    expect(resolveConfiguredModelRef('openai/gpt-5.5', 'openai/gpt-5.5', options))
+      .toBe('openai/gpt-5.6');
+  });
+
+  it('preserves custom runtime keys that are already normalized', () => {
+    const runtimeKey = resolveRuntimeProviderKey(account({
+      id: 'custom-enterpri',
+      label: 'Enterprise',
+      model: 'custom-enterpri/gpt-5.4',
+      metadata: { customModels: ['gpt-5.4', 'gpt-5.5'] },
+    }));
+
+    const options = buildConfiguredModelOptions(
+      [
+        account({
+          id: 'custom-enterpri',
+          label: 'Enterprise',
+          model: 'custom-enterpri/gpt-5.4',
+          metadata: { customModels: ['gpt-5.4', 'gpt-5.5'] },
+        }),
+      ],
+      [status('custom-enterpri')],
+      vendors,
+      'custom-enterpri',
+    );
+
+    expect(runtimeKey).toBe('custom-enterpri');
+    expect(options).toEqual([
+      {
+        modelRef: 'custom-enterpri/gpt-5.4',
+        label: 'gpt-5.4 (Enterprise)',
+        modelId: 'gpt-5.4',
+        providerName: 'Enterprise',
+        runtimeProviderKey: 'custom-enterpri',
+        accountId: 'custom-enterpri',
+      },
+      {
+        modelRef: 'custom-enterpri/gpt-5.5',
+        label: 'gpt-5.5 (Enterprise)',
+        modelId: 'gpt-5.5',
+        providerName: 'Enterprise',
+        runtimeProviderKey: 'custom-enterpri',
+        accountId: 'custom-enterpri',
+      },
+    ]);
   });
 
   it('treats malformed provider snapshots as empty options', () => {

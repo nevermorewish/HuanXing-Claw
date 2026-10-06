@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { extname, relative, resolve, sep } from 'node:path';
+import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { logger } from '../utils/logger';
 import { isRecord } from './payload-utils';
@@ -24,6 +24,7 @@ function safePositiveInteger(value: unknown, fallback: number): number {
 function isPathInside(parentDir: string, childPath: string): boolean {
   const relativePath = relative(parentDir, childPath);
   return relativePath.length > 0
+    && !isAbsolute(relativePath)
     && !relativePath.startsWith('..')
     && !relativePath.includes(`..${sep}`);
 }

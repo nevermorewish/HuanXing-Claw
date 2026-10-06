@@ -1,6 +1,4 @@
-import type { ChatRuntimeEvent } from '../chat-runtime-events';
-
-/** Metadata for locally-attached files (not from Gateway) */
+/** Metadata for files attached to ACP prompts or projected by bounded ACP media compatibility. */
 export interface AttachedFileMeta {
   fileName: string;
   mimeType: string;
@@ -32,6 +30,7 @@ export interface MessageUsage {
 }
 
 /** Raw message from OpenClaw chat.history */
+/** Structured OpenClaw transcript message used by bounded ACP supplements. */
 export interface RawMessage {
   role: 'user' | 'assistant' | 'system' | 'toolresult';
   content: unknown; // string | ContentBlock[]
@@ -61,6 +60,20 @@ export interface RawMessage {
    */
   _durationMs?: number;
   /** Local-only: file metadata for user-uploaded attachments (not sent to/from Gateway) */
+  /** Canonical OpenClaw-owned transcript metadata. */
+  __openclaw?: {
+    media?: Array<{
+      path?: string;
+      url?: string;
+      contentType?: string;
+      kind?: string;
+      fileName?: string;
+      sizeBytes?: number;
+      messageId?: string;
+      workspaceDir?: string;
+    }>;
+  };
+  /** Renderer metadata for user-selected files included in an ACP prompt. */
   _attachedFiles?: AttachedFileMeta[];
 }
 
@@ -98,6 +111,8 @@ export interface ContentBlock {
 /** Session from sessions.list */
 export interface ChatSession {
   key: string;
+  /** OpenClaw transcript session UUID, used to identify synthetic fallback titles. */
+  sessionId?: string;
   label?: string;
   displayName?: string;
   derivedTitle?: string;
@@ -107,53 +122,41 @@ export interface ChatSession {
   updatedAt?: number;
   status?: string;
   hasActiveRun?: boolean;
+  /** Channel provider that last delivered to this session (e.g. webchat, feishu, discord). */
+  channel?: string;
+  /** OpenClaw ACP session cwd, mirrored for display and routing. OpenClaw is the source of truth. */
+  workspacePath?: string;
+  /** Renderer-local placeholder created by New Chat before ACP has created the backing session. */
+  createdLocally?: boolean;
 }
 
-export interface ToolStatus {
-  id?: string;
-  toolCallId?: string;
-  name: string;
-  status: 'running' | 'completed' | 'error';
-  durationMs?: number;
-  summary?: string;
-  updatedAt: number;
-}
-
-export interface ChatRuntimeRunState {
-  runId: string;
+export type GatewaySessionsChangedPayload = Record<string, unknown> & {
   sessionKey?: string;
-  status: 'running' | 'completed' | 'error' | 'aborted';
-  startedAt?: number;
-  endedAt?: number;
-  assistantText: string;
-  thinkingText: string;
-  events: ChatRuntimeEvent[];
+  key?: string;
+  reason?: string;
+  phase?: string;
+  ts?: number;
+  session?: Record<string, unknown>;
+  status?: string;
+  hasActiveRun?: boolean;
+  updatedAt?: number | null;
+};
+
+export type LoadSessionsOptions = {
+  force?: boolean;
+  gatewayGeneration?: number;
+};
+
+export interface DeleteSessionsResult {
+  deletedKeys: string[];
+  failedKeys: string[];
 }
+
+export type DeleteSessionResult =
+  | { success: true }
+  | { success: false; error: string };
 
 export interface ChatState {
-  // Messages
-  messages: RawMessage[];
-  loading: boolean;
-  loadingMoreHistory: boolean;
-  hasMoreHistory: boolean;
-  error: string | null;
-  runError: string | null;
-  /** Per-session runError text dismissed by the user (sessionKey -> error message). */
-  dismissedRunErrors: Record<string, string>;
-
-  // Streaming
-  sending: boolean;
-  activeRunId: string | null;
-  streamingText: string;
-  streamingMessage: unknown | null;
-  streamingTools: ToolStatus[];
-  pendingFinal: boolean;
-  lastUserMessageAt: number | null;
-  /** Images collected from tool results, attached to the next assistant message */
-  pendingToolImages: AttachedFileMeta[];
-  runtimeRuns: Record<string, ChatRuntimeRunState>;
-
-  // Sessions
   sessions: ChatSession[];
   currentSessionKey: string;
   currentAgentId: string;
@@ -162,34 +165,17 @@ export interface ChatState {
   /** Last message timestamp (ms) per session key, used for sorting */
   sessionLastActivity: Record<string, number>;
 
-  // Thinking
-  thinkingLevel: string | null;
-
-  // Actions
-  loadSessions: () => Promise<void>;
+  loadSessions: (options?: LoadSessionsOptions) => Promise<void>;
+  handleSessionsChanged: (payload: GatewaySessionsChangedPayload) => void;
   switchSession: (key: string) => void;
+  selectAcpSession: (key: string, workspacePath?: string) => void;
   newSession: () => void;
-  deleteSession: (key: string) => Promise<void>;
+  acknowledgeAcpSessionCreated: (key: string, workspacePath?: string, initialPrompt?: string) => void;
+  deleteSession: (key: string) => Promise<DeleteSessionResult>;
+  deleteSessions: (keys: string[]) => Promise<DeleteSessionsResult>;
+  removeAgentSessions: (agentId: string) => void;
+  reconcileAgentSessionTombstones: (agentIds: string[]) => void;
   renameSession: (key: string, label: string) => Promise<void>;
-  cleanupEmptySession: () => void;
-  loadHistory: (quiet?: boolean) => Promise<void>;
-  loadMoreHistory: () => Promise<void>;
-  sendMessage: (
-    text: string,
-    attachments?: Array<{
-      fileName: string;
-      mimeType: string;
-      fileSize: number;
-      stagedPath: string;
-      preview: string | null;
-    }>,
-    targetAgentId?: string | null,
-  ) => Promise<void>;
-  abortRun: () => Promise<void>;
-  handleChatEvent: (event: Record<string, unknown>) => void;
-  handleRuntimeEvent: (event: ChatRuntimeEvent) => void;
-  refresh: () => Promise<void>;
-  clearError: () => void;
 }
 
 export const DEFAULT_CANONICAL_PREFIX = 'agent:main';

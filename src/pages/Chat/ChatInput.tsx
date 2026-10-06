@@ -3,17 +3,21 @@
  * Textarea with send button and universal file upload support.
  * Enter to send, Shift+Enter for new line.
  * Supports: native file picker, clipboard paste, drag & drop.
- * Files are staged to disk via IPC — only lightweight path references
- * are sent with the message (no base64 over WebSocket).
+ * Files are staged through the typed Host API and included as local media
+ * references in the ACP session/prompt request.
  */
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown } from 'lucide-react';
+import {
+  useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo,
+  type SetStateAction,
+} from 'react';
+import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { hostApi } from '@/lib/host-api';
 import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
+import { useSettingsStore } from '@/stores/settings';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
 import { useArtifactPanel } from '@/stores/artifact-panel';
@@ -24,10 +28,20 @@ import { buildConfiguredModelOptions, formatModelRefLabel, isConfiguredModelRefA
 import type { AgentSummary } from '@/types/agent';
 import type { QuickAccessSkill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { collectDroppedFiles } from '@/lib/collect-dropped-files';
 import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
+import { DEFAULT_WORKSPACE_CWD, isDefaultWorkspacePath, normalizeWorkspacePath } from '@/lib/workspace-context';
+import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
+import { useVoiceDictation } from '@/hooks/useVoiceDictation';
+import { VoiceDictationButton } from '@/components/voice/VoiceDictationButton';
+import { MicrophonePermissionDialog } from '@/components/voice/MicrophonePermissionDialog';
+import type { AsrMicrophoneAccessResult } from '@shared/host-api/contract';
+import { ModelIcon } from '@/components/common/ModelIcon';
+import { AcpSessionPlan } from './AcpSessionPlan';
+import { AcpSubagentSessions, type AcpSubagentSession } from './AcpSubagentSessions';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -36,22 +50,130 @@ export interface FileAttachment {
   fileName: string;
   mimeType: string;
   fileSize: number;
-  stagedPath: string;        // disk path for gateway
+  stagedPath: string;        // Host-authorized source or buffer-staging path included in ACP prompt media
+  sourceKind: 'path' | 'buffer';
   preview: string | null;    // data URL for images, null for others
   status: 'staging' | 'ready' | 'error';
   error?: string;
 }
 
+export interface ChatWorkspaceOption {
+  path: string;
+  label: string;
+}
+
+type ComposerExpandedPanel = 'subagents' | 'plan' | null;
+
 interface ChatInputProps {
   onSend: (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => void;
   onStop?: () => void;
+  draft?: string;
+  draftKey?: string;
+  onDraftChange?: (update: SetStateAction<string>) => void;
   disabled?: boolean;
   sending?: boolean;
+  statusOnly?: boolean;
+  imageGenerating?: boolean;
+  workspaceLabel?: string;
+  workspacePath?: string;
+  workspaceOptions?: ChatWorkspaceOption[];
+  workspaceReadOnly?: boolean;
+  onSelectWorkspace?: (path: string) => void;
+  contextUsage?: unknown;
+  currentPlan?: AcpCurrentPlan | null;
+  subagentSessions?: AcpSubagentSession[];
+  onSelectSubagent?: (sessionKey: string) => void;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
 
 const DIRECTORY_MIME_TYPE = 'application/x-directory';
+
+type ContextUsage = {
+  used: number;
+  size: number;
+  percent: number;
+};
+
+function getContextUsage(value: unknown, modelContextWindow?: number): ContextUsage | null {
+  if (!value || typeof value !== 'object') return null;
+  const { used, size: reportedSize } = value as Record<string, unknown>;
+  if (
+    typeof used !== 'number'
+    || typeof reportedSize !== 'number'
+    || !Number.isFinite(used)
+    || !Number.isFinite(reportedSize)
+    || used < 0
+    || reportedSize <= 0
+  ) return null;
+
+  const size = typeof modelContextWindow === 'number'
+    && Number.isFinite(modelContextWindow)
+    && modelContextWindow > 0
+    ? Math.floor(modelContextWindow)
+    : reportedSize;
+  return {
+    used,
+    size,
+    percent: Math.min(100, Math.max(0, (used / size) * 100)),
+  };
+}
+
+function ContextUsageIndicator({
+  usage,
+  label,
+  percentageLabel,
+}: {
+  usage: ContextUsage;
+  label: string;
+  percentageLabel: string;
+}) {
+  const radius = 7;
+  const circumference = 2 * Math.PI * radius;
+  const roundedPercent = Math.round(usage.percent);
+  const strokeDashoffset = circumference * (1 - usage.percent / 100);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          role="progressbar"
+          tabIndex={0}
+          data-testid="chat-composer-context-usage"
+          data-percent={roundedPercent}
+          aria-label={label}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={roundedPercent}
+          aria-valuetext={label}
+          className="inline-flex shrink-0 items-center gap-1 rounded-md px-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+        >
+          <svg viewBox="0 0 20 20" className="h-3 w-3 text-primary" aria-hidden="true">
+            <circle cx="10" cy="10" r={radius} fill="none" stroke="currentColor" strokeWidth="2" className="text-black/10 dark:text-white/15" />
+            <circle
+              cx="10"
+              cy="10"
+              r={radius}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              transform="rotate(-90 10 10)"
+            />
+          </svg>
+          <span aria-hidden="true" className="text-tiny font-medium tabular-nums">
+            {percentageLabel}
+          </span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-xs">
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -93,8 +215,8 @@ function removeSkillToken(value: string, skillName: string): string {
   return `${value.slice(0, range.start)}${value.slice(range.end)}`;
 }
 
-const SKILL_TOKEN_BUTTON_CLASS =
-  'rounded-md bg-skill-bg/14 text-skill-fg [-webkit-box-decoration-break:clone] [box-decoration-break:clone] [text-shadow:0_0_10px_rgba(47,107,255,0.38)] dark:bg-skill-bg/18 dark:text-skill-fg-dark dark:[text-shadow:0_0_12px_rgba(37,99,235,0.42)]';
+const SKILL_TOKEN_CLASS =
+  'deepclaw-skill-token-overlay pointer-events-auto cursor-pointer rounded-md text-skill-fg underline-offset-2 hover:underline [-webkit-box-decoration-break:clone] [box-decoration-break:clone] [text-shadow:0_0_10px_rgba(47,107,255,0.38)] dark:text-skill-fg-dark dark:[text-shadow:0_0_12px_rgba(37,99,235,0.42)]';
 
 function renderHighlightedComposerText(
   value: string,
@@ -118,19 +240,12 @@ function renderHighlightedComposerText(
       chunks.push(value.slice(cursor, tokenRange.start));
     }
     chunks.push(
-      <button
+      <span
         key={`skill-token-${tokenRange.start}`}
-        type="button"
         data-testid="chat-composer-skill-token"
         data-skill-name={skillName}
         title={options.previewTooltip}
-        className={cn(
-          'inline h-auto border-0 p-0 font-inherit leading-inherit',
-          'pointer-events-auto cursor-pointer underline-offset-2 hover:underline',
-          'text-left align-baseline shadow-none transition-colors',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-0',
-          SKILL_TOKEN_BUTTON_CLASS,
-        )}
+        className={SKILL_TOKEN_CLASS}
         onMouseDown={(event) => {
           // Keep focus in the textarea while still receiving the click.
           event.preventDefault();
@@ -142,7 +257,7 @@ function renderHighlightedComposerText(
         }}
       >
         {tokenLabel}
-      </button>,
+      </span>,
       tokenTrailingSpace,
     );
     cursor = tokenRange.end;
@@ -192,14 +307,39 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
 
 // ── Component ────────────────────────────────────────────────────
 
-export function ChatInput({ onSend, onStop, disabled = false, sending = false }: ChatInputProps) {
-  const { t } = useTranslation('chat');
-  const [input, setInput] = useState('');
+export function ChatInput({
+  onSend,
+  onStop,
+  draft,
+  draftKey,
+  onDraftChange,
+  disabled = false,
+  sending = false,
+  statusOnly = false,
+  imageGenerating = false,
+  workspaceLabel,
+  workspacePath,
+  workspaceOptions = [],
+  workspaceReadOnly = false,
+  onSelectWorkspace,
+  contextUsage,
+  currentPlan,
+  subagentSessions = [],
+  onSelectSubagent,
+}: ChatInputProps) {
+  const { t, i18n } = useTranslation('chat');
+  const [uncontrolledInput, setUncontrolledInput] = useState('');
+  const input = onDraftChange ? (draft ?? '') : uncontrolledInput;
+  const setInput = useCallback((update: SetStateAction<string>) => {
+    if (onDraftChange) onDraftChange(update);
+    else setUncontrolledInput(update);
+  }, [onDraftChange]);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [targetAgentId, setTargetAgentId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [skillQuery, setSkillQuery] = useState('');
   const [quickSkills, setQuickSkills] = useState<QuickAccessSkill[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
@@ -207,12 +347,21 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const [selectedSkill, setSelectedSkill] = useState<QuickAccessSkill | null>(null);
   const [switchingModelRef, setSwitchingModelRef] = useState<string | null>(null);
   const [optimisticModelRef, setOptimisticModelRef] = useState<string | null>(null);
+  const [providerSnapshotReady, setProviderSnapshotReady] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const draftSelectionsRef = useRef(new Map<string, {
+    start: number;
+    end: number;
+    direction: 'forward' | 'backward' | 'none';
+  }>());
   const pickerRef = useRef<HTMLDivElement>(null);
   const skillPickerRef = useRef<HTMLDivElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
+  const workspaceMenuRef = useRef<HTMLDivElement>(null);
+  const contextUsageSourceRef = useRef<{ value: unknown; modelRef: string | null } | undefined>(undefined);
   const isComposingRef = useRef(false);
   const gatewayStatus = useGatewayStore((s) => s.status);
+  const devModeUnlocked = useSettingsStore((s) => s.devModeUnlocked);
   const agents = useAgentsStore((s) => s.agents);
   const updateAgentModel = useAgentsStore((s) => s.updateAgentModel);
   const defaultModelRef = useAgentsStore((s) => s.defaultModelRef);
@@ -220,6 +369,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const providerStatuses = useProviderStore((s) => s.statuses);
   const providerDefaultAccountId = useProviderStore((s) => s.defaultAccountId);
   const providerVendors = useProviderStore((s) => s.vendors);
+  const providerError = useProviderStore((s) => s.error);
   const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
   const modelProviders = useModelProvidersStore((s) => s.providers);
   const loadModelProviders = useModelProvidersStore((s) => s.load);
@@ -246,7 +396,9 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     const providerOptions: ConfiguredModelOption[] = modelProviders.flatMap((provider) =>
       provider.models.map((model) => ({
         modelRef: `${provider.key}/${model.id}`,
-        label: model.id,
+        label: `${model.id} (${provider.key})`,
+        modelId: model.id,
+        providerName: provider.key,
         runtimeProviderKey: provider.key,
         accountId: provider.key,
       })),
@@ -268,7 +420,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const effectiveModelRef = optimisticModelRef || configuredModelRef;
   const currentModelLabel = useMemo(() => {
     const matchedOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
-    return matchedOption?.label || formatModelRefLabel(effectiveModelRef);
+    return matchedOption?.modelId || formatModelRefLabel(effectiveModelRef);
   }, [effectiveModelRef, modelOptions]);
   const mentionableAgents = useMemo(
     () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
@@ -291,12 +443,73 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const showModelPicker = modelOptions.length > 1;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
   const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
-  const inputDisabled = disabled || !isGatewayUsable;
+  const inputDisabled = disabled;
+  const attachmentsLocked = inputDisabled;
+  const gatewayUnavailable = !isGatewayUsable;
+  const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
-
+  const navigate = useNavigate();
+  const [microphoneAccess, setMicrophoneAccess] = useState<AsrMicrophoneAccessResult | null>(null);
+  const {
+    status: voiceStatus,
+    elapsedSeconds: voiceElapsedSeconds,
+    toggle: toggleVoiceDictation,
+    cancel: cancelVoiceDictation,
+    getLevels: getVoiceLevels,
+  } = useVoiceDictation({
+    disabled: !devModeUnlocked || inputDisabled || sending || microphoneAccess !== null,
+    onPermissionBlocked: setMicrophoneAccess,
+    onUnconfigured: () => {
+      toast.info(t('composer.voiceNotConfigured'));
+      navigate('/models?tab=voice');
+    },
+    onError: (code) => {
+      toast.error(t(`composer.voiceError.${code}`, { defaultValue: t('composer.voiceError.REQUEST') }));
+    },
+    onTranscribed: (text) => {
+      const textarea = textareaRef.current;
+      const start = textarea?.selectionStart ?? input.length;
+      const end = textarea?.selectionEnd ?? start;
+      const nextValue = input.slice(0, start) + text + input.slice(end);
+      setInput(nextValue);
+      requestAnimationFrame(() => {
+        if (!textarea) return;
+        const caret = start + text.length;
+        textarea.focus();
+        textarea.setSelectionRange(caret, caret);
+      });
+    },
+  });
+  if (!contextUsageSourceRef.current || contextUsageSourceRef.current.value !== contextUsage) {
+    contextUsageSourceRef.current = { value: contextUsage, modelRef: effectiveModelRef };
+  }
+  const contextWindowOverride = contextUsageSourceRef.current.modelRef === effectiveModelRef
+    ? undefined
+    : currentAgent?.contextWindow;
+  const activeContextUsage = getContextUsage(contextUsage, contextWindowOverride);
+  const contextUsagePercentage = activeContextUsage
+    ? new Intl.NumberFormat(i18n.resolvedLanguage, { style: 'percent', maximumFractionDigits: 0 }).format(activeContextUsage.percent / 100)
+    : null;
+  const contextUsageLabel = activeContextUsage && contextUsagePercentage
+    ? t('composer.contextUsage', {
+      percentage: contextUsagePercentage,
+      used: new Intl.NumberFormat(i18n.resolvedLanguage).format(activeContextUsage.used),
+      total: new Intl.NumberFormat(i18n.resolvedLanguage).format(activeContextUsage.size),
+    })
+    : null;
   useEffect(() => {
-    void refreshProviderSnapshot();
+    let cancelled = false;
+    void (async () => {
+      try {
+        await refreshProviderSnapshot();
+      } finally {
+        if (!cancelled) setProviderSnapshotReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [refreshProviderSnapshot]);
 
   useEffect(() => {
@@ -325,11 +538,25 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   }, [currentAgent?.modelRef, currentAgentId]);
 
   useEffect(() => {
-    if (!currentAgent || switchingModelRef || optimisticModelRef) return;
+    if (workspaceSelectorDisabled) {
+      setWorkspaceMenuOpen(false);
+    }
+  }, [workspaceSelectorDisabled]);
+
+  useEffect(() => {
+    if (!inputDisabled) return;
+    setPickerOpen(false);
+    setSkillPickerOpen(false);
+    setModelPickerOpen(false);
+    setWorkspaceMenuOpen(false);
+  }, [inputDisabled]);
+
+  useEffect(() => {
+    if (!providerSnapshotReady || providerError || !currentAgent || switchingModelRef || optimisticModelRef) return;
     const override = (currentAgent.overrideModelRef || '').trim();
     if (!override || isConfiguredModelRefAvailable(override, modelOptions)) return;
     void updateAgentModel(currentAgent.id, null).catch(() => {});
-  }, [currentAgent, modelOptions, optimisticModelRef, switchingModelRef, updateAgentModel]);
+  }, [currentAgent, modelOptions, optimisticModelRef, providerError, providerSnapshotReady, switchingModelRef, updateAgentModel]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -339,12 +566,30 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     }
   }, [input]);
 
-  // Focus textarea on mount (avoids Windows focus loss after session delete + native dialog)
-  useEffect(() => {
-    if (!inputDisabled && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [inputDisabled]);
+  const rememberDraftSelection = useCallback((textarea = textareaRef.current) => {
+    if (!draftKey || !textarea) return;
+    draftSelectionsRef.current.set(draftKey, {
+      start: textarea.selectionStart ?? 0,
+      end: textarea.selectionEnd ?? 0,
+      direction: textarea.selectionDirection ?? 'none',
+    });
+  }, [draftKey]);
+
+  // Focus the composer when it becomes available. When changing conversations,
+  // restore that conversation's last selection instead of leaving the controlled
+  // textarea at the position produced while React swapped its value.
+  useLayoutEffect(() => {
+    if (inputDisabled || !textareaRef.current) return;
+    const textarea = textareaRef.current;
+    textarea.focus();
+    if (!draftKey) return;
+
+    const savedSelection = draftSelectionsRef.current.get(draftKey);
+    const fallbackPosition = textarea.value.length;
+    const start = Math.min(savedSelection?.start ?? fallbackPosition, fallbackPosition);
+    const end = Math.max(start, Math.min(savedSelection?.end ?? start, fallbackPosition));
+    textarea.setSelectionRange(start, end, savedSelection?.direction ?? 'none');
+  }, [draftKey, inputDisabled]);
 
   useEffect(() => {
     if (!targetAgentId) return;
@@ -360,23 +605,40 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   }, [agents, currentAgentId, targetAgentId]);
 
   useEffect(() => {
-    if (!pickerOpen && !skillPickerOpen && !modelPickerOpen) return;
+    if (!pickerOpen && !skillPickerOpen && !modelPickerOpen && !workspaceMenuOpen) return;
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
       const insideAgentPicker = pickerRef.current?.contains(target);
       const insideSkillPicker = skillPickerRef.current?.contains(target);
       const insideModelPicker = modelPickerRef.current?.contains(target);
-      if (!insideAgentPicker && !insideSkillPicker && !insideModelPicker) {
+      const insideWorkspaceMenu = workspaceMenuRef.current?.contains(target);
+      if (!insideAgentPicker && !insideSkillPicker && !insideModelPicker && !insideWorkspaceMenu) {
         setPickerOpen(false);
         setSkillPickerOpen(false);
         setModelPickerOpen(false);
+        setWorkspaceMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handlePointerDown);
     return () => {
       document.removeEventListener('mousedown', handlePointerDown);
     };
-  }, [modelPickerOpen, pickerOpen, skillPickerOpen]);
+  }, [modelPickerOpen, pickerOpen, skillPickerOpen, workspaceMenuOpen]);
+
+  useEffect(() => {
+    if (!pickerOpen && !skillPickerOpen && !modelPickerOpen && !workspaceMenuOpen) return;
+    const handleDocumentKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setPickerOpen(false);
+      setSkillPickerOpen(false);
+      setModelPickerOpen(false);
+      setWorkspaceMenuOpen(false);
+    };
+    document.addEventListener('keydown', handleDocumentKeyDown, true);
+    return () => {
+      document.removeEventListener('keydown', handleDocumentKeyDown, true);
+    };
+  }, [modelPickerOpen, pickerOpen, skillPickerOpen, workspaceMenuOpen]);
 
   useEffect(() => {
     setSelectedSkill((prev) => {
@@ -386,10 +648,11 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       return null;
     });
     setSkillPickerOpen(false);
+    setWorkspaceMenuOpen(false);
     setSkillQuery('');
     setQuickSkills([]);
     setSkillsError(null);
-  }, [currentAgentId]);
+  }, [currentAgentId, setInput]);
 
   useEffect(() => {
     if (!selectedSkill) return;
@@ -401,29 +664,32 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 
   const handleInputChange = useCallback((value: string) => {
     setInput(value);
-  }, []);
+  }, [setInput]);
 
   const moveCaretTo = useCallback((position: number) => {
-    textareaRef.current?.focus();
-    textareaRef.current?.setSelectionRange(position, position);
-    requestAnimationFrame(() => {
+    const move = () => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(position, position);
-    });
-  }, []);
+      rememberDraftSelection();
+    };
+    move();
+    requestAnimationFrame(move);
+  }, [rememberDraftSelection]);
 
-  const normalizeSelectionAroundSkill = useCallback(() => {
-    if (skillTokenRanges.length === 0) return;
+  const handleComposerSelection = useCallback(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     const selectionStart = textarea.selectionStart ?? 0;
     const selectionEnd = textarea.selectionEnd ?? 0;
-    if (selectionStart !== selectionEnd) return;
-    const tokenRange = skillTokenRanges.find((range) => selectionStart > range.start && selectionStart < range.end);
-    if (tokenRange) {
-      moveCaretTo(tokenRange.end);
+    if (selectionStart === selectionEnd) {
+      const tokenRange = skillTokenRanges.find((range) => selectionStart > range.start && selectionStart < range.end);
+      if (tokenRange) {
+        moveCaretTo(tokenRange.end);
+        return;
+      }
     }
-  }, [moveCaretTo, skillTokenRanges]);
+    rememberDraftSelection(textarea);
+  }, [moveCaretTo, rememberDraftSelection, skillTokenRanges]);
 
   const loadQuickSkills = useCallback(async (): Promise<QuickAccessSkill[]> => {
     if (!currentAgent) {
@@ -497,10 +763,54 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     }
   }, [currentAgent, defaultModelRef, effectiveModelRef, switchingModelRef, t, updateAgentModel]);
 
+  const handleWorkspaceButtonClick = useCallback(() => {
+    if (workspaceSelectorDisabled) return;
+    setPickerOpen(false);
+    setSkillPickerOpen(false);
+    setModelPickerOpen(false);
+    setWorkspaceMenuOpen((open) => !open);
+  }, [workspaceSelectorDisabled]);
+
+  const handleWorkspaceKeyDown = useCallback((event: React.KeyboardEvent) => {
+    if (event.key !== 'Escape') return;
+    setWorkspaceMenuOpen(false);
+    event.stopPropagation();
+  }, []);
+
+  const handleSelectWorkspace = useCallback((path: string) => {
+    if (workspaceSelectorDisabled || !onSelectWorkspace) return;
+    onSelectWorkspace(path);
+    setWorkspaceMenuOpen(false);
+    textareaRef.current?.focus();
+  }, [onSelectWorkspace, workspaceSelectorDisabled]);
+
+  const handleSelectDefaultWorkspace = useCallback(() => {
+    handleSelectWorkspace(DEFAULT_WORKSPACE_CWD);
+  }, [handleSelectWorkspace]);
+
+  const handleChooseOtherWorkspace = useCallback(async () => {
+    if (workspaceSelectorDisabled || !onSelectWorkspace) return;
+    setWorkspaceMenuOpen(false);
+    try {
+      const result = await hostApi.dialog.open({
+        title: t('composer.workspacePickerTitle'),
+        buttonLabel: t('composer.workspacePickerButton'),
+        defaultPath: workspacePath,
+        properties: ['openDirectory', 'createDirectory'],
+      });
+      const selected = result.filePaths[0]?.trim();
+      if (!result.canceled && selected) onSelectWorkspace(selected);
+    } catch {
+      toast.error(t('composer.workspacePickerFailed'));
+    } finally {
+      textareaRef.current?.focus();
+    }
+  }, [onSelectWorkspace, t, workspacePath, workspaceSelectorDisabled]);
+
   // ── File staging via native dialog / Electron drag-drop paths ──
 
   const stagePathFiles = useCallback(async (filePaths: string[]) => {
-    if (filePaths.length === 0) return;
+    if (attachmentsLocked || filePaths.length === 0) return;
 
     const tempIds: string[] = [];
     for (const filePath of filePaths) {
@@ -513,6 +823,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
         mimeType: '',
         fileSize: 0,
         stagedPath: '',
+        sourceKind: 'path',
         preview: null,
         status: 'staging' as const,
       }]);
@@ -553,9 +864,10 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
           : a,
       ));
     }
-  }, []);
+  }, [attachmentsLocked]);
 
   const pickFiles = useCallback(async () => {
+    if (attachmentsLocked) return;
     try {
       const result = await hostApi.dialog.open({
         properties: ['openFile', 'multiSelections'],
@@ -565,11 +877,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     } catch (err) {
       console.error('[pickFiles] Failed to open file dialog:', err);
     }
-  }, [stagePathFiles]);
+  }, [attachmentsLocked, stagePathFiles]);
 
   // ── Stage browser File objects (paste / drag-drop) ─────────────
 
   const stageBufferFiles = useCallback(async (files: globalThis.File[]) => {
+    if (attachmentsLocked) return;
     for (const file of files) {
       const tempId = crypto.randomUUID();
       setAttachments(prev => [...prev, {
@@ -578,6 +891,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
         mimeType: file.type || 'application/octet-stream',
         fileSize: file.size,
         stagedPath: '',
+        sourceKind: 'buffer',
         preview: null,
         status: 'staging' as const,
       }]);
@@ -604,17 +918,22 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
         ));
       }
     }
-  }, []);
+  }, [attachmentsLocked]);
 
   // ── Attachment management ──────────────────────────────────────
 
   const removeAttachment = useCallback((id: string) => {
+    if (attachmentsLocked) return;
     setAttachments(prev => prev.filter(a => a.id !== id));
-  }, []);
+  }, [attachmentsLocked]);
 
   const allReady = attachments.length === 0 || attachments.every(a => a.status === 'ready');
   const hasFailedAttachments = attachments.some((a) => a.status === 'error');
-  const canSend = (input.trim() || attachments.length > 0) && allReady && !inputDisabled && !sending;
+  const canSend = (input.trim() || attachments.length > 0)
+    && allReady
+    && !inputDisabled
+    && !sending
+    && !imageGenerating;
   const canStop = sending && !inputDisabled && !!onStop;
 
   const handleSend = useCallback(async () => {
@@ -657,7 +976,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     setTargetAgentId(null);
     setPickerOpen(false);
     setSkillPickerOpen(false);
-  }, [input, attachments, canSend, onSend, targetAgentId]);
+    setWorkspaceMenuOpen(false);
+  }, [input, attachments, canSend, onSend, setInput, targetAgentId]);
 
   const handleStop = useCallback(() => {
     if (!canStop) return;
@@ -721,6 +1041,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       if (e.key === 'Escape') {
         setPickerOpen(false);
         setSkillPickerOpen(false);
+        setModelPickerOpen(false);
+        setWorkspaceMenuOpen(false);
         return;
       }
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -732,7 +1054,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
         handleSend();
       }
     },
-    [handleSend, input, moveCaretTo, selectedSkill, skillTokenRanges],
+    [handleSend, input, moveCaretTo, selectedSkill, setInput, skillTokenRanges],
   );
 
   // Handle paste (Ctrl/Cmd+V with files)
@@ -749,11 +1071,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
         }
       }
       if (pastedFiles.length > 0) {
+        if (attachmentsLocked) return;
         e.preventDefault();
         stageBufferFiles(pastedFiles);
       }
     },
-    [stageBufferFiles],
+    [attachmentsLocked, stageBufferFiles],
   );
 
   // Handle drag & drop
@@ -762,8 +1085,9 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (attachmentsLocked) return;
     setDragOver(true);
-  }, []);
+  }, [attachmentsLocked]);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -776,6 +1100,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       e.preventDefault();
       e.stopPropagation();
       setDragOver(false);
+      if (attachmentsLocked) return;
       if (!e.dataTransfer) return;
 
       const { pathFiles, bufferFiles } = collectDroppedFiles(e.dataTransfer);
@@ -786,19 +1111,129 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       if (pathFiles.length > 0) void stagePathFiles(pathFiles);
       if (bufferFiles.length > 0) void stageBufferFiles(bufferFiles);
     },
-    [stageBufferFiles, stagePathFiles, t],
+    [attachmentsLocked, stageBufferFiles, stagePathFiles, t],
   );
+
+  const hasWorkingSubagents = subagentSessions.some((session) => session.busy);
+  const composerSessionKey = draftKey ?? '';
+  const [expandedComposerPanel, setExpandedComposerPanel] = useState<{
+    sessionKey: string;
+    panel: ComposerExpandedPanel;
+  }>({ sessionKey: composerSessionKey, panel: null });
+  const activeComposerPanel = expandedComposerPanel.sessionKey === composerSessionKey
+    ? expandedComposerPanel.panel
+    : null;
+  const showWorkingIndicator = sending || hasWorkingSubagents;
+  const showSubagentControl = typeof onSelectSubagent === 'function' && subagentSessions.length > 0;
+  const showStatusRow = showWorkingIndicator || showSubagentControl || currentPlan != null;
+  const workingLabel = sending ? t('composer.thinking') : t('composer.subagentsWorking');
+
+  if (statusOnly) {
+    return (
+      <div className="relative mx-auto w-full max-w-3xl shrink-0 p-4 pb-6">
+        <div
+          data-testid="chat-composer-working-indicator"
+          role="status"
+          aria-live="polite"
+          aria-label={workingLabel}
+          className="mb-2 flex min-h-5 items-center justify-between gap-2 text-sm text-muted-foreground"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span
+              data-testid="chat-composer-dot-pulse"
+              aria-hidden="true"
+              className="deepclaw-chat-thinking-dot-pulse"
+            >
+              <span className="deepclaw-chat-thinking-dot-pulse-inner">
+                <span className="deepclaw-chat-thinking-dot-pulse-dot" />
+              </span>
+            </span>
+            <span>{workingLabel}</span>
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
       className={cn(
-        "p-4 pb-6 w-full mx-auto max-w-3xl"
+        'relative mx-auto w-full max-w-3xl shrink-0 p-4 pb-6',
       )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       <div className="w-full">
+        {showStatusRow && (
+          <div
+            data-testid="chat-composer-working-indicator"
+            role={showWorkingIndicator ? 'status' : undefined}
+            aria-live={showWorkingIndicator ? 'polite' : undefined}
+            aria-label={showWorkingIndicator ? workingLabel : undefined}
+            className="mb-2 flex min-h-5 items-center justify-between gap-2 text-sm text-muted-foreground"
+          >
+            {showWorkingIndicator ? (
+              <span className="flex min-w-0 items-center gap-2">
+                <span
+                  data-testid="chat-composer-dot-pulse"
+                  aria-hidden="true"
+                  className="deepclaw-chat-thinking-dot-pulse"
+                >
+                  <span className="deepclaw-chat-thinking-dot-pulse-inner">
+                    <span className="deepclaw-chat-thinking-dot-pulse-dot" />
+                  </span>
+                </span>
+                <span>{workingLabel}</span>
+              </span>
+            ) : <span aria-hidden="true" />}
+            <div className="flex shrink-0 items-center gap-2">
+              {showSubagentControl && typeof onSelectSubagent === 'function' && (
+                <AcpSubagentSessions
+                  sessions={subagentSessions}
+                  sessionKey={composerSessionKey}
+                  onSelectSession={onSelectSubagent}
+                  isExpanded={activeComposerPanel === 'subagents'}
+                  onExpandedChange={(isExpanded) => setExpandedComposerPanel({
+                    sessionKey: composerSessionKey,
+                    panel: isExpanded ? 'subagents' : null,
+                  })}
+                />
+              )}
+              <AcpSessionPlan
+                plan={currentPlan}
+                sessionKey={composerSessionKey}
+                isExpanded={activeComposerPanel === 'plan'}
+                onExpandedChange={(isExpanded) => setExpandedComposerPanel({
+                  sessionKey: composerSessionKey,
+                  panel: isExpanded ? 'plan' : null,
+                })}
+              />
+            </div>
+          </div>
+        )}
+
+        {!sending && imageGenerating && (
+          <div
+            data-testid="chat-composer-image-generation-indicator"
+            role="status"
+            aria-live="polite"
+            aria-label={t('imageGeneration.generating')}
+            className="mb-2 flex h-5 items-center gap-2 text-sm text-muted-foreground"
+          >
+            <span
+              data-testid="chat-composer-image-generation-dot-pulse"
+              aria-hidden="true"
+              className="deepclaw-chat-thinking-dot-pulse"
+            >
+              <span className="deepclaw-chat-thinking-dot-pulse-inner">
+                <span className="deepclaw-chat-thinking-dot-pulse-dot" />
+              </span>
+            </span>
+            <span>{t('imageGeneration.generating')}</span>
+          </div>
+        )}
+
         {/* Attachment Previews */}
         {attachments.length > 0 && (
           <div className="flex gap-2 mb-3 flex-wrap">
@@ -807,18 +1242,23 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                 key={att.id}
                 attachment={att}
                 onRemove={() => removeAttachment(att.id)}
+                disabled={attachmentsLocked}
               />
             ))}
           </div>
         )}
 
         {/* Input Container */}
-        <div className={`relative bg-surface-modal rounded-2xl shadow-sm border px-3 pt-2.5 pb-1.5 transition-all ${dragOver ? 'border-primary ring-1 ring-primary' : 'border-black/10 dark:border-white/10'}`}>
+        <div
+          data-testid="chat-composer-box"
+          className={`relative bg-surface-modal rounded-2xl shadow-sm border px-3 pt-2.5 pb-1.5 transition-all ${dragOver ? 'border-primary ring-1 ring-primary' : 'border-black/10 dark:border-white/10'}`}
+        >
           {selectedTarget && (
             <div className="flex flex-wrap gap-2 pb-1.5">
               <button
                 type="button"
                 onClick={() => setTargetAgentId(null)}
+                disabled={inputDisabled}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1 text-meta font-medium text-foreground transition-colors hover:bg-primary/10"
                 title={t('composer.clearTarget')}
               >
@@ -833,7 +1273,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
             {skillTokenRanges.length > 0 && (
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-0 z-20 overflow-hidden whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground"
+                data-testid="chat-composer-highlight"
+                className="pointer-events-none absolute inset-0 z-20 overflow-hidden whitespace-pre-wrap break-words text-sm leading-relaxed text-transparent"
               >
                 {renderHighlightedComposerText(input, skillTokenRanges, {
                   onPreviewSkill: (name) => {
@@ -846,10 +1287,14 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
             <Textarea
               ref={textareaRef}
               value={input}
-              onChange={(e) => handleInputChange(e.target.value)}
+              onChange={(e) => {
+                handleInputChange(e.target.value);
+                rememberDraftSelection(e.currentTarget);
+              }}
               onKeyDown={handleKeyDown}
-              onSelect={normalizeSelectionAroundSkill}
-              onClick={normalizeSelectionAroundSkill}
+              onSelect={handleComposerSelection}
+              onClick={handleComposerSelection}
+              onBlur={(e) => rememberDraftSelection(e.currentTarget)}
               onCompositionStart={() => {
                 isComposingRef.current = true;
               }}
@@ -857,12 +1302,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                 isComposingRef.current = false;
               }}
               onPaste={handlePaste}
-              placeholder={inputDisabled ? t('composer.gatewayDisconnectedPlaceholder') : ''}
-              disabled={inputDisabled}
+              placeholder={inputDisabled && gatewayUnavailable ? t('composer.gatewayDisconnectedPlaceholder') : ''}
+              disabled={inputDisabled || voiceStatus !== 'idle'}
               data-testid="chat-composer-input"
               className={cn(
-                'relative min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/60',
-                skillTokenRanges.length > 0 ? 'z-0 text-transparent caret-foreground selection:bg-primary/20' : 'z-10',
+                'relative z-10 min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/60',
+                skillTokenRanges.length > 0 && 'selection:bg-primary/20',
               )}
               rows={1}
             />
@@ -894,6 +1339,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                   )}
                   onClick={() => {
                     setSkillPickerOpen(false);
+                    setModelPickerOpen(false);
+                    setWorkspaceMenuOpen(false);
                     setPickerOpen((open) => !open);
                   }}
                   disabled={inputDisabled || sending}
@@ -935,6 +1382,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                 )}
                 onClick={() => {
                   setPickerOpen(false);
+                  setModelPickerOpen(false);
+                  setWorkspaceMenuOpen(false);
                   setSkillPickerOpen((open) => !open);
                 }}
                 disabled={inputDisabled || sending}
@@ -1018,6 +1467,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                   onClick={() => {
                     setPickerOpen(false);
                     setSkillPickerOpen(false);
+                    setWorkspaceMenuOpen(false);
                     setModelPickerOpen((open) => !open);
                   }}
                   disabled={inputDisabled || sending || !currentAgent || !!switchingModelRef}
@@ -1025,7 +1475,9 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                 >
                   {switchingModelRef ? (
                     <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-                  ) : null}
+                  ) : (
+                    <ModelIcon modelName={currentModelLabel} testId="chat-model-picker-current-icon" />
+                  )}
                   <span className="truncate">{currentModelLabel}</span>
                   <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', modelPickerOpen && 'rotate-180')} />
                 </button>
@@ -1049,7 +1501,18 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                           )}
                           data-testid={`chat-model-picker-option-${option.label}`}
                         >
-                          <span className="truncate">{option.label}</span>
+                          <span className="flex min-w-0 items-center gap-2">
+                            <ModelIcon modelName={option.modelId} testId="chat-model-picker-option-icon" />
+                            <span className="min-w-0 truncate">
+                              <span>{option.modelId}</span>
+                              {option.providerName ? (
+                                <>
+                                  {' '}
+                                  <span className="font-normal text-muted-foreground">{option.providerName}</span>
+                                </>
+                              ) : null}
+                            </span>
+                          </span>
                           {option.modelRef === effectiveModelRef && (
                             <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                           )}
@@ -1061,64 +1524,180 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
               </div>
             )}
 
-            {/* Send Button — pushed to the right */}
-            <Button
-              onClick={sending ? handleStop : handleSend}
-              disabled={sending ? !canStop : !canSend}
-              size="icon"
-              data-testid="chat-composer-send"
-              className={`ml-auto shrink-0 h-8 w-8 rounded-lg transition-colors ${
-                (sending || canSend)
-                  ? 'bg-black/5 dark:bg-white/10 text-foreground hover:bg-black/10 dark:hover:bg-white/20'
-                  : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
-              }`}
-              variant="ghost"
-              title={sending ? t('composer.stop') : t('composer.send')}
-            >
-              {sending ? (
-                <Square className="h-3.5 w-3.5" fill="currentColor" />
-              ) : (
-                <SendHorizontal className="h-4 w-4" strokeWidth={2} />
+            <div className="ml-auto flex items-center gap-1">
+              {devModeUnlocked && (
+                <VoiceDictationButton
+                  status={voiceStatus}
+                  elapsedSeconds={voiceElapsedSeconds}
+                  disabled={inputDisabled || sending}
+                  onToggle={toggleVoiceDictation}
+                  onCancel={cancelVoiceDictation}
+                  getLevels={getVoiceLevels}
+                />
               )}
-            </Button>
+
+              {/* Send Button */}
+              <Button
+                onClick={sending ? handleStop : handleSend}
+                disabled={sending ? !canStop : !canSend}
+                size="icon"
+                data-testid="chat-composer-send"
+                className={`shrink-0 h-8 w-8 rounded-lg transition-colors ${
+                  (sending || canSend)
+                    ? 'bg-black/5 dark:bg-white/10 text-foreground hover:bg-black/10 dark:hover:bg-white/20'
+                    : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
+                }`}
+                variant="ghost"
+                title={sending ? t('composer.stop') : t('composer.send')}
+              >
+                {sending ? (
+                  <Square className="h-3.5 w-3.5" fill="currentColor" />
+                ) : (
+                  <SendHorizontal className="h-4 w-4" strokeWidth={2} />
+                )}
+              </Button>
+            </div>
           </div>
         </div>
-        <div className="mt-2.5 flex items-center justify-between gap-2 text-tiny text-muted-foreground/60 px-4">
-          <div className="flex items-center gap-1.5">
-            <div className={cn(
-              "w-1.5 h-1.5 rounded-full",
-              isGatewayUsable ? "bg-green-500/80" : "bg-red-500/80",
-            )} />
-            <span>
-              {t('composer.gatewayStatus', {
-                state: isGatewayUsable
-                  ? t('composer.gatewayConnected')
-                  : gatewayStatus.state === 'running'
-                    ? 'starting'
-                    : gatewayStatus.state,
-                port: gatewayStatus.port,
-                pid: gatewayStatus.pid ? `| pid: ${gatewayStatus.pid}` : '',
-              })}
-            </span>
-            {chatComposerStatusComponents.map((Component, index) => (
-              <Component key={`${index}`} gatewayStatus={gatewayStatus} />
-            ))}
+        <div
+          data-testid="chat-composer-footer"
+          className="mt-2.5 flex min-w-0 items-center justify-between gap-2 text-tiny text-muted-foreground/60"
+        >
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            {workspaceLabel && workspacePath && (
+              <div ref={workspaceMenuRef} className="relative min-w-0 shrink" onKeyDown={handleWorkspaceKeyDown}>
+                <button
+                  type="button"
+                  data-testid="chat-workspace-selector"
+                  title={workspacePath}
+                  aria-disabled={workspaceSelectorDisabled ? 'true' : undefined}
+                  aria-expanded={!workspaceSelectorDisabled ? workspaceMenuOpen : undefined}
+                  tabIndex={workspaceSelectorDisabled ? -1 : undefined}
+                  onClick={workspaceSelectorDisabled ? undefined : handleWorkspaceButtonClick}
+                  className={cn(
+                    'inline-flex min-w-0 max-w-[260px] items-center gap-1 rounded-full border px-2 py-0.5',
+                    'bg-black/[0.02] text-tiny font-medium text-foreground/75 transition-colors dark:bg-white/[0.04]',
+                    workspaceSelectorDisabled
+                      ? 'cursor-default border-transparent opacity-80'
+                      : 'border-black/10 hover:bg-black/5 hover:text-foreground dark:border-white/10 dark:hover:bg-white/10',
+                  )}
+                >
+                  <FolderOpen className="h-3 w-3 shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {t('composer.workspacePrefix', { workspace: workspaceLabel })}
+                  </span>
+                  {!workspaceSelectorDisabled && (
+                    <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', workspaceMenuOpen && 'rotate-180')} />
+                  )}
+                </button>
+                {workspaceMenuOpen && !workspaceSelectorDisabled && (
+                  <div
+                    data-testid="chat-workspace-menu"
+                    className="absolute bottom-full left-0 z-20 mb-2 max-h-80 w-64 overflow-y-auto rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
+                  >
+                    <button
+                      type="button"
+                      data-testid="chat-workspace-default"
+                      aria-current={isDefaultWorkspacePath(workspacePath) ? 'true' : undefined}
+                      onClick={handleSelectDefaultWorkspace}
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10',
+                        isDefaultWorkspacePath(workspacePath) && 'bg-black/5 dark:bg-white/10',
+                      )}
+                    >
+                      <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">{t('composer.defaultWorkspaceOption')}</span>
+                      {isDefaultWorkspacePath(workspacePath) && <Check className="h-3.5 w-3.5 shrink-0" />}
+                    </button>
+                    {workspaceOptions.map((option) => {
+                      const optionPath = normalizeWorkspacePath(option.path);
+                      if (!optionPath || isDefaultWorkspacePath(optionPath)) return null;
+                      const selected = optionPath === normalizeWorkspacePath(workspacePath);
+                      return (
+                        <button
+                          key={optionPath}
+                          type="button"
+                          data-testid={`chat-workspace-option-${encodeURIComponent(optionPath)}`}
+                          title={optionPath}
+                          aria-current={selected ? 'true' : undefined}
+                          onClick={() => handleSelectWorkspace(optionPath)}
+                          className={cn(
+                            'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10',
+                            selected && 'bg-black/5 dark:bg-white/10',
+                          )}
+                        >
+                          <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                          {selected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                    <div className="my-1 border-t border-black/5 dark:border-white/10" />
+                    <button
+                      type="button"
+                      data-testid="chat-workspace-choose-other"
+                      onClick={() => void handleChooseOtherWorkspace()}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                    >
+                      <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">{t('composer.chooseOtherWorkspaceOption')}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          {hasFailedAttachments && (
-            <Button
-              variant="link"
-              size="sm"
-              className="h-auto p-0 text-tiny"
-              onClick={() => {
-                setAttachments((prev) => prev.filter((att) => att.status !== 'error'));
-                void pickFiles();
-              }}
-            >
-              {t('composer.retryFailedAttachments')}
-            </Button>
-          )}
+
+          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 overflow-hidden text-right">
+            <div className="flex min-w-0 items-center justify-end gap-2 overflow-hidden">
+              {activeContextUsage && contextUsageLabel && contextUsagePercentage && (
+                <ContextUsageIndicator
+                  usage={activeContextUsage}
+                  label={contextUsageLabel}
+                  percentageLabel={contextUsagePercentage}
+                />
+              )}
+              <div
+                data-testid="chat-composer-gateway-status"
+                className="flex min-w-0 items-center justify-end gap-1.5 overflow-hidden"
+              >
+                <div className={cn(
+                  'h-1.5 w-1.5 shrink-0 rounded-full',
+                  isGatewayUsable ? 'bg-green-500/80' : 'bg-red-500/80',
+                )} />
+                <span className="min-w-0 truncate">
+                  {t('composer.gatewayStatus', {
+                    state: isGatewayUsable
+                      ? t('composer.gatewayConnected')
+                      : gatewayStatus.state === 'running'
+                        ? t('composer.gatewayStarting')
+                        : gatewayStatus.state,
+                  })}
+                </span>
+                {chatComposerStatusComponents.map((Component, index) => (
+                  <Component key={`${index}`} gatewayStatus={gatewayStatus} />
+                ))}
+              </div>
+            </div>
+            {hasFailedAttachments && (
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto shrink-0 p-0 text-tiny"
+                onClick={() => {
+                  if (attachmentsLocked) return;
+                  setAttachments((prev) => prev.filter((att) => att.status !== 'error'));
+                  void pickFiles();
+                }}
+                disabled={attachmentsLocked}
+              >
+                {t('composer.retryFailedAttachments')}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
+      {microphoneAccess && <MicrophonePermissionDialog access={microphoneAccess} onClose={() => setMicrophoneAccess(null)} />}
     </div>
   );
 }
@@ -1128,9 +1707,11 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
 function AttachmentPreview({
   attachment,
   onRemove,
+  disabled,
 }: {
   attachment: FileAttachment;
   onRemove: () => void;
+  disabled: boolean;
 }) {
   const { t } = useTranslation('chat');
   const isImage = attachment.mimeType.startsWith('image/') && attachment.preview;
@@ -1179,7 +1760,10 @@ function AttachmentPreview({
 
       {/* Remove button */}
       <button
+        type="button"
+        data-testid="chat-attachment-remove"
         onClick={onRemove}
+        disabled={disabled}
         className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
       >
         <X className="h-3 w-3" />

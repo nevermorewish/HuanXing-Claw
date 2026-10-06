@@ -4,7 +4,7 @@ import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BRAND } from '@shared/brand';
 
-const { testHome, testUserData, mockLoggerWarn, mockLoggerInfo, mockLoggerError } = vi.hoisted(() => {
+const { testHome, testUserData, mockLoggerWarn, mockLoggerInfo, mockLoggerError, proxyAwareFetchMock } = vi.hoisted(() => {
   const suffix = Math.random().toString(36).slice(2);
   return {
     testHome: `/tmp/deepclaw-channel-config-${suffix}`,
@@ -12,8 +12,13 @@ const { testHome, testUserData, mockLoggerWarn, mockLoggerInfo, mockLoggerError 
     mockLoggerWarn: vi.fn(),
     mockLoggerInfo: vi.fn(),
     mockLoggerError: vi.fn(),
+    proxyAwareFetchMock: vi.fn(),
   };
 });
+
+vi.mock('@electron/utils/proxy-fetch', () => ({
+  proxyAwareFetch: (...args: unknown[]) => proxyAwareFetchMock(...args),
+}));
 
 vi.mock('os', async () => {
   const actual = await vi.importActual<typeof import('os')>('os');
@@ -45,6 +50,12 @@ vi.mock('@electron/utils/logger', () => ({
 async function readOpenClawJson(): Promise<Record<string, unknown>> {
   const content = await readFile(join(testHome, BRAND.dataDirName, 'openclaw.json'), 'utf8');
   return JSON.parse(content) as Record<string, unknown>;
+}
+
+async function writeOpenClawJson(config: unknown): Promise<void> {
+  const openclawDir = join(testHome, BRAND.dataDirName);
+  await mkdir(openclawDir, { recursive: true });
+  await writeFile(join(openclawDir, 'openclaw.json'), JSON.stringify(config, null, 2), 'utf8');
 }
 
 describe('channel credential normalization and duplicate checks', () => {
@@ -148,6 +159,62 @@ describe('WeCom plugin configuration', () => {
     await rm(testUserData, { recursive: true, force: true });
   });
 
+  it('sets plugins.entries.dingtalk.enabled and sanitizes soimy card fields', async () => {
+    const { saveChannelConfig } = await import('@electron/utils/channel-config');
+
+    await writeOpenClawJson({
+      channels: {
+        'dingtalk-connector': {
+          enabled: true,
+          clientId: 'should-not-win',
+        },
+      },
+      plugins: {
+        allow: ['dingtalk-connector'],
+        entries: {
+          'dingtalk-connector': { enabled: true },
+        },
+      },
+    });
+
+    await saveChannelConfig('dingtalk', {
+      clientId: 'dt-client-id',
+      clientSecret: 'dt-secret',
+      messageType: 'card',
+      cardStreamingMode: 'realtime',
+    }, 'default');
+
+    const config = await readOpenClawJson();
+    const channels = config.channels as Record<string, Record<string, unknown>>;
+    const plugins = config.plugins as { allow: string[]; entries: Record<string, { enabled?: boolean }> };
+    const dingtalk = channels.dingtalk;
+
+    expect(dingtalk.clientId).toBe('dt-client-id');
+    expect(dingtalk.clientSecret).toBe('dt-secret');
+    expect(dingtalk.defaultAccount).toBe('default');
+    expect(dingtalk.groupReplyMode).toBe('aicard');
+    expect(dingtalk.messageType).toBeUndefined();
+    expect(channels['dingtalk-connector']).toBeUndefined();
+    expect(plugins.allow).toContain('dingtalk');
+    expect(plugins.allow).not.toContain('dingtalk-connector');
+    expect(plugins.entries.dingtalk.enabled).toBe(true);
+    expect(plugins.entries['dingtalk-connector']).toBeUndefined();
+  });
+
+  it('reads unredacted DingTalk credentials from the durable account config for workspace OAuth', async () => {
+    const { getDurableChannelConfig, saveChannelConfig } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig('dingtalk', {
+      clientId: 'ding-client-id',
+      clientSecret: 'ding-client-secret',
+    }, 'ding-main');
+
+    await expect(getDurableChannelConfig('dingtalk', 'ding-main')).resolves.toMatchObject({
+      clientId: 'ding-client-id',
+      clientSecret: 'ding-client-secret',
+    });
+  });
+
   it('sets plugins.entries.wecom.enabled when saving wecom config', async () => {
     const { saveChannelConfig } = await import('@electron/utils/channel-config');
 
@@ -161,9 +228,9 @@ describe('WeCom plugin configuration', () => {
   });
 
   it('normalizes feishu plugin registration to openclaw-lark and removes built-in feishu on save', async () => {
-    const { saveChannelConfig, writeOpenClawConfig } = await import('@electron/utils/channel-config');
+    const { saveChannelConfig } = await import('@electron/utils/channel-config');
 
-    await writeOpenClawConfig({
+    await writeOpenClawJson({
       plugins: {
         enabled: true,
         allow: ['custom-plugin', 'feishu', 'feishu-openclaw-plugin'],
@@ -196,20 +263,19 @@ describe('WeCom plugin configuration', () => {
 
     const config = await readOpenClawJson();
     const channels = config.channels as Record<string, { enabled?: boolean; defaultAccount?: string; accounts?: Record<string, { enabled?: boolean }> }>;
-    const plugins = config.plugins as { allow: string[]; entries: Record<string, { enabled?: boolean; defaultAccount?: string; accounts?: Record<string, { enabled?: boolean }> }> };
+    const plugins = config.plugins as { allow: string[]; entries: Record<string, Record<string, unknown>> };
 
     expect(channels.whatsapp.enabled).toBe(true);
     expect(channels.whatsapp.defaultAccount).toBe('default');
     expect(channels.whatsapp.accounts?.default?.enabled).toBe(true);
     expect(plugins.allow).toContain('whatsapp');
-    expect(plugins.entries.whatsapp.enabled).toBe(true);
-    expect(plugins.entries.whatsapp.accounts?.default?.enabled).toBe(true);
+    expect(plugins.entries.whatsapp).toEqual({ enabled: true });
   });
 
   it('keeps whatsapp plugin registration when saving plugin-backed config', async () => {
-    const { saveChannelConfig, writeOpenClawConfig } = await import('@electron/utils/channel-config');
+    const { saveChannelConfig } = await import('@electron/utils/channel-config');
 
-    await writeOpenClawConfig({
+    await writeOpenClawJson({
       plugins: {
         enabled: true,
         allow: ['whatsapp'],
@@ -239,12 +305,15 @@ describe('WeCom plugin configuration', () => {
 
     const config = await readOpenClawJson();
     const channels = config.channels as Record<string, { accounts?: Record<string, unknown> }>;
-    const plugins = config.plugins as { entries?: Record<string, { accounts?: Record<string, unknown> }> };
+    const plugins = config.plugins as { allow?: string[]; entries?: Record<string, Record<string, unknown>> };
 
+    expect(channels.discord.accounts?.default).toBeDefined();
     expect(channels.qqbot.accounts?.default).toBeDefined();
-    expect(plugins.entries?.discord?.accounts?.default).toBeDefined();
-    expect(plugins.entries?.qqbot?.accounts?.default).toBeDefined();
-    expect(plugins.entries?.whatsapp?.accounts?.default).toBeDefined();
+    expect(channels.whatsapp.accounts?.default).toBeDefined();
+    expect(plugins.allow).toEqual(expect.arrayContaining(['discord', 'qqbot', 'whatsapp']));
+    expect(plugins.entries?.discord).toEqual({ enabled: true });
+    expect(plugins.entries?.qqbot).toEqual({ enabled: true });
+    expect(plugins.entries?.whatsapp).toEqual({ enabled: true });
   });
 
   it('saves discord guild channel allowlist without schema-invalid allow flags', async () => {
@@ -272,9 +341,9 @@ describe('WeCom plugin configuration', () => {
   });
 
   it('sanitizes legacy discord guild channel allow flags before writing', async () => {
-    const { saveChannelConfig, writeOpenClawConfig } = await import('@electron/utils/channel-config');
+    const { saveChannelConfig } = await import('@electron/utils/channel-config');
 
-    await writeOpenClawConfig({
+    await writeOpenClawJson({
       channels: {
         discord: {
           enabled: true,
@@ -316,6 +385,115 @@ describe('WeCom plugin configuration', () => {
     expect(channels.discord.guilds?.['1438451181474287618'].channels?.['*']).not.toHaveProperty('allow');
     expect(channels.discord.accounts?.default.guilds?.['1438451181474287618'].channels?.['*']).not.toHaveProperty('allow');
   });
+
+  it('deletes a custom default account without recreating it as the literal default account', async () => {
+    await writeOpenClawJson({
+      channels: {
+        telegram: {
+          accounts: {
+            'agent-a': { botToken: 'telegram-token', enabled: false },
+          },
+          defaultAccount: 'agent-a',
+          enabled: false,
+          botToken: 'telegram-token',
+        },
+      },
+    });
+    const { deleteChannelAccountConfig } = await import('@electron/utils/channel-config');
+
+    await deleteChannelAccountConfig('telegram', 'agent-a');
+
+    const config = await readOpenClawJson();
+    expect((config.channels as Record<string, unknown>).telegram).toBeUndefined();
+  });
+
+  it('deletes an agent-owned custom default account without recreating it', async () => {
+    await writeOpenClawJson({
+      channels: {
+        telegram: {
+          accounts: {
+            'agent-a': { botToken: 'telegram-token', enabled: false },
+          },
+          defaultAccount: 'agent-a',
+          enabled: false,
+          botToken: 'telegram-token',
+        },
+      },
+    });
+    const { deleteAgentChannelAccounts } = await import('@electron/utils/channel-config');
+
+    await deleteAgentChannelAccounts('agent-a', new Set(['telegram:agent-a']));
+
+    const config = await readOpenClawJson();
+    expect((config.channels as Record<string, unknown>).telegram).toBeUndefined();
+  });
+
+  it('removes legacy plugin account mirrors when deleting a channel account', async () => {
+    await writeOpenClawJson({
+      channels: {
+        discord: {
+          accounts: {
+            'agent-a': { token: 'discord-token-a', enabled: true },
+            'agent-b': { token: 'discord-token-b', enabled: true },
+          },
+          defaultAccount: 'agent-a',
+          enabled: true,
+          token: 'discord-token-a',
+        },
+      },
+      plugins: {
+        allow: ['discord'],
+        entries: {
+          discord: {
+            enabled: true,
+            defaultAccount: 'agent-a',
+            accounts: {
+              'agent-a': { token: 'discord-token-a', enabled: true },
+              'agent-b': { token: 'discord-token-b', enabled: true },
+            },
+          },
+        },
+      },
+    });
+    const { deleteChannelAccountConfig } = await import('@electron/utils/channel-config');
+
+    await deleteChannelAccountConfig('discord', 'agent-a');
+
+    const config = await readOpenClawJson();
+    const channel = (config.channels as Record<string, Record<string, unknown>>).discord;
+    const plugin = ((config.plugins as { entries: Record<string, Record<string, unknown>> }).entries).discord;
+    expect(channel.defaultAccount).toBe('agent-b');
+    expect(channel.accounts).toEqual({
+      'agent-b': { token: 'discord-token-b', enabled: true },
+    });
+    expect(plugin).toEqual({ enabled: true });
+    expect(JSON.stringify(plugin)).not.toContain('discord-token-a');
+    expect(JSON.stringify(plugin)).not.toContain('discord-token-b');
+  });
+
+  it('removes a legacy plugin-only registration without canonical channel config', async () => {
+    await writeOpenClawJson({
+      plugins: {
+        allow: ['discord'],
+        entries: {
+          discord: {
+            enabled: true,
+            defaultAccount: 'agent-a',
+            accounts: {
+              'agent-a': { token: 'discord-token-a', enabled: true },
+              'agent-b': { token: 'discord-token-b', enabled: true },
+            },
+          },
+        },
+      },
+    });
+    const { deleteChannelAccountConfig } = await import('@electron/utils/channel-config');
+
+    await deleteChannelAccountConfig('discord', 'agent-a');
+
+    const config = await readOpenClawJson();
+    expect(config.plugins).toBeUndefined();
+  });
 });
 
 describe('WeChat dangling plugin cleanup', () => {
@@ -327,9 +505,9 @@ describe('WeChat dangling plugin cleanup', () => {
   });
 
   it('removes dangling openclaw-weixin plugin registration and state when no channel config exists', async () => {
-    const { cleanupDanglingWeChatPluginState, writeOpenClawConfig } = await import('@electron/utils/channel-config');
+    const { cleanupDanglingWeChatPluginState } = await import('@electron/utils/channel-config');
 
-    await writeOpenClawConfig({
+    await writeOpenClawJson({
       plugins: {
         enabled: true,
         allow: ['openclaw-weixin'],
@@ -350,6 +528,95 @@ describe('WeChat dangling plugin cleanup', () => {
     const config = await readOpenClawJson();
     expect(config.plugins).toBeUndefined();
     expect(existsSync(join(testHome, BRAND.dataDirName, 'openclaw-weixin'))).toBe(false);
+  });
+});
+
+describe('coordinated channel config delivery', () => {
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    vi.resetModules();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('mutates the running coordinator snapshot without replacing it from the local file', async () => {
+    await writeOpenClawJson({ localOnly: true });
+    let runningConfig: Record<string, unknown> = { gatewayOnly: true };
+    let hash = 'hash-1';
+    const manager = {
+      getStatus: vi.fn(() => ({ state: 'running' as const })),
+      rpc: vi.fn(async (method: string, params: unknown) => {
+        if (method === 'config.get') return { raw: JSON.stringify(runningConfig), hash };
+        if (method === 'config.set') {
+          runningConfig = JSON.parse((params as { raw: string }).raw) as Record<string, unknown>;
+          hash = 'hash-2';
+          return { ok: true };
+        }
+        throw new Error(`Unexpected RPC method: ${method}`);
+      }),
+    };
+    const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
+    registerOpenClawConfigCoordinator(manager);
+    const channelConfig = await import('@electron/utils/channel-config');
+
+    await channelConfig.saveChannelConfig('telegram', { botToken: 'gateway-token' }, 'default');
+
+    expect(runningConfig).toMatchObject({
+      gatewayOnly: true,
+      channels: {
+        telegram: {
+          accounts: { default: { botToken: 'gateway-token' } },
+        },
+      },
+    });
+    expect(await readOpenClawJson()).toEqual({ localOnly: true });
+    expect(channelConfig).not.toHaveProperty('writeOpenClawConfig');
+  });
+
+  it('reads the resolved OpenClaw config path', async () => {
+    const customPath = join(testHome, 'custom', 'runtime.json');
+    await mkdir(join(testHome, 'custom'), { recursive: true });
+    await writeFile(customPath, JSON.stringify({ customPath: true }), 'utf8');
+    process.env.OPENCLAW_CONFIG_PATH = customPath;
+
+    try {
+      const { readOpenClawConfig } = await import('@electron/utils/channel-config');
+      await expect(readOpenClawConfig()).resolves.toEqual({ customPath: true });
+    } finally {
+      delete process.env.OPENCLAW_CONFIG_PATH;
+    }
+  });
+
+  it('reads the running coordinator snapshot instead of the local file', async () => {
+    await writeOpenClawJson({ localOnly: true });
+    const manager = {
+      getStatus: vi.fn(() => ({ state: 'running' as const })),
+      rpc: vi.fn(async (method: string) => {
+        if (method === 'config.get') {
+          return { raw: '{ gatewayOnly: true }', hash: 'hash-1' };
+        }
+        throw new Error(`Unexpected RPC method: ${method}`);
+      }),
+    };
+    const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
+    registerOpenClawConfigCoordinator(manager);
+    const { readOpenClawConfig } = await import('@electron/utils/channel-config');
+
+    await expect(readOpenClawConfig()).resolves.toEqual({ gatewayOnly: true });
+  });
+
+  it('accepts JSON5 syntax when reading the resolved OpenClaw config path', async () => {
+    const customPath = join(testHome, 'custom', 'runtime.json5');
+    await mkdir(join(testHome, 'custom'), { recursive: true });
+    await writeFile(customPath, '{\n  // comment\n  customPath: true,\n}\n', 'utf8');
+    process.env.OPENCLAW_CONFIG_PATH = customPath;
+
+    try {
+      const { readOpenClawConfig } = await import('@electron/utils/channel-config');
+      await expect(readOpenClawConfig()).resolves.toEqual({ customPath: true });
+    } finally {
+      delete process.env.OPENCLAW_CONFIG_PATH;
+    }
   });
 });
 
@@ -401,6 +668,187 @@ describe('configured channel account extraction', () => {
     expect(result.feishu).toEqual({
       defaultAccountId: '2',
       accountIds: ['2'],
+    });
+  });
+});
+
+describe('Feishu credential validation', () => {
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    vi.resetModules();
+    await rm(testHome, { recursive: true, force: true });
+  });
+
+  function jsonResponse(body: unknown, status = 200): Response {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+    } as unknown as Response;
+  }
+
+  it('rejects an App Secret that is just the App ID pasted twice without calling Feishu', async () => {
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: 'cli_a8cf7d97fbb8d00d',
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errorCodes).toEqual([{ code: 'feishuAppSecretEqualsAppId', params: undefined }]);
+    expect(result.errors[0]).toMatch(/identical to App ID/);
+    expect(proxyAwareFetchMock).not.toHaveBeenCalled();
+  });
+
+  it('requires both App ID and App Secret', async () => {
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    await expect(validateChannelCredentials('feishu', { appSecret: 'secret' })).resolves.toMatchObject({
+      valid: false,
+      errorCodes: [{ code: 'feishuAppIdRequired' }],
+    });
+    await expect(validateChannelCredentials('feishu', { appId: 'cli_x' })).resolves.toMatchObject({
+      valid: false,
+      errorCodes: [{ code: 'feishuAppSecretRequired' }],
+    });
+    expect(proxyAwareFetchMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the Feishu API rejection when the tenant token request fails', async () => {
+    proxyAwareFetchMock.mockResolvedValue(jsonResponse({ code: 10003, msg: 'app_id or app_secret is invalid' }, 400));
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: 'wrong-secret',
+    });
+
+    expect(proxyAwareFetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ app_id: 'cli_a8cf7d97fbb8d00d', app_secret: 'wrong-secret' }),
+      }),
+    );
+    expect(proxyAwareFetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal',
+      expect.anything(),
+    );
+    expect(result).toMatchObject({
+      valid: false,
+      errorCodes: [{ code: 'feishuRejected', params: { error: 'app_id or app_secret is invalid' } }],
+    });
+    expect(result.errors[0]).toContain('app_id or app_secret is invalid');
+  });
+
+  it('accepts Lark credentials when Feishu rejects and the Larksuite token request succeeds', async () => {
+    proxyAwareFetchMock
+      .mockResolvedValueOnce(jsonResponse({ code: 10003, msg: 'app_id or app_secret is invalid' }, 400))
+      .mockResolvedValueOnce(jsonResponse({ code: 0, msg: 'ok', tenant_access_token: 't-lark', expire: 7200 }));
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: 'lark-secret',
+    });
+
+    expect(proxyAwareFetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
+      expect.anything(),
+    );
+    expect(proxyAwareFetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal',
+      expect.anything(),
+    );
+    expect(result).toEqual({
+      valid: true,
+      errors: [],
+      warnings: [],
+      details: { domain: 'lark' },
+    });
+  });
+
+  it('accepts credentials once Feishu issues a tenant access token and honours the lark domain', async () => {
+    proxyAwareFetchMock.mockResolvedValue(jsonResponse({ code: 0, msg: 'ok', tenant_access_token: 't-abc', expire: 7200 }));
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: 'real-secret',
+      domain: 'lark',
+    });
+
+    expect(proxyAwareFetchMock).toHaveBeenCalledWith(
+      'https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal',
+      expect.anything(),
+    );
+    expect(result).toEqual({
+      valid: true,
+      errors: [],
+      warnings: [],
+      details: { domain: 'lark' },
+    });
+  });
+
+  it('validates a redacted App Secret against the durable file instead of sending the placeholder', async () => {
+    await writeOpenClawJson({
+      channels: {
+        feishu: {
+          enabled: true,
+          accounts: {
+            default: { appId: 'cli_a8cf7d97fbb8d00d', appSecret: 'real-secret' },
+          },
+        },
+      },
+    });
+    proxyAwareFetchMock.mockResolvedValue(jsonResponse({ code: 0, msg: 'ok', tenant_access_token: 't-abc', expire: 7200 }));
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: '__OPENCLAW_REDACTED__',
+    }, { accountId: 'default' });
+
+    expect(proxyAwareFetchMock).toHaveBeenCalledWith(
+      'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ app_id: 'cli_a8cf7d97fbb8d00d', app_secret: 'real-secret' }),
+      }),
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it('asks the user to re-enter the App Secret when the redacted placeholder cannot be resolved', async () => {
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: '__OPENCLAW_REDACTED__',
+    });
+
+    expect(proxyAwareFetchMock).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      valid: false,
+      errorCodes: [{ code: 'feishuAppSecretReenter' }],
+    });
+  });
+
+  it('reports a connection error instead of throwing when Feishu is unreachable', async () => {
+    proxyAwareFetchMock.mockRejectedValue(new Error('ECONNRESET'));
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    await expect(validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: 'real-secret',
+    })).resolves.toMatchObject({
+      valid: false,
+      errorCodes: [{ code: 'feishuConnectionError', params: { error: 'ECONNRESET' } }],
     });
   });
 });

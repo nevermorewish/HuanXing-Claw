@@ -1,4 +1,6 @@
 
+
+> 本 DeepClaw / HuanXing-Claw 分支已同步 [ClawX v0.6.0](https://github.com/ValueCell-ai/ClawX/releases/tag/v0.6.0)（`c8a54dcd`），保留多品牌构建、账号登录、供应商与模型管理、用量历史、配置管理、日志及各品牌更新源。聊天采用上游 ACP 实现；电脑操作与开发者模式下的语音输入遵循上游行为。上游已移除旧版 Dreams 页面。
 <p align="center">
   <img src="src/assets/logo.svg" width="128" height="128" alt="DeepClaw Logo" />
 </p>
@@ -10,7 +12,6 @@
 </p>
 
 <p align="center">
-  <a href="#功能特性">功能特性</a> •
   <a href="#为什么选择-deepclaw">为什么选择 DeepClaw</a> •
   <a href="#快速上手">快速上手</a> •
   <a href="#系统架构">系统架构</a> •
@@ -25,7 +26,7 @@
   <a href="https://discord.com/invite/84Kex3GGAh" target="_blank">
   <img src="https://img.shields.io/discord/1399603591471435907?logo=discord&labelColor=%20%235462eb&logoColor=%20%23f5f5f5&color=%20%235462eb" alt="chat on Discord" />
   </a>
-  <img src="https://img.shields.io/github/downloads/ValueCell-ai/DeepClaw/total?color=%23027DEB" alt="Downloads" />
+  <img src="https://img.shields.io/github/downloads/ValueCell-ai/ClawX/total?color=%23027DEB" alt="Downloads" />
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
 </p>
 
@@ -41,43 +42,29 @@
 
 无论是自动化工作流、连接通讯软件，还是调度智能定时任务，DeepClaw 都能提供高效易用的图形界面，帮助你充分发挥 AI 智能体的能力。
 
-DeepClaw 预置了最佳实践的模型供应商配置，原生支持 Windows 平台以及多语言设置。当然，你也可以通过 **设置 → 高级 → 开发者模式** 来进行精细的高级配置。
+DeepClaw 预置了最佳实践的模型供应商配置，原生支持 Windows 平台以及多语言设置。上下文压缩预留仅在模型显式配置上下文窗口时按其 25% 计算，缺少该元数据时使用保守的 50000 token 默认值；已完成的回合会通过摘要延续，而不会在压缩后逐字重放。开发者模式会显示实际应用的预留值。当然，你也可以通过 **设置 → 高级 → 开发者模式** 来进行精细的高级配置。
 
 <p align="center"><strong style="font-size:1.1em; text-decoration: underline;">如需完整的企业版、专属服务支持或面向您业务场景的定制化落地辅导，请联系 <a href="mailto:public@valuecell.ai">public@valuecell.ai</a>。</strong></p>
 
----
-
 ## 截图预览
 
-<p align="center">
-  <img src="resources/screenshot/zh/chat.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/zh/cron.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/zh/skills.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/zh/channels.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/zh/models.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/zh/settings.png" style="width: 100%; height: auto;">
-</p>
-
----
-
+<table>
+  <tr>
+    <td align="center"><img src="resources/screenshot/zh/chat.png" alt="Chat"><br><em>聊天界面</em></td>
+    <td align="center"><img src="resources/screenshot/zh/cron.png" alt="Cron"><br><em>定时任务</em></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="resources/screenshot/zh/skills.png" alt="Skills"><br><em>技能管理</em></td>
+    <td align="center"><img src="resources/screenshot/zh/channels.png" alt="Channels"><br><em>频道管理</em></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="resources/screenshot/zh/models.png" alt="Models"><br><em>模型配置</em></td>
+    <td align="center"><img src="resources/screenshot/zh/settings.png" alt="Settings"><br><em>设置</em></td>
+  </tr>
+</table>
 ## 为什么选择 DeepClaw
 
-构建 AI 智能体不应该需要精通命令行。DeepClaw 的设计理念很简单：**强大的技术值得拥有一个尊重用户时间的界面。**
+构建 AI 智能体不应该需要精通命令行。DeepClaw 的设计理念很简单：**强大的技术值得拥有一个尊重用户时间的界面**。DeepClaw 直接基于官方 OpenClaw 核心构建。无需单独安装，我们将运行时嵌入应用内部，提供开箱即用的无缝体验，并致力于与上游 OpenClaw 项目保持严格同步，确保你始终可以使用官方发布的最新功能、稳定性改进和生态兼容性。
 
 | 痛点 | DeepClaw 解决方案 |
 |------|----------------|
@@ -88,69 +75,38 @@ DeepClaw 预置了最佳实践的模型供应商配置，原生支持 Windows �
 | 多 AI 供应商切换 | 统一的供应商配置面板 |
 | 技能/插件安装复杂 | 内置技能市场与管理界面 |
 
-### 内置 OpenClaw 核心
+### 功能特性
 
-DeepClaw 直接基于官方 **OpenClaw** 核心构建。无需单独安装，我们将运行时嵌入应用内部，提供开箱即用的无缝体验。
+- **🎯 零配置门槛**：从安装到第一次 AI 对话，全程指引式图形界面，无需终端命令、YAML 配置或环境变量。
+- **💬 智能聊天界面**：多会话上下文与历史记录，流式 Markdown 渲染（语法高亮、CJK 排版、表格、KaTeX 公式）、`@agent` 直接路由与 `/技能` 内联卡片，内嵌子 Agent 状态、实时只读下钻及直接返回父会话，工作空间优先的会话侧边栏，以及 Markdown、`.docx`、`.pptx` 和本地 HTML 的只读预览。
+- **🎙️ 语音转文字输入（开发者模式）**：在“设置”中开启**开发者模式**后，可在聊天输入框点击麦克风按钮进行语音口述，录音经自定义的语音转写服务识别后插入光标处。前往 **模型 → 语音转写** 选择 API 类型（OpenAI Audio Transcriptions 或 OpenAI Chat Completions 的 `input_audio` 方式）及对应服务商预设（OpenAI / Groq / 硅基流动 / 阿里云百炼 / 自定义）并配置 API Key。
+  - 点击麦克风时会检查权限。若访问被拒绝，对话框提供「打开系统设置」操作；策略限制可能需要管理员处理。macOS 用户请在「隐私与安全性 → 麦克风」中启用 DeepClaw，然后完全退出并重启。开发环境中权限可能属于启动它的 IDE 或终端，也需要重启。Windows 用户需允许桌面应用访问麦克风。关闭对话框后再次点击麦克风重试，录音不会自动开始。
+- **🤖 Agent 生命周期管理**：可在桌面端创建和管理专用 Agent。删除非默认 Agent 时必须明确确认；此操作会永久删除其由 DeepClaw 管理的工作空间及所有关联聊天记录，相关会话和已删除的工作空间条目会立即从聊天界面消失且无法恢复。
+- **🧰 导出问题现场**：前往“设置 > 支持”查看导出内容，即可在桌面生成包含已脱敏 OpenClaw 配置和可用诊断日志的 ZIP。会话为可选项；如有选择，则一并包含可用的会话 JSONL，完成后 DeepClaw 会显示保存路径。
+- **📡 多频道管理**：同时配置和监控多个 AI 频道，每个频道独立运行并支持多账号；内置腾讯官方个人微信渠道插件，以及映射到现有 `dingtalk` 身份的官方钉钉连接器。添加钉钉或升级已有钉钉配置后，DeepClaw 会配置随包提供的工作台 CLI，并提供可选的钉钉工作台 OAuth，用于日历、文档等 `dws` 技能；跳过授权不影响聊天，之后也可从已配置频道发起或取消授权。组织主管理员需要先在钉钉开发者后台开启“允许成员通过 CLI 访问其个人数据”。
+- **⏰ 定时任务自动化**：可视化定义触发器与时间间隔，让 AI 智能体 7×24 小时自动运行；支持周期（每小时/每天/工作日/每周/自定义 cron）与单次执行，并可将结果自动投递到外部频道。
+- **🧩 可扩展技能系统**：本地优先的技能管理，扫描托管与 workspace 技能目录，无需依赖 Gateway 即可启用或停用技能；预装文档处理技能（`pdf`、`xlsx`、`docx`、`pptx`）。
+- **🔐 安全的供应商集成**：支持 OpenAI、Anthropic、Z.AI / GLM 等供应商，凭证经系统原生密钥链安全存储，同时提供自定义 Provider 与兼容网关的降级探测；中文界面的供应商目录还会提供 TokenDance，支持带 PKCE 与 DeepClaw 请求归因的浏览器 OAuth。在开发者模式下，请前往 **模型 → 图像生成** 配置生图端点；生成完成的图片会直接显示在聊天中，而不会暴露 OpenClaw 的原始 `MEDIA:` 路径。
+- **💻 本机 Computer Use**：在 macOS 13+（Intel 或 Apple 芯片）和 Windows x64 上，Agent 可通过内置的原生 CUA CLI 操作窗口、辅助功能元素、菜单和桌面，并验证结果。主显示器截图和输入能力继续保留。驱动在本机运行，不需要 OpenClaw 节点配对或运行时额外下载组件。
+- **🌙 自适应主题**：支持浅色、深色与跟随系统主题。
+- **🚀 开机启动控制**：在 设置 → 通用 中开启开机自动启动。
+- **🔔 更新提示**：启动时自动检查新版本，由你决定是否下载或安装更新。
 
-我们致力于与上游 OpenClaw 项目保持严格同步，确保你始终可以使用官方发布的最新功能、稳定性改进和生态兼容性。
+> 对于功能细节的完整说明，请参阅 [docs/zh-CN/features.md](docs/zh-CN/features.md)。
 
-打开开发者模式后，侧边栏还会提供原生 Dreams 页面，可在 DeepClaw 内查看 OpenClaw 记忆回顾、梦境日记，并执行基础维护操作；需要更深诊断时仍可从该页面打开完整 OpenClaw Dreams UI。
+### 典型使用场景
 
----
-
-## 功能特性
-
-### 🎯 零配置门槛
-从安装到第一次 AI 对话，全程通过直观的图形界面完成。无需终端命令，无需 YAML 文件，无需到处寻找环境变量。
-
-### 💬 智能聊天界面
-通过现代化的聊天体验与 AI 智能体交互。支持多会话上下文、消息历史记录、Markdown 富文本渲染（包括 GitHub 风格表格以及由 KaTeX 渲染的 LaTeX 数学公式：`$行内$`、`$$块级$$`、`\(行内\)` 和 `\[块级\]`），以及在多 Agent 场景下通过主输入框中的 `@agent` 直接路由到目标智能体。
-从输入框插入的技能会以 `/技能名` 卡片形式显示；点击卡片可在右侧预览栏打开并阅读该技能的 `SKILL.md`。
-当你使用 `@agent` 选择其他智能体时，DeepClaw 会直接切换到该智能体自己的对话上下文，而不是经过默认智能体转发。各 Agent 工作区默认彼此分离，但更强的运行时隔离仍取决于 OpenClaw 的 sandbox 配置。
-每个 Agent 还可以单独覆盖自己的 `provider/model` 运行时设置；未覆盖的 Agent 会继续继承全局默认模型。
-
-### 📡 多频道管理
-同时配置和监控多个 AI 频道。每个频道独立运行，允许你为不同任务运行专门的智能体。
-现在每个频道支持多个账号，并可在 Channels 页面直接完成账号绑定到 Agent 与默认账号切换。
-对于自定义频道账号 ID，DeepClaw 现在会强制校验 OpenClaw 兼容的规范格式（`[a-z0-9_-]`、小写、最长 64 位、且必须以字母或数字开头），避免路由匹配异常。
-DeepClaw 现在还内置了腾讯官方个人微信渠道插件，可直接在 Channels 页面通过内置二维码流程完成微信连接。
-
-### ⏰ 定时任务自动化
-调度 AI 任务自动执行。定义触发器、设置时间间隔，让 AI 智能体 7×24 小时不间断工作。
-现在定时任务页面已经可以直接配置外部投递，统一拆成“发送账号”和“接收目标”两个下拉选择。对于已支持的通道，接收目标会从通道目录能力或已知会话历史中自动发现，不需要再手动修改 `jobs.json`。
-
-
-### 🧩 可扩展技能系统
-通过预构建的技能扩展 AI 智能体的能力。集成的 Skills 页面采用“本地优先”方式：会扫描托管目录与 workspace 技能目录，并且无需依赖 Gateway 即可启用或停用技能；在企业扩展接管时，也可以显示扩展提供的 marketplace。
-DeepClaw 还会内置预装完整的文档处理技能（`pdf`、`xlsx`、`docx`、`pptx`），在启动时自动部署到托管技能目录（默认 `~/.openclaw/skills`），并在首次安装时默认启用。额外预装技能（`find-skills`、`self-improving-agent`、`tavily-search`）也会默认启用；若缺少必需的 API Key，OpenClaw 会在运行时给出配置错误提示。  
-Skills 页面可展示来自多个 OpenClaw 来源的技能（托管目录、workspace、额外技能目录），并显示每个技能的实际路径，便于直接打开真实安装位置。对于 OpenClaw 自带的 bundled skills，社区版现在在打包产物里只保留并展示 `skill-creator`；开发模式和打包版启动时都会直接清理其它 bundled skill，同时把这些已删除 bundled skill 在 `openclaw.json` 中残留的旧配置一并移除。
-
-重点搜索技能所需环境变量：
-- `TAVILY_API_KEY`：用于 `tavily-search`（上游运行时也可能支持 OAuth）
-
-### 🔐 安全的供应商集成
-连接多个 AI 供应商（OpenAI、Anthropic 等），凭证安全存储在系统原生密钥链中。OpenAI 同时支持 API Key 与浏览器 OAuth（Codex 订阅）登录。
-在开发者模式下，独立的“图像生成”页面支持配置 OpenAI 兼容生图端点（Base URL、API Key 和模型名，例如 `gpt-image-2`），生图请求会走专用的 `/v1/images/generations` 服务，聊天仍继续使用正常的 OpenAI Provider。
-如果你通过 **自定义（Custom）Provider** 对接 OpenAI-compatible 网关，可以在 **设置 → AI Providers → 编辑 Provider** 中配置自定义 `User-Agent`，以提高兼容性。
-编辑或切换 Provider 时，DeepClaw 会保留已有的模型级能力元数据，例如 `input: ["text", "image"]`。新选择的自定义 Provider 模型会使用与 OpenClaw onboarding 一致的图片输入能力推断；未知模型默认按纯文本模型处理。
-如果兼容网关的 `/models` 因非鉴权原因不可用，DeepClaw 会在校验 API Key 时自动降级为轻量的 `/chat/completions` 或 `/responses` 探测。
-
-### 🌙 自适应主题
-支持浅色模式、深色模式或跟随系统主题。DeepClaw 自动适应你的偏好设置。
-
-### 🚀 开机启动控制
-在 **设置 → 通用** 中，你可以开启 **开机自动启动**，让 DeepClaw 在系统登录后自动启动。
-
-### 🔔 更新提示
-DeepClaw 可以在启动时自动检查新版本。发现更新后会显示应用内提示；只有在你选择操作后，才会下载或安装更新。
-
----
+- **🤖 个人 AI 助手**：配置一个通用 AI 智能体，可以回答问题、撰写邮件、总结文档并协助处理日常任务——全部通过简洁的桌面界面完成。
+- **📊 自动化监控**：设置定时智能体来监控新闻动态、追踪价格变动或监听特定事件，结果将推送到你偏好的通知渠道。
+- **💻 开发者效率工具**：将 AI 融入你的开发工作流，使用智能体进行代码审查、生成文档或自动化重复性编码任务。
+- **🔄 工作流自动化**：将多个技能串联起来，创建复杂的自动化流水线——处理数据、转换内容、触发操作，全部通过可视化方式编排。
 
 ## 快速上手
 
 ### 系统要求
 
 - **操作系统**：macOS 11+、Windows 10+ 或 Linux（Ubuntu 20.04+）
+- **Computer Use**：macOS 13+ x64/arm64，或 Windows 10+ x64；DeepClaw 在其他受支持平台上仍可正常使用，但不提供此功能
 - **内存**：最低 4GB RAM（推荐 8GB）
 - **存储空间**：1GB 可用磁盘空间
 
@@ -158,13 +114,13 @@ DeepClaw 可以在启动时自动检查新版本。发现更新后会显示应�
 
 #### 预构建版本（推荐）
 
-从 [Releases](https://github.com/ValueCell-ai/DeepClaw/releases) 页面下载适用于你平台的最新版本。
+从 [Releases](https://github.com/ValueCell-ai/ClawX/releases) 页面下载适用于你平台的最新版本。
 
-#### 从源码构建
+#### 从源码开始
 
 ```bash
 # 克隆仓库
-git clone https://github.com/ValueCell-ai/DeepClaw.git
+git clone https://github.com/ValueCell-ai/ClawX.git
 cd DeepClaw
 
 # 初始化项目
@@ -182,10 +138,30 @@ pnpm dev
 3. **技能包** – 选择适用于常见场景的预配置技能
 4. **验证** – 在进入主界面前测试你的配置
 
-如果系统语言在支持列表中，向导会默认选中该语言；否则回退到英文。
+### 本机 Computer Use
 
-> Moonshot（Kimi）说明：DeepClaw 默认保持开启 Kimi 的 web search。  
-> 当配置 Moonshot 后，DeepClaw 也会将 OpenClaw 配置中的 Kimi web search 同步到中国区端点（`https://api.moonshot.cn/v1`）。
+DeepClaw 内置 CUA SDK 和 Driver **0.25.0**。在 macOS 和 Windows 上，Main 的嵌入式 daemon 选项和 Gateway 启动的 CLI 环境均设置 `CUA_DRIVER_RS_TELEMETRY_ENABLED=false`，关闭 CUA 产品遥测。SDK 从 0.22.0 起允许此环境变量，取代了 0.21.0 仅关闭 CLI 遥测的临时方案。此设置不会修改系统环境变量、独立 CUA 安装的设置或 DeepClaw 自身的遥测偏好。
+
+Windows 的 PE 控制台子系统转 GUI 补丁仍与遥测关闭设置一起保留：固定版本的上游源码仍使用 `cmd /c ver` 收集遥测，并未自动修复无窗口启动。此前 Windows 用户反馈针对 0.21.0；重新构建的 Windows 0.25.0 启动、CLI 输出和闪窗行为仍需原生验证。详见[验证历史与限制](harness/reference/computer-use-cli-validation.md)。
+
+请使用支持图片输入的模型和服务端点。截图成功不代表模型能看到图片。同步提供商时会为已识别的视觉模型补齐缺失的输入能力元数据，同时保留显式纯文本声明；未知模型仍按纯文本处理。如果提示不支持图片，请检查当前提供商和模型，不要继续盲目键盘输入。
+
+Computer Use 是可选功能，**默认关闭**，包括尚未明确选择的已有安装。请先在设置中开启**开发者模式**，再从侧边栏进入**操作计算机**页面启用此功能。开关在重启后保留。Electron Main 持有内置驱动服务并管理权限；关闭会停止该服务并删除私有连接描述符。该能力不涉及远程发现或 OpenClaw 节点配对。
+
+Agent 通过 OpenClaw 现有的 `exec` 工具调用内置原生 CUA CLI，再通过支持图片的 `read` 工具查看截图文件。此路径不再使用 DeepClaw 的 `computer` 工具、OpenClaw 插件或 MCP 代理。在受支持平台上可使用固定版本 CLI 的完整原生能力，包括窗口、辅助功能元素（AX）、菜单、浏览器/录制操作和 `verify_state`，不再受 DeepClaw 自定义操作子集限制。主显示器截图、移动、点击、拖动、滚动、文本输入、组合键和有限时长等待继续可用；具体命令仍受平台、应用和系统权限限制。
+
+macOS 管理页只读显示**辅助功能**和**屏幕录制**状态。启动、激活和启用开关均不会请求权限；需先启用功能，再明确点击**请求权限**。请求不保证系统再次弹窗；如果权限仍未授予，页面会显示操作指引，而不是静默返回原状态。请在系统设置 > 隐私与安全性中检查辅助功能和屏幕与系统音频录制（旧版 macOS 为屏幕录制）。以系统实际列出的应用为准：安装版通常是 DeepClaw，开发环境可能归属于启动它的终端或 IDE，例如 Ghostty 或 VS Code。修改授权后请重启 DeepClaw，必要时也重启启动它的应用。屏幕权限检查无法区分从未请求与此前拒绝。关闭功能不会撤销系统授权。权限或驱动缺失时驱动不可用，但不阻止聊天或 Gateway 启动。
+
+内置 **computer-use** Skill 保留 `/computer-use` 选择器命令，基于 [CUA 0.25.0 随附的官方 Skill](https://github.com/trycua/cua/tree/45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f/libs/cua-driver/rust/Skills/cua-driver)，来源固定为标签 `cua-driver-rs-v0.25.0`、提交 `45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f`，而非持续变化的上游 `main`。MIT 许可的文档和许可证离线随包分发，附有简短的 DeepClaw 入口说明，涵盖 Main 端点、权限、会话和图片处理。
+
+**DeepClaw 完全管理 `~/.openclaw/skills/computer-use` 目录。** 每次启动都会将与当前内置包不同的同名安装整体替换为内置内容，包括覆盖用户修改、移除额外文件和目录；内容一致时不做改动。自定义版本必须使用其他 Skill 名称和目录。其他名称的 Skill 和设置（包括 Computer Use 启用偏好）保持不变。替换先在暂存位置完成复制，并保留发布失败时的回滚；同名符号链接只替换链接本身，不跟随或删除其外部目标。比较以当前内置包为准，不维护历史安装哈希，也不改变官方 CUA 0.25.0 文档字节或来源校验。选择 Skill 不会启用服务或授予系统权限。详见 [Skill 来源与集成](harness/reference/computer-use-skill.md)。
+
+截图文件位于当前本机 Agent 工作区中由任务管理的目录，但读取图片供模型分析时，内容可能发送给模型提供商。请避免截取敏感窗口。此功能要求本机执行、工作区访问及模型/提供商图片支持；沙箱或远程上下文不兼容时应报告限制，不得放宽全局 shell 审批或另启驱动。Skill 指导不是 shell 沙箱或全局操作锁。取消 `exec` 无法撤销已被接受的原生操作，也不保证原生紧急停止。驱动重启或完成状态未知时，应重新发现端点并观察当前状态，再决定后续操作，不要盲目重放输入。涉及重大影响或对外操作时需确认。
+
+> Web search 说明：DeepClaw 会在 Agent 和 Gateway 两层策略中禁用 OpenClaw 的通用 `web_search` 工具。
+> 这也包括 Moonshot（Kimi）搜索；受管浏览器自动化和 `web_fetch` 仍然可用。
+>
+> 内部工具说明：DeepClaw 还会在两层策略中对 Agent 禁用 `gateway`、`nodes`、`create_goal`、`get_goal` 和 `update_goal`。DeepClaw 应用自身的 Gateway RPC 不受影响，消息、会话编排和 Agent 发现工具仍然可用。
 
 ### 代理设置
 
@@ -193,211 +169,46 @@ DeepClaw 内置了代理设置，适用于需要通过本地代理客户端访�
 
 打开 **设置 → 网关 → 代理**，配置以下内容：
 
-- **代理服务器**：所有请求默认使用的代理
+- **代理服务器**：所有请求默认使用的代理，填写例如 `http://127.0.0.1:7890`
 - **绕过规则**：需要直连的主机，使用分号、逗号或换行分隔
-- 在 **开发者模式** 下，还可以单独覆盖：
-  - **HTTP 代理**
-  - **HTTPS 代理**
-  - **ALL_PROXY / SOCKS**
+- 在 **开发者模式** 下，还可以单独覆盖：HTTP 代理、HTTPS 代理、ALL_PROXY / SOCKS
 
-本地代理的常见填写示例：
-
-```text
-代理服务器: http://127.0.0.1:7890
-```
-说明：
-
-- 只填写 `host:port` 时，会按 HTTP 代理处理。
-- 高级代理项留空时，会自动回退到“代理服务器”。
-- 保存代理设置后，Electron 网络层会立即重新应用代理，并自动重启 Gateway。
-- 如果启用了 Telegram，DeepClaw 还会把代理同步到 OpenClaw 的 Telegram 频道配置中。
-- 当 DeepClaw 代理处于关闭状态时，Gateway 的常规重启会保留已有的 Telegram 频道代理配置。
-- 如果你要明确清空 OpenClaw 中的 Telegram 代理，请在关闭代理后点一次“保存代理设置”。
-- 在 **设置 → 高级 → 开发者** 中，可以直接运行 **OpenClaw Doctor**，执行 `openclaw doctor --json` 并在应用内查看诊断输出。
-- 在 Windows 打包版本中，内置的 `openclaw` CLI/TUI 会通过随包分发的 `node.exe` 入口运行，以保证终端输入行为稳定。
-
----
+> 开发者模式覆盖项、Telegram 代理同步与 **OpenClaw Doctor** 等详细行为说明，请参阅 [docs/zh-CN/proxy-settings.md](docs/zh-CN/proxy-settings.md)。
 
 ## 系统架构
 
-DeepClaw 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用统一客户端抽象，协议选择与进程生命周期由 Electron 主进程统一管理：
+DeepClaw 采用 **双进程 + Host API 统一接入架构**：React 渲染进程只通过统一的 host-api/api-client 抽象与后端交互，协议选择、Gateway 生命周期与 ACP Chat stdio bridge 全部由 Electron 主进程统一管理。
 
-```
-┌───────────────────────────────────────────────────────────────────┐
-│                        DeepClaw 桌面应用                              │
-│                                                                   │
-│  ┌─────────────────────────────────────────────────────────────┐  │
-│  │              Electron 主进程                                 │  │
-│  │  • 窗口与应用生命周期管理                                       │  │
-│  │  • 网关进程监控                                               │  │
-│  │  • 系统集成（托盘、通知、密钥链）                                │  │
-│  │  • 自动更新编排                                               │  │
-│  └─────────────────────────────────────────────────────────────┘  │
-│                              │                                    │
-│                              │ IPC (权威控制面)                     │
-│                              ▼                                    │
-│  ┌─────────────────────────────────────────────────────────────┐  │
-│  │              React 渲染进程                                  │  │
-│  │  • 现代组件化 UI（React 19）                                  │  │
-│  │  • Zustand 状态管理                                          │  │
-│  │  • 统一 host-api/api-client 调用                             │  │
-│  │  • Markdown 富文本渲染                                       │  │
-│  └────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────┬───────────────────────────────────┘
-                               │
-                               │ 类型化 IPC 请求
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                  主进程 Host Services 与 Gateway Manager          │
-│                                                                 │
-│  • host:invoke 类型化服务分发                                      │
-│  • 设置、文件、会话、技能、供应商、诊断服务                           │
-│  • 主进程持有 Gateway WebSocket 并负责进程监控                       │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-                               │ 主进程持有 WebSocket
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     OpenClaw 网关                                │
-│                                                                 │
-│  • AI 智能体运行时与编排                                           │
-│  • 消息频道管理                                                   │
-│  • 技能/插件执行环境                                               │
-│  • 供应商抽象层                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-### 设计原则
+- **进程模型**：Electron 主进程负责窗口、网关进程监控、系统集成与自动更新；OpenClaw Gateway 作为独立运行时进程提供 AI 编排、频道和技能能力；渲染层不直接访问本地端点。
+- **本机 Computer Use**：Electron Main 保留 `EmbeddedCuaDriverHost`、原生 SDK 加载、权限检查和 daemon 监督。`DEEPCLAW_CUA_CONNECTION_FILE` 指向私有描述符 `{ v: 2, generation, driverVersion, binaryPath, socketPath }`。OpenClaw 现有的 `exec` 使用描述符中的内置程序绝对路径及显式 socket 调用 CLI，`read` 向模型提供截图。整个流程不使用自定义插件、MCP 代理、node host、配对或运行时下载。
+- **配置交付**：Gateway 运行时由 Main 使用 `config.get` / `config.set`，停止或启动中则更新解析后的 JSON5 配置；普通 Provider/Agent/Skill/模型修改不会替换进程，凭据通过 `secrets.reload` 热更新。连续三分钟没有已验证的 Gateway 活动后，DeepClaw 会验证核心 RPC，并且只重启其自身拥有且不可用的 Gateway 进程；外部管理的 Gateway 保留给用户手动恢复。
+- **ACP Chat**：Chat UI 基于 ACP ([Agent Client Protocol](https://agentclientprotocol.com)) 与 OpenClaw 交互，从而在高速迭代的 OpenClaw 前找到相对稳定的聊天协议面。ACP 走 Main 持有的 stdio bridge，支持配置热重载后的历史回放认证、跨页面持续流式输出，以及由 Main 验证和加载的媒体/附件/文件活动（Changes）展示。通过原生拖拽或文件选择器添加的文件直接引用其规范化源路径，不再创建 DeepClaw 暂存副本；有路径的图片会继续作为 ACP 资源链接传递，不会再被 OpenClaw 重新写入 `media/inbound`，因此源文件后续发生修改、移动或删除时会影响附件。剪贴板等没有稳定路径的字节附件仍使用受保护的临时暂存和内联图片传输。当 ACP 遗漏资源块时，经 OpenClaw internal-UI message 工具确认交付的生成文件（包括 Excel 工作簿）会恢复为附件卡片。当受保护的 Gateway 重启中断已接收的对话轮次时，补丁后的 OpenClaw 运行时会将恢复 run 显式关联到原 ACP prompt，使后续文本和工具活动继续进入同一个内存轮次；之后的历史回放也会以原生 ACP 更新恢复持久化的工具边界。如果最终答复持久化后再次重启导致终态通知丢失，按 run 和会话范围执行的结算会结束 pending prompt，避免 Chat 一直显示执行中。
+- **设计原则**：前端调用单一入口、Main 掌控传输策略、优雅恢复（重连/超时/退避）、安全存储与 CORS 安全。
 
-- **进程隔离**：AI 运行时在独立进程中运行，确保即使在高负载计算期间 UI 也能保持响应
-- **前端调用单一入口**：渲染层统一走 host-api/api-client，不感知底层协议细节
-- **主进程掌控传输策略**：Gateway WebSocket 只由 Electron Main 持有，渲染进程通过类型化 IPC 调用 Main
-- **扩展 IPC 贡献点**：主进程扩展通过类型化 IPC 注册表贡献 host-api action，而不是挂载 HTTP route
-- **优雅恢复**：内置重连、超时、退避逻辑，自动处理瞬时故障
-- **安全存储**：API 密钥和敏感数据利用操作系统原生的安全存储机制
-- **CORS 安全**：渲染进程不直接请求本地 Gateway 或 Host API HTTP 端点
-
-### 进程模型与 Gateway 排障
-
-- DeepClaw 基于 Electron，**单个应用实例出现多个系统进程是正常现象**（main/renderer/zygote/utility）。
-- 单实例保护同时使用 Electron 自带锁与本地进程文件锁回退机制，可在桌面会话总线异常时避免重复启动。
-- 滚动升级期间若新旧版本混跑，单实例保护仍可能出现不对称行为。为保证稳定性，建议桌面客户端尽量统一升级到同一版本。
-- 但 OpenClaw Gateway 监听应始终保持**单实例**：`127.0.0.1:18789` 只能有一个监听者。
-- Gateway readiness 以 OpenClaw 的 `system-presence`、`health`、`status` 等核心信号为准；memory、Dreams 或频道失败会显示为能力降级，而不是全局 Gateway 故障。
-- 可用以下命令确认监听进程：
-  - macOS/Linux：`lsof -nP -iTCP:18789 -sTCP:LISTEN`
-  - Windows（PowerShell）：`Get-NetTCPConnection -LocalPort 18789 -State Listen`
-- 点击窗口关闭按钮（`X`）默认只是最小化到托盘，并不会完全退出应用。请在托盘菜单中选择 **Quit DeepClaw** 执行完整退出。
-
----
-
-## 使用场景
-
-### 🤖 个人 AI 助手
-配置一个通用 AI 智能体，可以回答问题、撰写邮件、总结文档并协助处理日常任务——全部通过简洁的桌面界面完成。
-
-### 📊 自动化监控
-设置定时智能体来监控新闻动态、追踪价格变动或监听特定事件。结果将推送到你偏好的通知渠道。
-
-### 💻 开发者效率工具
-将 AI 融入你的开发工作流。使用智能体进行代码审查、生成文档或自动化重复性编码任务。
-
-### 🔄 工作流自动化
-将多个技能串联起来，创建复杂的自动化流水线。处理数据、转换内容、触发操作——全部通过可视化方式编排。
-
----
+> 完整架构说明（进程图、配置协调、ACP 文件活动语义与 Gateway 排障）请参阅 [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md)。
 
 ## 开发指南
 
 ### 前置要求
 
-- **Node.js**：22+（推荐 LTS 版本）
-- **包管理器**：pnpm 9+（推荐）或 npm
-- **Linux（Ubuntu/Debian）**：运行 Electron 前，请先安装所需系统库：
-  ```bash
-  sudo apt-get install -y libnss3 libgtk-3-0 libxss1 libxtst6 libatspi2.0-0 libnotify4 xdg-utils
-  ```
-  在 Ubuntu 24.04+ 上，部分软件包使用 `t64` 后缀，运行上述命令后 `apt` 会自动选择正确版本。
+- **Node.js**：22.22.3+ / 24.15.0+（推荐） / 25.9.0+
+- **包管理器**：pnpm 9+
+- **Linux（Ubuntu/Debian）**：运行 Electron 前需先安装系统库，见 [docs/zh-CN/development.md](docs/zh-CN/development.md)
 
-### 项目结构
-
-```DeepClaw/
-├── electron/                 # Electron 主进程
-│   ├── services/            # 类型化 Host API、Provider、Secrets 与运行时服务
-│   │   ├── providers/       # Provider/account 模型同步逻辑
-│   │   └── secrets/         # 系统钥匙串与密钥存储
-│   ├── shared/              # 共享 Provider schema/常量
-│   │   └── providers/
-│   ├── main/                # 应用入口、窗口、IPC 注册
-│   ├── gateway/             # OpenClaw 网关进程管理
-│   ├── preload/             # 安全 IPC 桥接
-│   └── utils/               # 工具模块（存储、认证、路径）
-├── src/                      # React 渲染进程
-│   ├── lib/                 # 前端统一 API 与错误模型
-│   ├── stores/              # Zustand 状态仓库（settings/chat/gateway）
-│   ├── components/          # 可复用 UI 组件
-│   ├── pages/               # Setup/Dashboard/Chat/Channels/Skills/Cron/Settings
-│   ├── i18n/                # 国际化资源
-│   └── types/               # TypeScript 类型定义
-├── tests/
-│   ├── e2e/                 # Playwright Electron 端到端冒烟测试
-│   └── unit/                # Vitest 单元/集成型测试
-├── resources/                # 静态资源（图标、图片）
-└── scripts/                  # 构建与工具脚本
-```
 ### 常用命令
 
 ```bash
-# 开发
-pnpm run init             # 安装依赖并下载捆绑二进制（uv、agent-browser）
-pnpm dev                  # 以热重载模式启动（若缺失会自动准备预装技能包）
-
-# 代码质量
-pnpm lint                 # 运行 ESLint 检查
-pnpm typecheck            # TypeScript 类型检查
-
-# 测试
-pnpm test                 # 运行单元测试
-pnpm run test:e2e         # 运行 Electron E2E 冒烟测试
-pnpm run test:e2e:headed  # 以可见窗口运行 Electron E2E 测试
-pnpm run comms:replay     # 计算通信回放指标
-pnpm run comms:baseline   # 刷新通信基线快照
-pnpm run comms:compare    # 将回放指标与基线阈值对比
-
-# 构建与打包
-pnpm run build:vite       # 仅构建前端
-pnpm build                # 完整生产构建（含打包资源）
-pnpm package              # 为当前平台打包（包含预装技能资源）
-pnpm package:mac          # 为 macOS 打包
-pnpm package:win          # 为 Windows 打包
-pnpm package:linux        # 为 Linux 打包
+pnpm run init        # 初始化开发环境（安装依赖并下载捆绑运行时）
+pnpm dev             # 以热重载模式启动
+pnpm lint            # ESLint 检查
+pnpm typecheck       # TypeScript 类型检查
+pnpm test            # 单元测试
+pnpm run test:e2e    # Electron E2E 冒烟测试
+pnpm build           # 完整生产构建
+pnpm package         # 为当前平台打包（可用 :mac / :win / :linux 后缀）
 ```
 
-在无头 Linux 环境下，Electron 测试需要显示服务；可使用 `xvfb-run -a pnpm run test:e2e`。
-
-### 通信回归检查
-
-当 PR 涉及通信链路（Gateway 事件、Chat 收发流程、Channel 投递、传输回退）时，建议执行：
-
-```bash
-pnpm run comms:replay
-pnpm run comms:compare
-```
-
-CI 中的 `comms-regression` 会校验必选场景与阈值。
-### 技术栈
-
-| 层级 | 技术 |
-|------|------|
-| 运行时 | Electron 40+ |
-| UI 框架 | React 19 + TypeScript |
-| 样式 | Tailwind CSS + shadcn/ui |
-| 状态管理 | Zustand |
-| 构建工具 | Vite + electron-builder |
-| 测试 | Vitest + Playwright |
-| 动画 | Framer Motion |
-| 图标 | Lucide React |
-
----
+> 项目结构、技术栈、完整命令列表、E2E 并行策略、性能诊断与通信回归检查等细节，请参阅 [docs/zh-CN/development.md](docs/zh-CN/development.md)。
 
 ## 参与贡献
 
@@ -406,10 +217,8 @@ CI 中的 `comms-regression` 会校验必选场景与阈值。
 ### 如何贡献
 
 1. **Fork** 本仓库
-2. **创建** 功能分支（`git checkout -b feature/amazing-feature`）
-3. **提交** 清晰描述的变更
-4. **推送** 到你的分支
-5. **创建** Pull Request
+2. **创建** 功能分支（`git checkout -b feature/amazing-feature`），进行开发
+3. **提交** 清晰描述的变更，**推送** 到你的分支，并**创建** Pull Request
 
 ### 贡献规范
 
@@ -418,19 +227,19 @@ CI 中的 `comms-regression` 会校验必选场景与阈值。
 - 按需更新文档
 - 保持提交原子化且描述清晰
 
----
 
 ## 致谢
 
 DeepClaw 构建于以下优秀的开源项目之上：
 
 - [OpenClaw](https://github.com/OpenClaw) – AI 智能体运行时
+- [LobsterAI](https://github.com/netease-youdao/lobsterai) – Gateway 存活信号与恢复设计的灵感来源
 - [Electron](https://www.electronjs.org/) – 跨平台桌面框架
 - [React](https://react.dev/) – UI 组件库
 - [shadcn/ui](https://ui.shadcn.com/) – 精美设计的组件库
 - [Zustand](https://github.com/pmndrs/zustand) – 轻量级状态管理
+- [LobeHub Icons](https://lobehub.com/zh/icons) – 聊天模型选择器使用的模型图标
 
----
 
 ## 社区
 
@@ -444,27 +253,24 @@ DeepClaw 构建于以下优秀的开源项目之上：
 
 我们正在启动 DeepClaw 合作伙伴计划，寻找能够帮助我们将 DeepClaw 介绍给更多客户的合作伙伴，尤其是那些有定制化 AI 智能体或自动化需求的客户。
 
-合作伙伴负责帮助我们连接潜在用户和项目，DeepClaw 团队则提供完整的技术支持、定制开发与集成服务。
-
-如果你服务的客户对 AI 工具或自动化方案感兴趣，欢迎与我们合作。
+合作伙伴负责帮助我们连接潜在用户和项目，DeepClaw 团队则提供完整的技术支持、定制开发与集成服务。如果你服务的客户对 AI 工具或自动化方案感兴趣，欢迎与我们合作。
 
 欢迎私信我们，或发送邮件至 [public@valuecell.ai](mailto:public@valuecell.ai) 了解更多。
 
----
 
 ## Stars 历史
 
 <p align="center">
-  <img src="https://api.star-history.com/svg?repos=ValueCell-ai/DeepClaw&type=Date" alt="Stars 历史图表" />
+  <img src="https://star-history.dera.page/svg?repos=ValueCell-ai/ClawX&type=Date" alt="Stars 历史图表" />
 </p>
 
----
 
 ## 许可证
 
 DeepClaw 基于 [MIT 许可证](LICENSE) 发布。你可以自由地使用、修改和分发本软件。
 
----
+<hr>
+
 
 <p align="center">
   <sub>由 ValueCell 团队用 ❤️ 打造</sub>

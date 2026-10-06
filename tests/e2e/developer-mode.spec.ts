@@ -6,24 +6,41 @@ test.describe('DeepClaw developer-mode gated UI', () => {
 
     await page.getByTestId('sidebar-nav-settings').click();
     await expect(page.getByTestId('settings-page')).toBeVisible();
-    await expect(page.getByTestId('settings-developer-section')).toHaveCount(0);
+    const devModeSwitch = page.getByTestId('settings-dev-mode-switch');
+    if (await devModeSwitch.getAttribute('data-state') === 'checked') await devModeSwitch.click();
+    await expect(page.getByTestId('settings-developer-section')).toBeVisible();
+    await expect(page.getByTestId('settings-developer-mode-desc')).toBeVisible();
+    await expect(page.getByTestId('settings-developer-advanced')).toHaveCount(0);
     await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'unchecked');
     await expect(page.getByTestId('sidebar-open-dev-console')).toHaveCount(0);
+    await expect(page.getByTestId('sidebar-nav-computer-use')).toHaveCount(0);
     await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
+    await expect(page.getByTestId('sidebar-nav-image-generation')).toHaveCount(0);
+    await expect(page.getByTestId('sidebar-talk')).toHaveCount(0);
+    await expect(page.getByTestId('talk-settings')).toHaveCount(0);
+
+    await page.evaluate(() => window.location.assign('#/settings?section=developer'));
+    await expect(page.getByTestId('settings-developer-section')).toBeFocused();
+    await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'unchecked');
 
     await page.evaluate(() => {
       window.location.hash = '#/dreams';
     });
     await expect(page.getByTestId('dreams-page')).toHaveCount(0);
+    await page.evaluate(() => {
+      window.location.hash = '#/';
+    });
     await expect(page.getByTestId('chat-composer-input')).toBeVisible();
+    await expect(page.getByTestId('chat-composer-voice')).toHaveCount(0);
 
     await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('models-tab-voice')).toHaveCount(0);
     await page.getByTestId('providers-add-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
     await page.getByTestId('add-provider-type-siliconflow').click();
     const preDevModelInput = page.getByTestId('add-provider-model-id-input');
     await expect(preDevModelInput).toBeVisible();
-    await expect(preDevModelInput).toHaveValue('deepseek-ai/DeepSeek-V3');
+    await expect(preDevModelInput).toHaveValue('zai-org/GLM-5.3');
     await page.getByTestId('add-provider-close-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toHaveCount(0);
 
@@ -31,16 +48,38 @@ test.describe('DeepClaw developer-mode gated UI', () => {
     await page.getByTestId('settings-dev-mode-switch').click();
     await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'checked');
     await expect(page.getByTestId('settings-developer-section')).toBeVisible();
+    await expect(page.getByTestId('settings-developer-mode-desc')).toBeVisible();
+    await expect(page.getByTestId('settings-developer-advanced')).toBeVisible();
     await expect(page.getByTestId('settings-developer-gateway-token')).toBeVisible();
+    const compactionReserve = page.getByTestId('settings-developer-compaction-reserve');
+    await expect(compactionReserve).toBeVisible();
+    await expect(compactionReserve).toContainText('50,000 tokens when none is set');
     await expect(page.getByTestId('sidebar-open-dev-console')).toBeVisible();
-    await expect(page.getByTestId('sidebar-nav-dreams')).toBeVisible();
+    await expect(page.getByTestId('sidebar-nav-computer-use')).toBeVisible();
+    await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
+    await expect(page.getByTestId('sidebar-nav-image-generation')).toHaveCount(0);
+    await expect(page.getByTestId('sidebar-talk')).toHaveCount(0);
+    await expect(page.getByTestId('talk-settings')).toHaveCount(0);
+
+    await page.evaluate(() => {
+      window.location.hash = '#/';
+    });
+    await expect(page.getByTestId('chat-composer-voice')).toBeVisible();
 
     await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('models-tab-voice')).toBeVisible();
+    await expect(page.getByTestId('models-tab-image-generation')).toBeVisible();
+    await expect(page.getByTestId('models-tab-realtime-talk')).toHaveCount(0);
+    await page.getByTestId('models-tab-image-generation').click();
+    await expect(page.getByTestId('image-generation-settings')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Recent Token Usage' })).toHaveCount(0);
+    await page.getByTestId('models-tab-chat').click();
+    await expect(page.getByRole('heading', { name: 'Recent Token Usage' })).toBeVisible();
     await page.getByTestId('providers-add-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
     await page.getByTestId('add-provider-type-siliconflow').click();
     const postDevModelInput = page.getByTestId('add-provider-model-id-input');
     await expect(postDevModelInput).toBeVisible();
-    await expect(postDevModelInput).toHaveValue('deepseek-ai/DeepSeek-V3');
+    await expect(postDevModelInput).toHaveValue('zai-org/GLM-5.3');
   });
 });

@@ -17,7 +17,7 @@ function parseScalar(value) {
 }
 
 export function parseFrontmatter(markdown) {
-  const match = markdown.match(/^---\n([\s\S]*?)\n---(?:\n|$)/);
+  const match = markdown.replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n---(?:\n|$)/);
   if (!match) {
     throw new Error('Spec must start with Markdown frontmatter');
   }
@@ -115,6 +115,29 @@ export function toArray(value) {
   if (Array.isArray(value)) return value;
   if (value == null || value === '') return [];
   return [value];
+}
+
+export function validateSpecReferences(spec, scenarios, rules) {
+  const failures = [];
+  const scenarioIds = new Set(scenarios.map((candidate) => candidate.data?.id).filter(Boolean));
+  const ruleIds = new Set(rules.map((candidate) => candidate.data?.id).filter(Boolean));
+  const referencedScenarios = new Set([
+    ...toArray(spec.data?.scenario),
+    ...toArray(spec.data?.scenarios),
+  ].filter(Boolean));
+
+  for (const scenarioId of referencedScenarios) {
+    if (!scenarioIds.has(scenarioId)) {
+      failures.push(`${spec.path}: references unknown scenario "${scenarioId}"`);
+    }
+  }
+  for (const ruleId of new Set(toArray(spec.data?.requiredRules).filter(Boolean))) {
+    if (!ruleIds.has(ruleId)) {
+      failures.push(`${spec.path}: references unknown rule "${ruleId}"`);
+    }
+  }
+
+  return failures;
 }
 
 export function isGatewayBackendCommunicationTask(spec) {
