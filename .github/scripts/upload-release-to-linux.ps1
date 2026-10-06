@@ -61,6 +61,7 @@ function Invoke-RemoteScript([string[]]$Commands) {
     $scriptBase64 | ssh `
       -i $script:SshKeyPath `
       -p $script:SshPort `
+      -o "BatchMode=yes" `
       -o "UserKnownHostsFile=$script:SshKnownHostsPath" `
       -o "StrictHostKeyChecking=$script:SshStrictHostKeyChecking" `
       -o "ServerAliveInterval=30" `

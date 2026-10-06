@@ -221,7 +221,7 @@ jobs:
           $deployUser = if ([string]::IsNullOrWhiteSpace($env:SECRET_LINUX_DEPLOY_USER)) { $env:VAR_LINUX_DEPLOY_USER } else { $env:SECRET_LINUX_DEPLOY_USER }
           $configuredRemotePath = if ([string]::IsNullOrWhiteSpace($env:SECRET_LINUX_DEPLOY_PATH)) { $env:VAR_LINUX_DEPLOY_PATH } else { $env:SECRET_LINUX_DEPLOY_PATH }
 
-          if ([string]::IsNullOrWhiteSpace($deployHost)) { $deployHost = '43.224.248.112' }
+          if ([string]::IsNullOrWhiteSpace($deployHost)) { $deployHost = '74.82.221.119' }
           if ([string]::IsNullOrWhiteSpace($deployUser)) { $deployUser = 'root' }
 
           $missing = @()
@@ -242,7 +242,8 @@ jobs:
 
           $keyPath = Join-Path $sshDir 'linux_deploy_key'
           ($env:LINUX_DEPLOY_KEY -replace "`r`n", "`n") | Set-Content -Path $keyPath -NoNewline -Encoding ascii
-          icacls $keyPath /grant:r "$($env:USERNAME):F" | Out-Null
+          icacls $keyPath /inheritance:r | Out-Null
+          icacls $keyPath /grant:r "$($env:USERNAME):R" | Out-Null
 
           $knownHostsPath = Join-Path $sshDir 'known_hosts'
           if ([string]::IsNullOrWhiteSpace($env:LINUX_DEPLOY_KNOWN_HOSTS)) {
