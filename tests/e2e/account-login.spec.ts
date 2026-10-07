@@ -69,6 +69,42 @@ test.describe('ccwork account', () => {
     await page.locator('#ccwork-code').fill('123456'); await page.getByTestId('ccwork-submit').click();
     await expect(page.getByTestId('sidebar-account-account')).toContainText('Demo');
   });
+
+  test('opens the in-app recharge dialog and submits a custom amount', async ({ electronApp, page }, testInfo) => {
+    await installIpcMocks(electronApp, { hostApi: {
+      '["account","restore",null]': setup,
+      '["account","getBalance",null]': { success: true, balance },
+      '["account","creditPackages",null]': { success: true, packages: [] },
+      '["account","createRecharge",{"amountCny":"35.00","paymentMethod":"alipay"}]': { success: true, payment: { order_no: 'custom-order', qr_code: 'https://pay.test/qr' } },
+      '["account","rechargeStatus",{"orderNo":"custom-order"}]': { success: true, order: { order_no: 'custom-order', status: 'paying' } },
+    } });
+    await completeSetup(page);
+    await page.getByTestId('sidebar-account-account').click();
+    await page.getByText('Recharge credits').click();
+    const dialog = page.getByRole('dialog');
+    for (const amount of ['10', '20', '50', '100', '200']) {
+      const option = dialog.getByRole('button', { name: `¥${amount}`, exact: true });
+      await option.click();
+      await expect(option).toHaveAttribute('aria-pressed', 'true');
+      await expect(dialog.getByText(`¥${amount}.00`, { exact: true })).toBeVisible();
+    }
+    await dialog.screenshot({ path: testInfo.outputPath('recharge-desktop.png') });
+    await page.setViewportSize({ width: 480, height: 600 });
+    await page.getByRole('button', { name: 'Custom amount', exact: true }).click();
+    await page.getByLabel('Custom amount').fill('-10');
+    await expect(page.getByRole('button', { name: 'Confirm recharge', exact: true })).toBeDisabled();
+    await page.getByLabel('Custom amount').fill('35');
+    const layout = await dialog.evaluate((element) => ({
+      width: element.clientWidth, scrollWidth: element.scrollWidth,
+      top: element.getBoundingClientRect().top, bottom: element.getBoundingClientRect().bottom,
+    }));
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.width);
+    expect(layout.top).toBeGreaterThanOrEqual(0);
+    expect(layout.bottom).toBeLessThanOrEqual(600);
+    await dialog.screenshot({ path: testInfo.outputPath('recharge-narrow.png') });
+    await page.getByRole('button', { name: 'Confirm recharge', exact: true }).click();
+    await expect(page.getByText('Scan with your phone to pay. This page checks the order automatically.')).toBeVisible();
+  });
   test('rejects a malformed identifier before calling ccwork', async ({ electronApp, page }) => {
     await installIpcMocks(electronApp, { hostApi: {} });
     await completeSetup(page); await page.getByTestId('sidebar-account-login').click();

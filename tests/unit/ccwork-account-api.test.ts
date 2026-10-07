@@ -127,9 +127,11 @@ describe('ccwork account service credential ownership', () => {
     }));
     expect(await service.creditPackages()).toMatchObject({ success: true, packages: [{ id: 'starter' }] });
     expect(await service.createRecharge({ packageId: 'starter', paymentMethod: 'alipay' })).toMatchObject({ success: true, payment: { order_no: 'order-1' } });
+    expect(await service.createRecharge({ amountCny: '35.00', paymentMethod: 'alipay' })).toMatchObject({ success: true, payment: { order_no: 'order-1' } });
     expect(await service.rechargeStatus({ orderNo: 'order-1' })).toMatchObject({ success: true, order: { status: 'paid' } });
     expect(await service.cancelRecharge({ orderNo: 'order-1' })).toEqual({ success: true });
     expect(calls.some((url) => url.includes('package_id=starter') && url.includes('payment_type=qr') && url.includes('organization_id=org-uuid'))).toBe(true);
+    expect(calls.some((url) => url.includes('amount_cny=35.00') && !url.includes('package_id='))).toBe(true);
     expect(calls.some((url) => url.includes('order_no=order-1'))).toBe(true);
   });
   it('returns actionable recharge errors without exposing session credentials', async () => {

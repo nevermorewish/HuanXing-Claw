@@ -153,10 +153,20 @@
         "rechargeExpired": "Истёк",
         "rechargeFailed": "Платёж не выполнен",
         "rechargeWaiting": "Ожидание платежа",
-        "rechargeChooseAgain": "Выбрать другой пакет",
+        "rechargeChooseAgain": "Выбрать другую сумму",
         "alipay": "Alipay",
         "wechatPay": "WeChat Pay",
         "rechargeCreating": "Создание заказа…",
-        "rechargeConfirm": "Подтвердить пополнение"
+        "rechargeConfirm": "Подтвердить пополнение",
+        "rechargeAmount": "Сумма пополнения",
+        "rechargeAmountHint": "Выберите сумму или укажите свою",
+        "rechargeCustomAmount": "Своя сумма",
+        "rechargeAmountPlaceholder": "Введите сумму",
+        "rechargeAmountInvalid": "Введите сумму от 0,01 до 100 000 юаней, не более двух знаков после запятой.",
+        "rechargePaymentMethod": "Способ оплаты",
+        "rechargeTotal": "Это пополнение",
+        "rechargePackageCredits": "{{name}}: {{credits}} кредитов",
+        "rechargeBonusCredits": "(бонус {{bonus}} включён)",
+        "rechargeCustomCredits": "Свое пополнение на {{amount}} юаней. Количество кредитов рассчитывается по курсу сервера."
     }
 }

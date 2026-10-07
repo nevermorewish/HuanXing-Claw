@@ -158,7 +158,7 @@ export function createAccountApi({ gatewayManager }: { gatewayManager: GatewayMa
       catch (error) { return failure(error); }
     },
     createRecharge: async (payload) => {
-      try { await initializeCcworkAccount(); return { success: true, payment: await accountSession.createRecharge(payload.packageId, payload.paymentMethod) }; }
+        try { await initializeCcworkAccount(); return { success: true, payment: await accountSession.createRecharge(payload.packageId, payload.amountCny, payload.paymentMethod) }; }
       catch (error) { return failure(error); }
     },
     rechargeStatus: async (payload) => {

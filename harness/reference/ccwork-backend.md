@@ -31,6 +31,12 @@ and output limits, and vision support. Do not route by a model display name.
 `GET /api/wallet/organizations/{id}/transactions?transaction_type=consume&limit=20&offset=0`
 with `data.total` and `data.transactions`. These credits are not USD or tokens.
 
+Credit recharge uses `POST /api/wallet/recharge` with query parameters
+`organization_id`, `payment_method`, `payment_type`, and either `package_id` or
+`amount_cny`. Custom CNY amounts range from 0.01 to 100000 with two decimal places;
+credit counts and bonuses are computed by the server. Poll the returned order via
+`/api/services/payment/query-order` and refresh the wallet after payment confirmation.
+
 `POST /api/llm/proxy` accepts OpenAI chat request bodies and always streams.
 Authorization is a user JWT; `X-TabTin-Organization-Id` selects the organization.
 The proxy normalizes native provider responses into OpenAI deltas. It also emits

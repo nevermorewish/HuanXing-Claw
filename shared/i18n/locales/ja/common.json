@@ -153,10 +153,20 @@
         "rechargeExpired": "期限切れ",
         "rechargeFailed": "支払い失敗",
         "rechargeWaiting": "支払い待ち",
-        "rechargeChooseAgain": "別のプランを選ぶ",
+        "rechargeChooseAgain": "金額を選び直す",
         "alipay": "Alipay",
         "wechatPay": "WeChat Pay",
         "rechargeCreating": "注文を作成中…",
-        "rechargeConfirm": "チャージを確定"
+        "rechargeConfirm": "チャージを確定",
+        "rechargeAmount": "チャージ金額",
+        "rechargeAmountHint": "金額を選択するか、任意の金額を入力してください",
+        "rechargeCustomAmount": "任意の金額",
+        "rechargeAmountPlaceholder": "金額を入力",
+        "rechargeAmountInvalid": "0.01～100,000 元の金額を小数点以下 2 桁以内で入力してください。",
+        "rechargePaymentMethod": "支払い方法",
+        "rechargeTotal": "今回のチャージ",
+        "rechargePackageCredits": "{{name}}：{{credits}} クレジット",
+        "rechargeBonusCredits": "（ボーナス {{bonus}} を含む）",
+        "rechargeCustomCredits": "{{amount}} 元の任意チャージ。クレジット数はサーバーの換算レートで計算されます。"
     }
 }

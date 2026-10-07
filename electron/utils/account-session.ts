@@ -169,12 +169,14 @@ export class AccountSession {
   async creditPackages(): Promise<CreditPackage[]> {
     return this.request('/api/wallet/packages?active_only=true');
   }
-  async createRecharge(packageId: string, paymentMethod: 'alipay' | 'wechat'): Promise<RechargePayment> {
-    if (!packageId.trim() || !['alipay', 'wechat'].includes(paymentMethod)) throw new Error('Invalid recharge selection');
+  async createRecharge(packageId: string | undefined, amountCny: string | undefined, paymentMethod: 'alipay' | 'wechat'): Promise<RechargePayment> {
+    if ((!packageId?.trim() && !amountCny?.trim()) || !['alipay', 'wechat'].includes(paymentMethod)) throw new Error('请选择充值套餐或输入充值金额');
     const organizationId = this.state?.organizationId;
     if (!organizationId) throw new Error('Please log in to ccwork');
-    const query = new URLSearchParams({ package_id: packageId, payment_method: paymentMethod,
+    const query = new URLSearchParams({ payment_method: paymentMethod,
       payment_type: paymentMethod === 'alipay' ? 'qr' : 'native', organization_id: organizationId });
+    if (packageId?.trim()) query.set('package_id', packageId.trim());
+    if (amountCny?.trim()) query.set('amount_cny', amountCny.trim());
     const payment = await this.request<RechargePayment>(`/api/wallet/recharge?${query}`, { method: 'POST' });
     if (!payment.order_no) throw new Error('Invalid recharge order response');
     return payment;

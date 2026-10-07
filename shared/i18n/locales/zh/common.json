@@ -153,10 +153,20 @@
         "rechargeExpired": "已过期",
         "rechargeFailed": "支付失败",
         "rechargeWaiting": "等待支付",
-        "rechargeChooseAgain": "重新选择套餐",
+        "rechargeChooseAgain": "重新选择金额",
         "alipay": "支付宝",
         "wechatPay": "微信支付",
         "rechargeCreating": "创建订单中…",
-        "rechargeConfirm": "确认充值"
+        "rechargeConfirm": "确认充值",
+        "rechargeAmount": "充值金额",
+        "rechargeAmountHint": "选择常用金额，或输入自定义金额",
+        "rechargeCustomAmount": "自定义金额",
+        "rechargeAmountPlaceholder": "输入金额",
+        "rechargeAmountInvalid": "请输入 0.01 至 100000 元的充值金额，最多两位小数。",
+        "rechargePaymentMethod": "支付方式",
+        "rechargeTotal": "本次充值",
+        "rechargePackageCredits": "{{name}}：到账 {{credits}} 代币",
+        "rechargeBonusCredits": "（含赠送 {{bonus}}）",
+        "rechargeCustomCredits": "自定义充值 {{amount}} 元，代币数量按服务器汇率计算。"
     }
 }

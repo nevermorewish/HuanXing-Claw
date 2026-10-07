@@ -31,6 +31,11 @@ transactions; local transcript token estimates are diagnostic, not wallet charge
 
 Reference: [ccwork backend contracts](../../reference/ccwork-backend.md).
 
+Recharge offers CNY 10, 20, 50, 100, 200 and a custom decimal amount. Main sends
+`amount_cny` to the wallet recharge endpoint when no package is selected. Package
+selection is optional; the server owns credit conversion and paid-order grants.
+Keep the amount input editable and the dialog scrollable at small window sizes.
+
 CCWorkClaw brand assets use a repository-local copy of ccwork's root logo.png.
 Its update feed shares ccwork's public OSS bucket but has a separate
 desktop-updates/ccworkclaw/<channel>/ prefix. Do not point it at the ccwork

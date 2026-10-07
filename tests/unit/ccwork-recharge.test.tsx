@@ -7,10 +7,11 @@ const mocks = vi.hoisted(() => ({
   rechargeStatus: vi.fn(),
   cancelRecharge: vi.fn(),
   fetchBalance: vi.fn(),
+  t: (key: string) => key,
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: mocks.t }),
 }));
 vi.mock('@/lib/host-api', () => ({
   hostApi: { account: {
@@ -36,7 +37,8 @@ describe('RechargeDialog', () => {
 
   it('creates an order, observes payment, and refreshes the balance', async () => {
     render(<RechargeDialog open onOpenChange={vi.fn()} />);
-    await screen.findByText('Starter');
+    fireEvent.click(screen.getByRole('button', { name: '¥10', exact: true }));
+    await screen.findByText('ccwork.rechargePackageCredits');
     fireEvent.click(screen.getByText('ccwork.rechargeConfirm'));
     await waitFor(() => expect(mocks.createRecharge).toHaveBeenCalledWith({ packageId: 'starter', paymentMethod: 'alipay' }));
     await waitFor(() => expect(screen.getByText('ccwork.rechargeSuccess')).toBeInTheDocument());
@@ -48,12 +50,38 @@ describe('RechargeDialog', () => {
     mocks.rechargeStatus.mockResolvedValue({ success: true, order: { order_no: 'order-1', status: 'paying' } });
     const onOpenChange = vi.fn();
     const view = render(<RechargeDialog open onOpenChange={onOpenChange} />);
-    await screen.findByText('Starter');
+    await waitFor(() => expect(screen.getByText('ccwork.rechargeConfirm')).toBeEnabled());
     fireEvent.click(screen.getByText('ccwork.rechargeConfirm'));
     await waitFor(() => expect(mocks.createRecharge).toHaveBeenCalled());
     fireEvent.click(screen.getByText('actions.close'));
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(mocks.cancelRecharge).not.toHaveBeenCalled();
     view.unmount();
+  });
+
+  it('submits a custom amount without requiring a matching package', async () => {
+    render(<RechargeDialog open onOpenChange={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('ccwork.rechargeConfirm')).toBeEnabled());
+    fireEvent.change(screen.getByLabelText('ccwork.rechargeCustomAmount'), { target: { value: '35' } });
+    fireEvent.click(screen.getByText('ccwork.rechargeConfirm'));
+    await waitFor(() => expect(mocks.createRecharge).toHaveBeenCalledWith({ amountCny: '35.00', paymentMethod: 'alipay' }));
+  });
+
+  it.each(['20', '50', '100', '200'])('recharges preset %s without a package', async (amount) => {
+    render(<RechargeDialog open onOpenChange={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('ccwork.rechargeConfirm')).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: `¥${amount}`, exact: true }));
+    fireEvent.click(screen.getByText('ccwork.wechatPay'));
+    fireEvent.click(screen.getByText('ccwork.rechargeConfirm'));
+    await waitFor(() => expect(mocks.createRecharge).toHaveBeenCalledWith({ amountCny: `${amount}.00`, paymentMethod: 'wechat' }));
+  });
+
+  it.each(['', '0', '-10', '100000.01', '1.234', 'NaN', '1.2.3'])('prevents invalid custom amount %s', async (amount) => {
+    render(<RechargeDialog open onOpenChange={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('ccwork.rechargeConfirm')).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'ccwork.rechargeCustomAmount' }));
+    fireEvent.change(screen.getByLabelText('ccwork.rechargeCustomAmount'), { target: { value: amount } });
+    expect(screen.getByText('ccwork.rechargeConfirm')).toBeDisabled();
+    expect(mocks.createRecharge).not.toHaveBeenCalled();
   });
 });

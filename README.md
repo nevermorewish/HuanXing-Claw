@@ -293,7 +293,8 @@ Tests consume credits. The account's default and fallback chain and the chat mod
 selector use ccwork, and the Models page lists the enabled models so you can switch
 which one is primary. Credit balance and consumption on the Usage page come from the personal
 ccwork organization. Local Token history is diagnostic and does not determine
-wallet charges. The account menu opens an in-app recharge dialog with credit packages and
+wallet charges. The account menu opens an in-app recharge dialog with CNY 10/20/50/100/200 or
+a custom amount (0.01–100,000, up to two decimal places), and
 Alipay or WeChat QR payment; after payment confirmation it refreshes the balance automatically.
 Closing the dialog keeps an unpaid order available to continue later. Log out to revoke local
 access and remove the account provider.

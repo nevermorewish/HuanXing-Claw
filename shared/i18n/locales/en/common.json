@@ -153,10 +153,20 @@
         "rechargeExpired": "Expired",
         "rechargeFailed": "Payment failed",
         "rechargeWaiting": "Waiting for payment",
-        "rechargeChooseAgain": "Choose another package",
+        "rechargeChooseAgain": "Choose another amount",
         "alipay": "Alipay",
         "wechatPay": "WeChat Pay",
         "rechargeCreating": "Creating order…",
-        "rechargeConfirm": "Confirm recharge"
+        "rechargeConfirm": "Confirm recharge",
+        "rechargeAmount": "Recharge amount",
+        "rechargeAmountHint": "Choose a common amount or enter a custom amount",
+        "rechargeCustomAmount": "Custom amount",
+        "rechargeAmountPlaceholder": "Enter amount",
+        "rechargeAmountInvalid": "Enter an amount from CNY 0.01 to 100,000 with at most two decimal places.",
+        "rechargePaymentMethod": "Payment method",
+        "rechargeTotal": "This recharge",
+        "rechargePackageCredits": "{{name}}: {{credits}} credits",
+        "rechargeBonusCredits": "({{bonus}} bonus included)",
+        "rechargeCustomCredits": "Custom recharge of {{amount}} CNY. Credits are calculated using the server rate."
     }
 }
