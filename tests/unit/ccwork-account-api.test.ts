@@ -110,4 +110,34 @@ describe('ccwork account service credential ownership', () => {
     expect(state.values.has('ccworkSession')).toBe(false); expect(state.config.models).toEqual([]);
     expect((await service.fetchSetup()).success).toBe(false);
   });
+  it('keeps recharge APIs Main-owned and validates payment lifecycle responses', async () => {
+    const service = await api();
+    await service.login({ baseUrl: 'https://ccwork.site', username: 'demo', password: 'password' });
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      calls.push(url);
+      const data = url.includes('/api/wallet/packages')
+        ? [{ id: 'starter', name: 'Starter', description: '100 credits', price: '10', total_credits: 100, bonus_credits: 0 }]
+        : url.includes('/api/wallet/recharge')
+          ? { order_no: 'order-1', amount: '10', credits_amount: 100, qr_code: 'https://pay.test/qr' }
+          : url.includes('/api/services/payment/query-order')
+            ? { order_no: 'order-1', status: 'paid' }
+            : {};
+      return new Response(JSON.stringify({ success: true, data }), { headers: { 'Content-Type': 'application/json' } });
+    }));
+    expect(await service.creditPackages()).toMatchObject({ success: true, packages: [{ id: 'starter' }] });
+    expect(await service.createRecharge({ packageId: 'starter', paymentMethod: 'alipay' })).toMatchObject({ success: true, payment: { order_no: 'order-1' } });
+    expect(await service.rechargeStatus({ orderNo: 'order-1' })).toMatchObject({ success: true, order: { status: 'paid' } });
+    expect(await service.cancelRecharge({ orderNo: 'order-1' })).toEqual({ success: true });
+    expect(calls.some((url) => url.includes('package_id=starter') && url.includes('payment_type=qr') && url.includes('organization_id=org-uuid'))).toBe(true);
+    expect(calls.some((url) => url.includes('order_no=order-1'))).toBe(true);
+  });
+  it('returns actionable recharge errors without exposing session credentials', async () => {
+    const service = await api();
+    await service.login({ baseUrl: 'https://ccwork.site', username: 'demo', password: 'password' });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ success: false, message: '余额不足，请先充值' }), { status: 402, headers: { 'Content-Type': 'application/json' } })));
+    const result = await service.createRecharge({ packageId: 'starter', paymentMethod: 'wechat' });
+    expect(result).toEqual({ success: false, error: '余额不足，请先充值' });
+    expect(JSON.stringify(result)).not.toContain('private-access');
+  });
 });

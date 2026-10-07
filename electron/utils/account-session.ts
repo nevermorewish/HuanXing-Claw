@@ -1,6 +1,7 @@
 /** ccwork JWT session. Tokens never leave Main except to the selected backend. */
 import { randomUUID } from 'node:crypto';
 import type { AccountModelEntry, AccountTransaction, AccountUser } from '@shared/host-api/contract';
+import type { CreditPackage, RechargePayment, RechargeStatus } from '@shared/host-api/contract';
 export type { AccountUser } from '@shared/host-api/contract';
 export type SessionSnapshot = {
   baseUrl: string; accessToken: string; refreshToken: string; expiresAt: number;
@@ -144,8 +145,8 @@ export class AccountSession {
     }
     return response;
   }
-  async request<T>(path: string): Promise<T> {
-    const response = await this.authorizedFetch(path);
+  async request<T>(path: string, init?: RequestInit): Promise<T> {
+    const response = await this.authorizedFetch(path, init);
     const data = await response.json() as { success?: boolean; data?: T; message?: string };
     if (!response.ok || data.success === false) throw new Error(data.message || `ccwork HTTP ${response.status}`);
     return (data.data ?? data) as T;
@@ -164,6 +165,27 @@ export class AccountSession {
   }
   async fetchTransactions(limit = 20, offset = 0): Promise<{ total: number; transactions: AccountTransaction[] }> {
     return this.request(`/api/wallet/organizations/${this.state?.organizationId}/transactions?transaction_type=consume&limit=${limit}&offset=${offset}`);
+  }
+  async creditPackages(): Promise<CreditPackage[]> {
+    return this.request('/api/wallet/packages?active_only=true');
+  }
+  async createRecharge(packageId: string, paymentMethod: 'alipay' | 'wechat'): Promise<RechargePayment> {
+    if (!packageId.trim() || !['alipay', 'wechat'].includes(paymentMethod)) throw new Error('Invalid recharge selection');
+    const organizationId = this.state?.organizationId;
+    if (!organizationId) throw new Error('Please log in to ccwork');
+    const query = new URLSearchParams({ package_id: packageId, payment_method: paymentMethod,
+      payment_type: paymentMethod === 'alipay' ? 'qr' : 'native', organization_id: organizationId });
+    const payment = await this.request<RechargePayment>(`/api/wallet/recharge?${query}`, { method: 'POST' });
+    if (!payment.order_no) throw new Error('Invalid recharge order response');
+    return payment;
+  }
+  async rechargeStatus(orderNo: string): Promise<RechargeStatus> {
+    if (!orderNo.trim()) throw new Error('Invalid recharge order');
+    return this.request(`/api/services/payment/query-order?${new URLSearchParams({ order_no: orderNo })}`);
+  }
+  async cancelRecharge(orderNo: string): Promise<void> {
+    if (!orderNo.trim()) throw new Error('Invalid recharge order');
+    await this.request(`/api/services/payment/cancel-order?${new URLSearchParams({ order_no: orderNo })}`, { method: 'POST' });
   }
   async logout(): Promise<void> {
     const state = this.state;

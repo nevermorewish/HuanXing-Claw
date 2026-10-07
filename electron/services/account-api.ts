@@ -153,6 +153,22 @@ export function createAccountApi({ gatewayManager }: { gatewayManager: GatewayMa
         return { success: true, ...await accountSession.fetchTransactions(limit, offset) };
       } catch (error) { return failure(error); }
     },
+    creditPackages: async () => {
+      try { await initializeCcworkAccount(); return { success: true, packages: await accountSession.creditPackages() }; }
+      catch (error) { return failure(error); }
+    },
+    createRecharge: async (payload) => {
+      try { await initializeCcworkAccount(); return { success: true, payment: await accountSession.createRecharge(payload.packageId, payload.paymentMethod) }; }
+      catch (error) { return failure(error); }
+    },
+    rechargeStatus: async (payload) => {
+      try { await initializeCcworkAccount(); return { success: true, order: await accountSession.rechargeStatus(payload.orderNo) }; }
+      catch (error) { return failure(error); }
+    },
+    cancelRecharge: async (payload) => {
+      try { await initializeCcworkAccount(); await accountSession.cancelRecharge(payload.orderNo); return { success: true }; }
+      catch (error) { return failure(error); }
+    },
     // Retained for older renderer callers; ccwork model calls use the JWT session.
     listTokens: async () => ({ success: true, tokens: [] }),
     logout: async () => {

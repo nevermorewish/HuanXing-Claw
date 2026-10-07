@@ -9,11 +9,13 @@
  * Main restores encrypted JWT sessions; passwords are never prefilled.
  */
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { LogIn, CheckCircle2, Wallet, LogOut, RefreshCw, Globe } from 'lucide-react';
+import { LogIn, CheckCircle2, Wallet, LogOut, RefreshCw, Settings, ReceiptText, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAccountStore } from '@/stores/account';
 import { AccountLoginDialog } from './AccountLoginDialog';
+import { RechargeDialog } from './RechargeDialog';
 
 interface AccountLoginButtonProps {
   collapsed?: boolean;
@@ -39,10 +41,10 @@ export function AccountLoginButton({ collapsed = false }: AccountLoginButtonProp
   const user = useAccountStore((s) => s.user);
   const balance = useAccountStore((s) => s.balance);
   const fetchBalance = useAccountStore((s) => s.fetchBalance);
-  const openRecharge = useAccountStore((s) => s.openRecharge);
-  const openOfficialSite = useAccountStore((s) => s.openOfficialSite);
   const logout = useAccountStore((s) => s.logout);
   const [refreshing, setRefreshing] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [rechargeOpen, setRechargeOpen] = useState(false);
 
   // Refresh the balance whenever the panel becomes logged-in.
   useEffect(() => {
@@ -87,14 +89,14 @@ export function AccountLoginButton({ collapsed = false }: AccountLoginButtonProp
     );
   }
 
-  // ── Logged in, collapsed → icon that opens the manage dialog ─────
+  // ── Logged in, collapsed → icon that opens the account menu ─────
   if (collapsed) {
     return (
       <>
         <button
           type="button"
           data-testid="sidebar-account-account"
-          onClick={() => setOpen(true)}
+          onClick={() => setMenuOpen(true)}
           title={`${user?.displayName || t('ccwork.loggedIn')}${balance ? ` · ${formatBalance(balance)}` : ''}`}
           className="sidebar-nav-text flex w-full items-center justify-center rounded-lg px-0 py-1.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80"
         >
@@ -102,82 +104,39 @@ export function AccountLoginButton({ collapsed = false }: AccountLoginButtonProp
             <CheckCircle2 className="h-4 w-4 text-emerald-700 dark:text-emerald-400" strokeWidth={2} />
           </div>
         </button>
-        <AccountLoginDialog open={open} onOpenChange={setOpen} />
+        <AccountMenu open={menuOpen} onOpenChange={setMenuOpen} onRecharge={() => setRechargeOpen(true)} onRefresh={handleRefresh} refreshing={refreshing} onLogout={() => { setMenuOpen(false); void logout(); }} />
+        <RechargeDialog open={rechargeOpen} onOpenChange={setRechargeOpen} />
       </>
     );
   }
 
-  // ── Logged in, expanded → account panel ──────────────────────────
+  // ── Logged in → compact account trigger; all actions live in the menu ──
   return (
     <>
-      <div
+      <button
+        type="button"
         data-testid="sidebar-account-account"
-        className="rounded-lg border border-black/5 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] px-2.5 py-2"
+        onClick={() => setMenuOpen(true)}
+        className="flex w-full items-center gap-2 rounded-lg border border-black/5 bg-black/[0.02] px-2.5 py-2 text-left transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
       >
-        {/* Username */}
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          title={t('ccwork.selectModels')}
-          className="flex w-full items-center gap-2 rounded-md text-left text-foreground/90 hover:text-foreground transition-colors"
-        >
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" strokeWidth={2} />
-          <span className="sidebar-nav-text flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-medium">
-            {user?.displayName || user?.username || t('ccwork.loggedIn')}
-          </span>
-        </button>
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" strokeWidth={2} />
+        <span className="sidebar-nav-text min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-medium text-foreground/90">
+          {user?.displayName || user?.username || t('ccwork.loggedIn')}
+        </span>
+        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-foreground/40" />
+      </button>
 
-        {/* Balance */}
-        <div className="mt-1.5 flex items-center gap-1.5 text-meta text-foreground/60">
-          <Wallet className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
-          <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-            {t('ccwork.credits')} {balance ? formatBalance(balance) : '—'}
-          </span>
-          <button
-            type="button"
-            onClick={() => void handleRefresh()}
-            title={t('ccwork.refresh')}
-            className="shrink-0 rounded p-0.5 text-foreground/40 hover:text-foreground/80 transition-colors"
-          >
-            <RefreshCw className={cn('h-3 w-3', refreshing && 'animate-spin')} strokeWidth={2} />
-          </button>
-        </div>
-
-        {/* Actions */}
-        <div className="mt-2 flex items-center gap-1.5">
-          <button
-            type="button"
-            data-testid="sidebar-account-official"
-            onClick={() => void openOfficialSite()}
-            title={t('ccwork.website')}
-            className="flex items-center justify-center gap-1 rounded-md bg-black/5 dark:bg-white/5 px-2 py-1 text-meta font-medium text-foreground/70 hover:text-foreground hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
-          >
-            <Globe className="h-3.5 w-3.5" strokeWidth={2} />
-            {t('ccwork.website')}
-          </button>
-          <button
-            type="button"
-            data-testid="sidebar-account-recharge"
-            onClick={() => void openRecharge()}
-            className="flex flex-1 items-center justify-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-meta font-medium text-primary hover:bg-primary/15 transition-colors"
-          >
-            <Wallet className="h-3.5 w-3.5" strokeWidth={2} />
-            {t('ccwork.wallet')}
-          </button>
-          <button
-            type="button"
-            data-testid="sidebar-account-logout"
-            onClick={() => void logout()}
-            title={t('ccwork.logout')}
-            className="flex items-center justify-center gap-1 rounded-md px-2 py-1 text-meta font-medium text-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
-          >
-            <LogOut className="h-3.5 w-3.5" strokeWidth={2} />
-            {t('ccwork.logout')}
-          </button>
-        </div>
-      </div>
-
-      <AccountLoginDialog open={open} onOpenChange={setOpen} />
+      <AccountMenu open={menuOpen} onOpenChange={setMenuOpen} onRecharge={() => setRechargeOpen(true)} onRefresh={handleRefresh} refreshing={refreshing} onLogout={() => { setMenuOpen(false); void logout(); }} />
+      <RechargeDialog open={rechargeOpen} onOpenChange={setRechargeOpen} />
     </>
   );
+}
+
+function AccountMenu({ open, onOpenChange, onRecharge, onRefresh, refreshing, onLogout }: { open: boolean; onOpenChange: (open: boolean) => void; onRecharge: () => void; onRefresh: () => void; refreshing: boolean; onLogout: () => void }) {
+  const { t } = useTranslation('common');
+  const navigate = useNavigate();
+  const user = useAccountStore((s) => s.user);
+  const balance = useAccountStore((s) => s.balance);
+  const format = balance ? balance.quota.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—';
+  return <div className="relative"><button type="button" aria-label={t('ccwork.accountMenu')} onClick={() => onOpenChange(!open)} className="sr-only" /><div className={open ? 'fixed inset-x-2 bottom-14 z-50 w-72 rounded-xl border border-border bg-surface-modal p-3 shadow-xl' : 'hidden'}><div className="flex items-center gap-2 border-b border-border pb-3"><CheckCircle2 className="h-4 w-4 text-emerald-600" /><div className="min-w-0"><strong className="block truncate">{user?.displayName || user?.username}</strong><span className="text-xs text-muted-foreground">{t('ccwork.accountLabel')}</span></div></div><div className="flex items-center gap-2 py-3 text-sm"><Wallet className="h-4 w-4" />{t('ccwork.credits')} {format}<button type="button" onClick={onRefresh} title={t('ccwork.refreshBalance')} className="ml-auto"><RefreshCw className={refreshing ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} /></button></div><button type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10" onClick={() => { onOpenChange(false); onRecharge(); }}><Wallet className="h-4 w-4" />{t('ccwork.recharge')}</button><button type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10" onClick={() => { navigate('/usage'); onOpenChange(false); }}><ReceiptText className="h-4 w-4" />{t('ccwork.consumption')}</button><button type="button" className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10" onClick={() => { navigate('/settings'); onOpenChange(false); }}><Settings className="h-4 w-4" />{t('sidebar.settings')}</button><button type="button" className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-red-600 hover:bg-red-500/10" onClick={onLogout}><LogOut className="h-4 w-4" />{t('ccwork.logout')}</button></div></div>;
 }

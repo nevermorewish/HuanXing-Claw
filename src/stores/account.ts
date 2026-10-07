@@ -112,7 +112,7 @@ interface AccountState {
   fetchBalance: () => Promise<void>;
   /** Fetch the account's API tokens for selection. Returns them (also stored). */
   listTokens: () => Promise<AccountToken[]>;
-  /** Open the brand's recharge / top-up page in the external browser. */
+  /** Open the in-app recharge flow. */
   openRecharge: () => Promise<void>;
   /** Open the brand's official site in the external browser. */
   openOfficialSite: () => Promise<void>;
@@ -213,10 +213,7 @@ export const useAccountStore = create<AccountState>()(
       },
 
       openRecharge: async () => {
-        // The recharge page is brand-configured (brands/<id>.json → rechargeUrl).
-        const url = (get().balance?.topUpUrl || get().baseUrl || RECHARGE_URL).trim();
-        if (!url) return;
-        await hostApi.shell.openExternal(url);
+        // Kept as a compatibility action; the account menu now opens the local dialog.
       },
 
       openOfficialSite: async () => {

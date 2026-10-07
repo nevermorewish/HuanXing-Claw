@@ -484,6 +484,10 @@ export const hostApi = {
     sendVerificationCode: (input: { baseUrl: string; username: string; codeType: 'login' | 'register' }) => invokeHost('account', 'sendVerificationCode', input),
     restore: () => invokeHost('account', 'restore'),
     transactions: (input: { limit?: number; offset?: number } = {}) => invokeHost('account', 'transactions', input),
+    creditPackages: () => invokeHost('account', 'creditPackages'),
+    createRecharge: (input: { packageId: string; paymentMethod: 'alipay' | 'wechat' }) => invokeHost('account', 'createRecharge', input),
+    rechargeStatus: (orderNo: string) => invokeHost('account', 'rechargeStatus', { orderNo }),
+    cancelRecharge: (orderNo: string) => invokeHost('account', 'cancelRecharge', { orderNo }),
     login: (input: { baseUrl: string; username: string; password: string }) => (
       invokeHost('account', 'login', input)
     ),

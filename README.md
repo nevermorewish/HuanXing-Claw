@@ -293,7 +293,10 @@ Tests consume credits. The account's default and fallback chain and the chat mod
 selector use ccwork, and the Models page lists the enabled models so you can switch
 which one is primary. Credit balance and consumption on the Usage page come from the personal
 ccwork organization. Local Token history is diagnostic and does not determine
-wallet charges. Log out to revoke local access and remove the account provider.
+wallet charges. The account menu opens an in-app recharge dialog with credit packages and
+Alipay or WeChat QR payment; after payment confirmation it refreshes the balance automatically.
+Closing the dialog keeps an unpaid order available to continue later. Log out to revoke local
+access and remove the account provider.
 
 The added `ccworkclaw` brand has its own app ID, executable, data directory
 (`.ccworkclaw`), provider key, and CCWork icons.

@@ -1008,6 +1008,9 @@ export type AccountTransaction = {
   unit_price?: string | number | null;
 };
 export type AccountTransactionsResult = HostSuccess & { total?: number; transactions?: AccountTransaction[] };
+export type CreditPackage = { id: string; name: string; description: string; price: string | number; total_credits: number; bonus_credits: number };
+export type RechargePayment = { order_no: string; amount: string | number; credits_amount?: number; qr_code?: string; expired_at?: string };
+export type RechargeStatus = { order_no: string; status: string; expired_at?: string; status_reason?: string | null };
 export type AccountModelConfig = {
   baseUrl: string;
   models: AccountModelEntry[];
@@ -1334,6 +1337,10 @@ export type HostApiContract = {
     sendVerificationCode: (payload: { baseUrl: string; username: string; codeType: 'login' | 'register' }) => AccountSendCodeResult;
     restore: () => AccountSetupResult;
     transactions: (payload: { limit?: number; offset?: number }) => AccountTransactionsResult;
+    creditPackages: () => HostSuccess & { packages?: CreditPackage[] };
+    createRecharge: (payload: { packageId: string; paymentMethod: 'alipay' | 'wechat' }) => HostSuccess & { payment?: RechargePayment };
+    rechargeStatus: (payload: { orderNo: string }) => HostSuccess & { order?: RechargeStatus };
+    cancelRecharge: (payload: { orderNo: string }) => HostSuccess;
     fetchSetup: () => AccountSetupResult;
     savedCredentials: () => AccountCredentialsResult;
     getBalance: () => AccountBalanceResult;
