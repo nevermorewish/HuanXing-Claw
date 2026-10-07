@@ -40,8 +40,18 @@ export function initializeCcworkAccount(): Promise<void> {
       } catch { store.delete(SESSION_KEY); }
     }
     const stored = await readAccountModelConfig();
-    if (stored.models.length && accountSession.isLoggedIn()) {
+    if (accountSession.isLoggedIn() && stored.models.length) {
+      // The relay port is process-local and changes on every launch. Rewrite
+      // the existing provider entry so an old port can never be reused.
       await writeAccountModelConfig({ ...await relay.start(), models: stored.models });
+    } else if (accountSession.isLoggedIn()) {
+      // An empty config can occur after a brand/data-dir migration. Rebuild it
+      // from the server catalog before Gateway startup instead of allowing the
+      // Gateway to launch with no relay-backed provider.
+      const catalog = await accountSession.fetchModelEntries();
+      if (catalog.length) {
+        await writeAccountModelConfig({ ...await relay.start(), models: catalog, primaryModelId: catalog[0].id });
+      }
     } else if (stored.models.length) {
       // Old direct provider keys must never bypass ccwork after migration/logout.
       await deleteAccountProvider();

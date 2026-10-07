@@ -13,6 +13,7 @@ touchedAreas:
   - tests/**
   - harness/**
   - README*.md
+  - package.json
 expectedUserBehavior:
   - Users log in with a verification code by default, or with a password, or register; all three run against their ccwork server.
   - Signing in enables every routable model from the personal ccwork organization without a per-model selection step.
