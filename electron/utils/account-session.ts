@@ -1,6 +1,6 @@
 /** ccwork JWT session. Tokens never leave Main except to the selected backend. */
 import { randomUUID } from 'node:crypto';
-import type { AccountModelEntry, AccountUser } from '@shared/host-api/contract';
+import type { AccountModelEntry, AccountTransaction, AccountUser } from '@shared/host-api/contract';
 export type { AccountUser } from '@shared/host-api/contract';
 export type SessionSnapshot = {
   baseUrl: string; accessToken: string; refreshToken: string; expiresAt: number;
@@ -162,7 +162,7 @@ export class AccountSession {
   async fetchWallet(): Promise<{ available_credits_precise: string; credits_frozen_precise: string }> {
     return this.request(`/api/wallet/organizations/${this.state?.organizationId}/wallet`);
   }
-  async fetchTransactions(limit = 20, offset = 0): Promise<{ total: number; transactions: Array<{ id: string; description: string; amount_precise: string; created_at: string; transaction_type: string }> }> {
+  async fetchTransactions(limit = 20, offset = 0): Promise<{ total: number; transactions: AccountTransaction[] }> {
     return this.request(`/api/wallet/organizations/${this.state?.organizationId}/transactions?transaction_type=consume&limit=${limit}&offset=${offset}`);
   }
   async logout(): Promise<void> {

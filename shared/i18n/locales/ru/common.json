@@ -124,6 +124,8 @@
         "next": "Далее",
         "date": "Дата",
         "amount": "Списано кредитов",
+        "model": "Модель",
+        "unknownModel": "Неизвестная модель",
         "transactionDescription": "Описание",
         "loadFailed": "Не удалось загрузить расходы ccwork.",
         "useModel": "Сделать основной",

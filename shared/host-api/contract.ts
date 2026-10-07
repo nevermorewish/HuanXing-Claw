@@ -994,7 +994,19 @@ export type AccountModelEntry = {
   maxTokens?: number;
   input?: Array<'text' | 'image'>;
 };
-export type AccountTransaction = { id: string; description: string; amount_precise: string; created_at: string; transaction_type: string };
+export type AccountTransaction = {
+  id: string;
+  description: string;
+  amount_precise: string;
+  created_at: string;
+  transaction_type: string;
+  model_name?: string | null;
+  provider_key?: string | null;
+  meter_key?: string | null;
+  quantity?: string | number | null;
+  unit?: string | null;
+  unit_price?: string | number | null;
+};
 export type AccountTransactionsResult = HostSuccess & { total?: number; transactions?: AccountTransaction[] };
 export type AccountModelConfig = {
   baseUrl: string;

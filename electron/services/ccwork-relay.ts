@@ -5,7 +5,23 @@ import { once } from 'node:events';
 import type { AccountSession } from '../utils/account-session';
 
 type Json = Record<string, unknown>;
-type Chunk = { id?: string; model?: string; usage?: Json; error?: { message?: string; user_message?: string; type?: string }; choices?: Array<{ delta?: Json; finish_reason?: string | null }> };
+type Chunk = { id?: string; model?: string; usage?: Json; error?: { message?: string; user_message?: string; type?: string; code?: string; error_category?: string; topup_reason?: string }; choices?: Array<{ delta?: Json; finish_reason?: string | null }> };
+
+function friendlyCcworkError(error: Chunk['error'], status?: number): string {
+  const category = error?.error_category || error?.code || error?.type || '';
+  const reason = error?.topup_reason || '';
+  if (category === 'organization_insufficient_credits') {
+    return reason
+      ? '本月 LLM 代币已用完，请充值或开启自动补充后重试'
+      : '团队钱包余额不足，请充值后重试';
+  }
+  if (category === 'insufficient_credits' || category === 'freeze_failed') return '模型代币余额不足，请充值后重试';
+  if (category === 'budget_exceeded' || category === 'conversation_quota_exceeded') return '已达到当前用量限制，请调整额度或稍后重试';
+  if (category === 'upstream_rate_limited' || category === 'rate_limited' || status === 429) return '请求过于频繁，请稍后重试或切换模型';
+  if (category === 'unauthorized' || category === 'auth_failed' || status === 401 || status === 403) return '模型服务认证已失效，请重新登录或检查模型配置';
+  if (category.includes('timeout') || status === 408 || status === 504) return '模型响应超时，请稍后重试或减少上下文内容';
+  return error?.user_message || error?.message || '模型请求失败，请稍后重试';
+}
 
 /** Parse complete SSE frames even when UTF-8 / CRLF / multi-line data split across reads. */
 export async function* ccworkFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<{ event: string; data: string }> {
@@ -100,7 +116,13 @@ export class CcworkRelay {
         headers: { 'Content-Type': 'application/json', 'X-TabTin-Request-Source': 'claw', 'X-TabTin-Session-Id': `claw-${randomUUID()}` },
         body: JSON.stringify({ ...request, stream: true, stream_options: { include_usage: true } }),
       });
-      if (!response.ok) { await response.body?.cancel(); errorResponse(response.status, `ccwork HTTP ${response.status}`); return; }
+      if (!response.ok) {
+        let error: Chunk['error'];
+        try { error = (await response.json() as Chunk).error; } catch { /* preserve status fallback */ }
+        await response.body?.cancel();
+        errorResponse(response.status, friendlyCcworkError(error, response.status));
+        return;
+      }
       if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) throw new Error('Invalid ccwork proxy response');
       let done = false;
       let settled = false;
@@ -125,7 +147,7 @@ export class CcworkRelay {
           settled = true;
           continue;
         }
-        if (chunk.error) throw new Error(chunk.error.user_message || chunk.error.message || 'ccwork model request failed');
+        if (chunk.error) throw new Error(friendlyCcworkError(chunk.error));
         // Ignore informational custom events, including capability downgrades.
         if (frame.event && frame.event !== 'message') continue;
         if (!chunk.choices && !chunk.usage) continue;

@@ -124,6 +124,8 @@
         "next": "Next",
         "date": "Date",
         "amount": "Credits charged",
+        "model": "Model",
+        "unknownModel": "Unknown model",
         "transactionDescription": "Description",
         "loadFailed": "Could not load ccwork consumption.",
         "useModel": "Use as primary",

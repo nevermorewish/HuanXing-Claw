@@ -52,10 +52,10 @@ describe('ccwork loopback relay', () => {
     const response = await relay.call(false);
     expect(await response.json()).toMatchObject({ object: 'chat.completion', usage: { total_tokens: 14 }, choices: [{ finish_reason: 'tool_calls', message: { content: 'Hello', reasoning_content: 'Reason', tool_calls: [{ id: 't1', function: { name: 'lookup', arguments: '{}' } }] } }] });
   });
-  it('rejects billing precheck errors delivered in HTTP 200 SSE', async () => {
-    const relay = await fixture([data({ error: { user_message: 'Insufficient ccwork credits', type: 'insufficient_balance' } }), done]);
+  it('rejects billing precheck errors delivered in HTTP 200 SSE with actionable guidance', async () => {
+    const relay = await fixture([data({ error: { user_message: '模型服务暂时不可用，请稍后重试', type: 'ccwork_error', error_category: 'organization_insufficient_credits', topup_reason: 'wallet_insufficient' } }), done]);
     const response = await relay.call();
-    expect(response.status).toBe(502); expect(await response.text()).toContain('Insufficient ccwork credits');
+    expect(response.status).toBe(502); expect(await response.text()).toContain('本月 LLM 代币已用完，请充值或开启自动补充后重试');
     expect(relay.hits()).toBe(1);
   });
   it.each([billing('failed'), ''])('does not report successful completion for missing or failed billing', async (tail) => {

@@ -124,6 +124,8 @@
         "next": "次へ",
         "date": "日時",
         "amount": "使用クレジット",
+        "model": "モデル",
+        "unknownModel": "不明なモデル",
         "transactionDescription": "説明",
         "loadFailed": "ccwork の利用記録を取得できません。",
         "useModel": "メインに設定",

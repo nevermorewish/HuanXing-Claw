@@ -124,6 +124,8 @@
         "next": "下一页",
         "date": "时间",
         "amount": "消耗额度",
+        "model": "模型",
+        "unknownModel": "未知模型",
         "transactionDescription": "说明",
         "loadFailed": "无法加载 ccwork 消费记录。",
         "useModel": "设为主模型",
