@@ -80,6 +80,8 @@ export interface AccountToken {
 interface AccountState {
   modelEntries: AccountModelEntry[];
   baseUrl: string;
+  /** True after the initial Main-process account restore and runtime sync finish. */
+  authReady: boolean;
   restore: () => Promise<void>;
   lastUsername: string;
   loggedIn: boolean;
@@ -138,12 +140,28 @@ export const useAccountStore = create<AccountState>()(
       lastUsername: '',
       baseUrl: DEFAULT_ACCOUNT_URL,
       modelEntries: [],
+      authReady: false,
       restore: async () => {
-        const result = await hostApi.account.restore();
-        if (result.success && result.user) {
-          set({ loggedIn: true, user: result.user, baseUrl: result.baseUrl || DEFAULT_ACCOUNT_URL,
-            models: result.models ?? [], modelEntries: result.modelEntries ?? [] });
-          void get().fetchBalance();
+        set({ authReady: false });
+        try {
+          const result = await hostApi.account.restore();
+          if (result.success && result.user) {
+            set({ loggedIn: true, user: result.user, baseUrl: result.baseUrl || DEFAULT_ACCOUNT_URL,
+              models: result.models ?? [], modelEntries: result.modelEntries ?? [] });
+            await get().loadModelConfig();
+            await Promise.allSettled([
+              useModelProvidersStore.getState().load(),
+              useAgentsStore.getState().fetchAgents(),
+            ]);
+            void get().fetchBalance();
+          } else {
+            set({ loggedIn: false, user: null, modelEntries: [], models: [], modelConfig: null });
+          }
+        } catch (error) {
+          console.error('Failed to restore Account session', error);
+          set({ loggedIn: false, user: null, modelEntries: [], models: [], modelConfig: null });
+        } finally {
+          set({ authReady: true });
         }
       },
       loggedIn: false,
@@ -222,7 +240,7 @@ export const useAccountStore = create<AccountState>()(
 
       login: async ({ baseUrl: baseUrlInput, username, ...credentials }) => {
         const baseUrl = baseUrlInput.trim() || DEFAULT_ACCOUNT_URL;
-        set({ loading: true, error: null });
+        set({ loading: true, error: null, authReady: false });
         try {
           const loginResult = credentials.mode === 'password'
             ? await hostApi.account.login({ baseUrl, username, password: credentials.password })
@@ -260,14 +278,19 @@ export const useAccountStore = create<AccountState>()(
             modelEntries: setup.modelEntries ?? [],
             apiKey: setup.apiKey ?? null,
             lastUsername: username,
-            loading: false,
           });
+          await get().loadModelConfig();
+          await Promise.allSettled([
+            useModelProvidersStore.getState().load(),
+            useAgentsStore.getState().fetchAgents(),
+          ]);
+          set({ loading: false, authReady: true });
           // Fetch balance in the background — don't block the login flow.
           void get().fetchBalance();
           return models;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          set({ loading: false, error: message, loggedIn: false });
+          set({ loading: false, error: message, loggedIn: false, authReady: true });
           throw error;
         }
       },
@@ -337,7 +360,7 @@ export const useAccountStore = create<AccountState>()(
         } catch {
           // ignore — clearing local state is enough
         }
-        set({ loggedIn: false, user: null, models: [], modelEntries: [], modelConfig: null, tokens: [], apiKey: null, balance: null });
+        set({ loggedIn: false, user: null, models: [], modelEntries: [], modelConfig: null, tokens: [], apiKey: null, balance: null, authReady: true });
       },
     }),
     {

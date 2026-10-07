@@ -10,6 +10,7 @@ import { AlertTriangle, ArrowDownToLine, ArrowLeft, BotMessageSquare, FolderOpen
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { DEFAULT_SESSION_KEY } from '@shared/chat/types';
+import { BRAND } from '@shared/brand';
 import type { AcpSessionFamilyResult } from '@shared/acp-chat/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +38,7 @@ import type { AcpTurnTiming } from '@/lib/acp/turn-timings';
 import { createEmptyAcpTimeline } from '@/lib/acp/reducer';
 import { projectOpenClawFileActivities, type AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { hostApi } from '@/lib/host-api';
+import { useAccountStore } from '@/stores/account';
 import { getSessionDisplayTitle } from '@shared/chat/session-title';
 import { ChatInput, type ChatWorkspaceOption, type FileAttachment } from './ChatInput';
 import { ChatToolbar } from './ChatToolbar';
@@ -247,6 +249,8 @@ export function Chat() {
   const removeWorkspace = useSettingsStore((s) => s.removeWorkspace);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
   const agents = useAgentsStore((s) => s.agents);
+  const authReady = useAccountStore((s) => s.authReady);
+  const accountReady = BRAND.providerKey !== 'ccworkclaw' || authReady;
   const [sessionDiscoveryAttempted, setSessionDiscoveryAttempted] = useState(false);
   const [lastPromptAttemptSessionKey, setLastPromptAttemptSessionKey] = useState<string | null>(null);
   const [questionDirectoryOpenSessionKey, setQuestionDirectoryOpenSessionKey] = useState<string | null>(null);
@@ -422,8 +426,9 @@ export function Chat() {
   }, [currentSessionKey, setVisibleSession]);
 
   useEffect(() => {
+    if (!accountReady) return;
     void fetchAgents().catch(() => undefined);
-  }, [fetchAgents]);
+  }, [accountReady, fetchAgents]);
 
   useEffect(() => {
     closeArtifactPanel();
@@ -477,6 +482,7 @@ export function Chat() {
   );
 
   useEffect(() => {
+    if (!accountReady) return;
     if (currentSessionKey !== DEFAULT_SESSION_KEY || sessions.length > 0 || sessionDiscoveryAttempted) return;
     let cancelled = false;
     void loadSessions()
@@ -487,17 +493,19 @@ export function Chat() {
     return () => {
       cancelled = true;
     };
-  }, [currentSessionKey, loadSessions, sessionDiscoveryAttempted, sessions.length]);
+  }, [accountReady, currentSessionKey, loadSessions, sessionDiscoveryAttempted, sessions.length]);
 
   useEffect(() => {
+    if (!accountReady) return;
     if (!currentSessionKey || !cwd || !currentSession?.createdLocally) return;
     acpLoadInFlightKeyRef.current = null;
     const hasStaleTimeline = acpTimeline.sessionId !== currentSessionKey || acpTimeline.itemOrder.length > 0;
     if (acpActiveSessionKey === currentSessionKey && acpWorkspaceRoot === cwd && acpCwd === cwd && !hasStaleTimeline) return;
     prepareLocalAcpSession({ sessionKey: currentSessionKey, workspaceRoot: cwd, cwd });
-  }, [acpActiveSessionKey, acpCwd, acpTimeline.itemOrder.length, acpTimeline.sessionId, acpWorkspaceRoot, currentSession, currentSessionKey, cwd, prepareLocalAcpSession]);
+  }, [accountReady, acpActiveSessionKey, acpCwd, acpTimeline.itemOrder.length, acpTimeline.sessionId, acpWorkspaceRoot, currentSession, currentSessionKey, cwd, prepareLocalAcpSession]);
 
   useEffect(() => {
+    if (!accountReady) return;
     if (!currentSessionKey || !cwd || !workspaceContextAvailable) return;
     if (currentSessionKey === DEFAULT_SESSION_KEY && sessions.length === 0 && acpActiveSessionKey == null && !sessionDiscoveryAttempted) return;
     if (acpActiveSessionKey === currentSessionKey && acpWorkspaceRoot === cwd && acpCwd === cwd) return;
@@ -522,7 +530,7 @@ export function Chat() {
         acpLoadInFlightKeyRef.current = null;
       }
     });
-  }, [acknowledgeAcpSessionCreated, acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, selectAcpSession, sessionDiscoveryAttempted, sessions, workspaceContextAvailable]);
+  }, [accountReady, acknowledgeAcpSessionCreated, acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, selectAcpSession, sessionDiscoveryAttempted, sessions, workspaceContextAvailable]);
 
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
